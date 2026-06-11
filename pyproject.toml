@@ -13,6 +13,7 @@ dependencies = [
 local = [
     "transformers>=4.49",
     "torch>=2.4",
+    "torchvision>=0.19",
     "accelerate>=1.0",
     "pillow-heif>=0.18",
     "av>=12.0",

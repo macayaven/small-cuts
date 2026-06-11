@@ -10,8 +10,9 @@
 | 2026-06-11 | Strategy confirmed by Carlos (+ Live Mode requirement added) | ✅ | docs/product-strategy.md |
 | 2026-06-11 | `main` branch created (from bootstrap commit) | ✅ | `git push origin claude/adoring-clarke-49l3uk:main` |
 | 2026-06-11 | M1 eval harness built + tested | ✅ | `src/small_cuts/eval.py`, `tests/test_eval.py` |
+| 2026-06-11 | Self-hosted runner on Spark registered + verified (GB10, CUDA 13.0, uv OK) | ✅ | Actions run 27370230783 (eval-on-spark on `eval/run-001`) |
 | — | Branch protection on `main` | ⚠️ Carlos reruns the `gh api` command (docs/setup.md) | — |
-| — | M1: run eval on DGX Spark, pick narrator model | ⬜ next | docs/implementation-plan.md |
+| — | M1: run eval on DGX Spark, pick narrator model | ⬜ next — blocked only on eval photos (`/home/carlos/eval-photos` on the Spark exists but is empty) | docs/implementation-plan.md |
 | — | M2: TTS + title card + Off-Brand theme | ⬜ | — |
 | — | M3: Space live under hackathon org | ⬜ | — |
 | — | M4: demo video + social post + Field Notes | ⬜ | — |
@@ -24,4 +25,4 @@
 3. ~~Claim credits~~ ✅ done.
 4. Enable branch protection — rerun the `gh api` command now that `main` exists (docs/setup.md).
 5. Verify exact submission deadline time + video/post requirements in Discord (Carlos, in progress).
-6. Run the M1 eval on the DGX Spark (cloud sessions can't reach the tailnet) — one command, docs/implementation-plan.md.
+6. ~~Run the M1 eval on the DGX Spark~~ → infrastructure verified working (run 27370230783 reached the GB10). Remaining: stage ~12 personal photos in `/home/carlos/eval-photos` on the Spark, then re-trigger (`gh workflow run eval-on-spark` from a tailnet machine, or push an `eval/**` branch).

@@ -27,4 +27,4 @@ def test_mock_eval_produces_report(tmp_path):
     assert "## b.png" in report
     # one table row per model x style per image
     assert len(re.findall(r"^\| mock \|", report, flags=re.M)) == 4
-    assert "Specificity" in report
+    assert "**S**pecificity" in report

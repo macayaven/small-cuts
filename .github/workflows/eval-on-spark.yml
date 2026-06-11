@@ -9,6 +9,10 @@ on:
       extra_args:
         description: Extra args for small_cuts.eval (e.g. --models ... --styles ...)
         default: ""
+  # Cloud sessions' GitHub token cannot dispatch workflows (403), but they can
+  # push branches — pushing eval/<anything> triggers the eval with defaults.
+  push:
+    branches: ["eval/**"]
 
 jobs:
   eval:
@@ -33,9 +37,9 @@ jobs:
 
       - name: Run eval
         run: |
-          IMAGES="${{ inputs.images_dir }}"
+          IMAGES="${{ inputs.images_dir || '~/eval-photos' }}"
           uv run python -m small_cuts.eval --images "${IMAGES/#\~/$HOME}" \
-            --out eval-report.md ${{ inputs.extra_args }}
+            --out eval-report.md ${{ inputs.extra_args || '' }}
 
       - name: Upload report
         uses: actions/upload-artifact@v4

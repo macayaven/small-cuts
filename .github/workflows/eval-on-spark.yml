@@ -1,0 +1,48 @@
+name: eval-on-spark
+
+on:
+  workflow_dispatch:
+    inputs:
+      images_dir:
+        description: Directory of eval photos on the Spark
+        default: ~/eval-photos
+      extra_args:
+        description: Extra args for small_cuts.eval (e.g. --models ... --styles ...)
+        default: ""
+  # Cloud sessions' GitHub token cannot dispatch workflows (403), but they can
+  # push branches — pushing eval/<anything> triggers the eval with defaults.
+  push:
+    branches: ["eval/**"]
+
+jobs:
+  eval:
+    runs-on: [self-hosted, spark]
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: GPU + environment probe
+        run: |
+          uname -a
+          nvidia-smi || echo "WARN: nvidia-smi unavailable"
+          python3 --version || true
+
+      - name: Ensure uv
+        run: |
+          command -v uv >/dev/null || curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Install
+        run: uv sync --extra local
+
+      - name: Run eval
+        run: |
+          IMAGES="${{ inputs.images_dir || '~/eval-photos' }}"
+          uv run python -m small_cuts.eval --images "${IMAGES/#\~/$HOME}" \
+            --out eval-report.md ${{ inputs.extra_args || '' }}
+
+      - name: Upload report
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-report
+          path: eval-report.md

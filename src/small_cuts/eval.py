@@ -99,10 +99,20 @@ def main(argv: list[str] | None = None) -> None:
 
     image_paths = load_images(args.images)
     models = args.models if args.backend == "transformers" else ["mock"]
-    all_results = {
-        model_id: run_model(model_id, image_paths, args.styles, args.backend) for model_id in models
-    }
-    args.out.write_text(render_report(all_results, image_paths, args.styles))
+    all_results = {}
+    failures = []
+    for model_id in models:
+        try:
+            all_results[model_id] = run_model(model_id, image_paths, args.styles, args.backend)
+        except Exception as exc:  # one gated/broken model must not kill the eval
+            failures.append(f"{model_id}: {type(exc).__name__}: {exc}")
+            print(f"  FAILED {model_id}: {exc}")
+    if not all_results:
+        raise SystemExit("All models failed:\n" + "\n".join(failures))
+    report = render_report(all_results, image_paths, args.styles)
+    if failures:
+        report += "\n## Failed models\n\n" + "\n".join(f"- {f}" for f in failures) + "\n"
+    args.out.write_text(report)
     print(f"\nReport written to {args.out}")
 
 

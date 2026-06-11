@@ -40,6 +40,7 @@ fi
 $TS up --auth-key="$TS_AUTHKEY" --hostname="$HOSTNAME_TS" --accept-dns
 
 # SSH through the tailnet without a TUN device: dial via `tailscale nc`.
+# DGX_SPARK_USER / MAC_STUDIO_USER env vars (from environment secrets) set the login users.
 mkdir -p ~/.ssh && chmod 700 ~/.ssh
 if ! grep -q "tail48bab7" ~/.ssh/config 2>/dev/null; then
   cat >>~/.ssh/config <<EOF
@@ -48,8 +49,10 @@ Host *.tail48bab7.ts.net mac-studio spark
   StrictHostKeyChecking accept-new
 Host mac-studio
   HostName mac-studio.tail48bab7.ts.net
+${MAC_STUDIO_USER:+  User $MAC_STUDIO_USER}
 Host spark
   HostName spark-caeb.tail48bab7.ts.net
+${DGX_SPARK_USER:+  User $DGX_SPARK_USER}
 EOF
   chmod 600 ~/.ssh/config
 fi

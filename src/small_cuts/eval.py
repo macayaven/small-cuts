@@ -31,6 +31,20 @@ EVAL_STYLES = ["deadpan", "noir", "nature_doc"]
 
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp"}
 
+# iPhone/Android shoot HEIC by default; register the opener if available so
+# Pillow can read them, and accept the suffixes.
+try:
+    import pillow_heif
+
+    pillow_heif.register_heif_opener()
+    IMAGE_SUFFIXES = IMAGE_SUFFIXES | {".heic", ".heif"}
+except ImportError:
+    pass
+
+# Real Small Cuts input is video (Ray-Ban / phone clips). When a directory holds
+# videos, we sample frames so the model eval runs on representative stills.
+VIDEO_SUFFIXES = {".mov", ".mp4", ".m4v", ".webm", ".avi", ".mkv"}
+
 RUBRIC = (
     "Score each cell 1-5 on: **S**pecificity (names real visible things), "
     "**G**roundedness (no invented objects/people), **V**oice (style lands). "
@@ -38,11 +52,43 @@ RUBRIC = (
 )
 
 
+def _sample_video_frames(video: Path, every_n_seconds: float = 3.0) -> list[Path]:
+    """Extract frames from a video into sibling JPEGs; return their paths."""
+    import av  # PyAV — ffmpeg-backed, reliable ARM64 wheels
+
+    out_paths: list[Path] = []
+    container = av.open(str(video))
+    stream = container.streams.video[0]
+    fps = float(stream.average_rate or 30)
+    step = max(1, int(fps * every_n_seconds))
+    for i, frame in enumerate(container.decode(stream)):
+        if i % step:
+            continue
+        out = video.with_name(f"{video.stem}_frame{i:06d}.jpg")
+        frame.to_image().save(out)
+        out_paths.append(out)
+    container.close()
+    return out_paths
+
+
 def load_images(images_dir: Path) -> list[Path]:
-    paths = sorted(p for p in images_dir.iterdir() if p.suffix.lower() in IMAGE_SUFFIXES)
+    if not images_dir.exists():
+        raise SystemExit(f"Directory does not exist: {images_dir}")
+    entries = sorted(p for p in images_dir.iterdir() if p.is_file())
+    paths = [p for p in entries if p.suffix.lower() in IMAGE_SUFFIXES]
+    videos = [p for p in entries if p.suffix.lower() in VIDEO_SUFFIXES]
+    for video in videos:
+        print(f"Sampling frames from {video.name}")
+        paths.extend(_sample_video_frames(video))
     if not paths:
-        raise SystemExit(f"No images found in {images_dir}")
-    return paths
+        listing = "\n".join(f"  {p.name}" for p in entries) or "  (directory is empty)"
+        raise SystemExit(
+            f"No images or videos found in {images_dir}.\n"
+            f"Directory contains:\n{listing}\n"
+            f"Recognized image suffixes: {sorted(IMAGE_SUFFIXES)}\n"
+            f"Recognized video suffixes: {sorted(VIDEO_SUFFIXES)}"
+        )
+    return sorted(paths)
 
 
 def run_model(

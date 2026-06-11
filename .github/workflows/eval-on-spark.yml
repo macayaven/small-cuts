@@ -35,6 +35,11 @@ jobs:
       - name: Install
         run: uv sync --extra local
 
+      - name: List input directory
+        run: |
+          IMAGES="${{ inputs.images_dir || '~/eval-photos' }}"
+          ls -la "${IMAGES/#\~/$HOME}" || echo "Directory not found: ${IMAGES/#\~/$HOME}"
+
       - name: Run eval
         run: |
           IMAGES="${{ inputs.images_dir || '~/eval-photos' }}"

@@ -74,8 +74,30 @@ honest, and unmistakably cinematic.
 - Local VLM (≈2–8B) + local TTS, ZeroGPU with CPU fallback.
 - Demo video + social post + README.
 
+## Live Mode — narration in your ears, on the glasses (confirmed direction 2026-06-11)
+
+Carlos confirmed the strategy with one addition: if technically feasible, the
+narration should reach the wearer **in real time through the glasses**. Two
+layers, in order of cost:
+
+1. **Audio out through the glasses — nearly free.** Ray-Ban Metas pair to the
+   phone as Bluetooth audio. The Space's TTS, played in the phone browser,
+   plays through the glasses' open-ear speakers with zero extra code. The demo
+   video can honestly show "hearing your life narrated in the glasses" the
+   moment M2 (TTS) lands.
+2. **Continuous Live Mode — the real work (stretch, M3.5).** Phone camera
+   streams frames into the Space (Gradio streaming/WebRTC); a scene-change
+   detector samples a frame every few seconds and narrates only when the scene
+   meaningfully changes (otherwise the narrator babbles); TTS streams back and
+   plays through the glasses. Needs rate limiting to respect ZeroGPU quotas.
+3. **Glasses-camera capture (post-hackathon).** Real-time access to the
+   glasses' own camera requires the Meta Wearables Device Access Toolkit
+   (developer preview, iOS) — the original `directors-cut` territory.
+   Feasibility/timeline **unverified**; out of scope before June 15.
+
 ## Stretch (only after MLS is live)
 
+- Continuous Live Mode (see above) — the highest-magic stretch.
 - Short-clip input (sample frames → narrate the sequence as a scene).
 - "Day reel": multiple moments stitched into one narrated cut.
 - **Well-Tuned:** LoRA fine-tune of the narrator voice on a style corpus,

@@ -9,9 +9,16 @@
 
 ## M1 — Real narration (June 12)
 
-- Eval harness: fixed set of ~12 personal photos × 3 candidate VLMs
-  (SmolVLM2-2.2B, Qwen2.5-VL-3B/7B, gemma-3-4b-it) × 2 styles.
-  Run on DGX Spark or Mac Studio; score for specificity/groundedness/voice.
+- Eval harness ✅ (`src/small_cuts/eval.py`): fixed set of ~12 personal photos ×
+  candidate VLMs (SmolVLM2-2.2B, Qwen2.5-VL-3B/7B, gemma-3-4b-it) × 3 styles.
+  **Run on DGX Spark** (CUDA — results transfer to ZeroGPU; 128GB fits all
+  candidates without juggling):
+  ```bash
+  git clone https://github.com/macayaven/small-cuts && cd small-cuts
+  uv sync --extra local
+  uv run python -m small_cuts.eval --images ~/eval-photos --out eval-report.md
+  ```
+  Score the report for specificity/groundedness/voice (rubric included).
 - Pick the model; tune the system prompt + per-style few-shots.
 - Acceptance: 8/12 eval images produce narration a human laughs or nods at,
   zero hallucinated objects in 10/12.
@@ -27,6 +34,12 @@
 - Create `build-small-hackathon/small-cuts` Space; ZeroGPU + CPU fallback.
 - Decide llama.cpp path (Llama Champion) based on VLM GGUF stability.
 - Load test: 3 concurrent narrations; cold-start measurement.
+
+## M3.5 — Continuous Live Mode (stretch, only if M0–M3 green)
+
+- Phone camera → Gradio streaming → scene-change gate → narration → streamed TTS
+  → played through Ray-Ban Metas via Bluetooth (audio path itself is free once
+  M2 TTS exists — use it in the demo video regardless).
 
 ## M4 — Submission assets (June 14)
 

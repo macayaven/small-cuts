@@ -6,11 +6,11 @@ on:
       images_dir:
         description: Directory of eval photos on the Spark
         default: ~/eval-photos
-      extra_args:
-        description: Extra args for small_cuts.eval (e.g. --models ... --styles ...)
-        default: ""
-  # Cloud sessions' GitHub token cannot dispatch workflows (403), but they can
-  # push branches — pushing eval/<anything> triggers the eval with defaults.
+      models:
+        description: Space-separated model ids
+        default: "google/gemma-3-4b-it Qwen/Qwen2.5-VL-3B-Instruct"
+  # Cloud sessions can't dispatch workflows (403) but can push — pushing an
+  # eval/** branch runs the eval with the defaults below.
   push:
     branches: ["eval/**"]
 
@@ -25,7 +25,6 @@ jobs:
         run: |
           uname -a
           nvidia-smi || echo "WARN: nvidia-smi unavailable"
-          python3 --version || true
 
       - name: Ensure uv
         run: |
@@ -35,18 +34,30 @@ jobs:
       - name: Install
         run: uv sync --extra local
 
-      - name: List input directory
+      - name: Run eval (one process per model for crash isolation)
         run: |
-          IMAGES="${{ inputs.images_dir || '~/eval-photos' }}"
-          ls -la "${IMAGES/#\~/$HOME}" || echo "Directory not found: ${IMAGES/#\~/$HOME}"
-
-      - name: Run eval
-        run: |
-          IMAGES="${{ inputs.images_dir || '~/eval-photos' }}"
-          uv run python -m small_cuts.eval --images "${IMAGES/#\~/$HOME}" \
-            --out eval-report.md ${{ inputs.extra_args || '' }}
+          IMAGES_RAW="${{ inputs.images_dir || '~/eval-photos' }}"
+          IMAGES="${IMAGES_RAW/#\~/$HOME}"
+          MODELS="${{ inputs.models || 'google/gemma-3-4b-it Qwen/Qwen2.5-VL-3B-Instruct' }}"
+          ls -la "$IMAGES" || echo "Directory not found: $IMAGES"
+          rm -f eval-report.md
+          for M in $MODELS; do
+            SLUG="$(echo "$M" | tr '/' '_')"
+            echo "::group::eval $M"
+            # Each model runs in its own process: an OOM/segfault kills only
+            # this iteration, not the whole eval.
+            if uv run python -m small_cuts.eval --images "$IMAGES" \
+                 --models "$M" --out "eval-$SLUG.md"; then
+              cat "eval-$SLUG.md" >> eval-report.md
+            else
+              printf '\n## %s — CRASHED (non-Python failure, see logs)\n' "$M" >> eval-report.md
+            fi
+            echo "::endgroup::"
+          done
+          cat eval-report.md >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
 
       - name: Upload report
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: eval-report

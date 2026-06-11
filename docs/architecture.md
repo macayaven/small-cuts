@@ -29,6 +29,11 @@ are development, evaluation, and content-capture tools.
    • iPhone 14 Pro / Redmi Note 14 Pro+ → mobile browser upload (Gradio is responsive)
    • Webcam tab in the UI
 
+  Live Mode (confirmed direction; continuous mode is stretch M3.5):
+   • Audio out: phone browser plays the Space's TTS → Bluetooth → glasses speakers (free)
+   • Continuous: phone camera → Gradio streaming → scene-change gate → narrate → TTS stream
+   • Glasses-camera capture via Meta Wearables DAT: post-hackathon, unverified
+
   Dev/eval machinery (not judged):
    • Mac Studio M4 Max  → orchestration, dev, video editing
    • DGX Spark 128GB    → candidate-model evaluation harness, optional LoRA fine-tune

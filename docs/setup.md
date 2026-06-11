@@ -58,6 +58,29 @@ gh api -X PUT repos/macayaven/small-cuts/branches/main/protection \
 (Zero required approvals keeps the PR-based workflow without blocking a
 solo builder on a 4-day deadline.)
 
+## Tailnet access from cloud Claude Code sessions
+
+Cloud session containers are not on the tailnet by default. `scripts/tailnet-connect.sh`
+fixes that: it installs Tailscale (userspace networking — no TUN in these
+containers), authenticates with `TS_AUTHKEY`, and writes an SSH config so
+`ssh spark` / `ssh mac-studio` dial through `tailscale nc`.
+
+One-time setup by Carlos:
+
+1. Tailscale admin console → **Settings → Keys → Generate auth key** with
+   **Reusable + Ephemeral + Pre-approved** (ephemeral nodes vanish when the
+   container dies), ideally tagged (e.g. `tag:claude-session`) with ACLs
+   limiting it to SSH toward `spark-caeb` and `mac-studio`.
+2. Add it as `TS_AUTHKEY` in the Claude Code **environment settings**
+   (code.claude.com → environment → secrets/env vars) — never in the repo.
+3. Recommended: enable **Tailscale SSH** on both machines
+   (`sudo tailscale set --ssh`) with a matching ACL `ssh` rule, so sessions
+   need no SSH keypair management at all.
+4. Optional, to auto-connect every session: add a `SessionStart` hook to
+   `.claude/settings.json` running `bash scripts/tailnet-connect.sh || true`.
+
+Each session then runs (or the hook runs): `bash scripts/tailnet-connect.sh`.
+
 ## Deploying the Space (M3)
 
 1. Create the Space **under the hackathon org**: `build-small-hackathon/small-cuts`

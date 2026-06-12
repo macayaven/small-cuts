@@ -18,6 +18,14 @@ def test_load_images_filters_and_sorts(tmp_path):
     assert [p.name for p in paths] == ["a.jpg", "b.png"]
 
 
+def test_load_images_accepts_iphone_heic(tmp_path):
+    # iPhones shoot HEIC by default — the staged eval photos on the Spark are all .heic
+    Image.new("RGB", (64, 48), (120, 60, 30)).save(tmp_path / "IMG-0.HEIC")
+    paths = load_images(tmp_path)
+    assert [p.name for p in paths] == ["IMG-0.HEIC"]
+    assert Image.open(paths[0]).convert("RGB").size == (64, 48)
+
+
 def test_mock_eval_produces_report(tmp_path):
     image_paths = load_images(make_eval_dir(tmp_path))
     styles = ["deadpan", "noir"]

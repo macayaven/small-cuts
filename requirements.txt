@@ -1,6 +1,7 @@
 # Hugging Face Space runtime dependencies (mirror of pyproject [local] profile).
 gradio>=5.0
 pillow>=10.0
+pillow-heif>=0.18
 transformers>=4.49
 torch>=2.4
 accelerate>=1.0

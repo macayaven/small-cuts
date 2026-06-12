@@ -25,10 +25,12 @@ if ON_SPACE:
 from small_cuts import narrator, tts  # noqa: E402
 from small_cuts.ui import THEME, build_app  # noqa: E402
 
+# Eager load: download + pack weights at startup, not on the first click.
+# The @spaces.GPU mark lives on the ui.py event handlers (ZeroGPU's startup
+# scan only finds GPU functions on what Gradio binds).
 _backend = narrator.get_backend()
 if spaces is not None and _backend.name == "transformers":
-    _backend._load()  # eager: download + pack weights at startup, not first click
-    _backend.generate = spaces.GPU(duration=90)(_backend.generate)
+    _backend._load()
 
 if ON_SPACE and os.environ.get("SMALL_CUTS_TTS_BACKEND") == "kokoro":
     try:  # pre-warm the CPU TTS pipeline; first click stays snappy

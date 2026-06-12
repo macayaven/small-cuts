@@ -23,11 +23,11 @@ if ON_SPACE:
     os.environ.setdefault("SMALL_CUTS_TTS_BACKEND", "kokoro")
 
 from small_cuts import narrator, tts  # noqa: E402
-from small_cuts.ui import THEME, build_app  # noqa: E402
+from small_cuts.viewer import THEME, build_viewer_app  # noqa: E402
 
 # Eager load: download + pack weights at startup, not on the first click.
-# The @spaces.GPU mark lives on the ui.py event handlers (ZeroGPU's startup
-# scan only finds GPU functions on what Gradio binds).
+# The @spaces.GPU mark lives on the viewer's go-live handler (via ui._gpu;
+# ZeroGPU's startup scan only finds GPU functions on what Gradio binds).
 _backend = narrator.get_backend()
 if spaces is not None and _backend.name == "transformers":
     _backend._load()
@@ -39,7 +39,10 @@ if ON_SPACE and os.environ.get("SMALL_CUTS_TTS_BACKEND") == "kokoro":
         print(f"[small-cuts] kokoro pre-warm failed, falling back to mock TTS: {exc}")
         os.environ["SMALL_CUTS_TTS_BACKEND"] = "mock"
 
-demo = build_app()
+# The Space never runs engine mode: SMALL_CUTS_ENGINE_URL is only set on a
+# viewer machine next to a home-node engine. Here the viewer builds in
+# upload mode, feeding the stage from the local pipeline.
+demo = build_viewer_app()
 
 if __name__ == "__main__":
     demo.launch(theme=THEME)

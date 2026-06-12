@@ -20,7 +20,9 @@ from PIL import Image
 
 from .styles import DEFAULT_STYLE_KEY, STYLES, build_messages
 
-DEFAULT_MODEL_ID = "HuggingFaceTB/SmolVLM2-2.2B-Instruct"
+# M1 provisional pick (docs/eval/run-005-scored.md): best G (3.40) and V (3.03)
+# of the judged candidates. Challenger Qwen3-VL-8B pending in run-006.
+DEFAULT_MODEL_ID = "Qwen/Qwen2.5-VL-7B-Instruct"
 
 
 @dataclass(frozen=True)

@@ -17,7 +17,9 @@
 | 2026-06-12 | Prompt A/B judged: v2 "find the story" was a pure loss; reverted+hardened as v3, temp 0.7→0.3 | ✅ | docs/eval/prompt-ab-comparison.md |
 | 2026-06-12 | M2 title-card renderer: Claude spec+tests, Codex implementation, 22/22 green | ✅ | docs/specs/title-card.md, src/small_cuts/title_card.py |
 | 2026-06-12 | 5 real glasses videos staged (Spark `~/eval-videos`) + relayed locally | ✅ | fetch-eval-photos workflow |
-| — | M1: pick narrator model | ⬜ run-005 (prompt v3, temp 0.3, + Qwen-7B) — no candidate meets S>=4&G>=4 bar yet | docs/eval/prompt-ab-comparison.md |
+| 2026-06-12 | run-005 judged: v3+temp lifted all models (3B pass cells 13%→30%); none meets "most images" bar | ✅ | docs/eval/run-005-scored.md |
+| 2026-06-12 | M1 provisional pick: **Qwen2.5-VL-7B** (best G 3.40 + best V 3.03); DEFAULT_MODEL_ID updated | ✅ | src/small_cuts/narrator.py |
+| — | M1 confirm: run-006 challenger (Qwen3-VL-8B, the KB's original target) executing on Spark | ⏳ | Actions run 27399170174, issue #10 |
 | — | M2: TTS + title card + Off-Brand theme | ⬜ | — |
 | — | M3: Space live under hackathon org | ⬜ | — |
 | — | M4: demo video + social post + Field Notes | ⬜ | — |

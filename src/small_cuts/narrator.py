@@ -111,7 +111,12 @@ class TransformersBackend:
             return_dict=True,
             return_tensors="pt",
         ).to(model.device)
-        output = model.generate(**inputs, max_new_tokens=160, do_sample=True, temperature=0.7)
+        # Low temperature: judged eval showed small VLMs confabulate; sampling
+        # heat feeds it. Overridable per-run for eval sweeps.
+        temperature = float(os.environ.get("SMALL_CUTS_TEMPERATURE", "0.3"))
+        output = model.generate(
+            **inputs, max_new_tokens=160, do_sample=temperature > 0, temperature=temperature
+        )
         text = processor.batch_decode(
             output[:, inputs["input_ids"].shape[1] :], skip_special_tokens=True
         )[0]

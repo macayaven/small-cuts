@@ -1,0 +1,33 @@
+name: fetch-eval-photos
+
+# Dispatch-only relay: uploads the Spark's eval photos as a short-lived
+# artifact so tailnet-less sessions (cloud, or local without SSH grants)
+# can score the eval report against the actual images.
+on:
+  workflow_dispatch:
+    inputs:
+      images_dir:
+        description: Directory of eval photos on the Spark
+        default: ~/eval-photos
+
+jobs:
+  upload:
+    runs-on: [self-hosted, spark]
+    timeout-minutes: 10
+    steps:
+      - name: Stage photos
+        env:
+          SRC_RAW: ${{ inputs.images_dir || '~/eval-photos' }}
+        run: |
+          SRC="${SRC_RAW/#\~/$HOME}"
+          rm -rf staged-photos && mkdir staged-photos
+          cp "$SRC"/* staged-photos/
+          ls -la staged-photos
+
+      - name: Upload photos artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-photos
+          path: staged-photos/
+          if-no-files-found: error
+          retention-days: 1

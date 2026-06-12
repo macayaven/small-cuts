@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import gradio as gr
+import numpy as np
 from PIL import Image
 
 from .frames import pick_frame, sample_frames
 from .narrator import get_backend, narrate
 from .styles import DEFAULT_STYLE_KEY, style_choices
 from .title_card import derive_title, render_title_card
+from .tts import speak
 
 TITLE = "🎬 Small Cuts"
 TAGLINE = (
@@ -48,6 +50,13 @@ def _narrate_video_handler(
     return _narrate_handler(pick_frame(frames), style_key, scene_hint)
 
 
+def _speak_handler(text: str) -> tuple[int, np.ndarray] | None:
+    if not text.strip():
+        return None
+    speech = speak(text)
+    return speech.sample_rate, speech.audio
+
+
 def build_app() -> gr.Blocks:
     backend = get_backend()
     with gr.Blocks(title=TITLE) as demo:
@@ -72,6 +81,8 @@ def build_app() -> gr.Blocks:
             with gr.Column(scale=1):
                 card = gr.Image(label="Title card", interactive=False)
                 narration = gr.Textbox(label="The narrator says…", lines=8)
+                speak_btn = gr.Button("🔊 Read it to me", variant="secondary")
+                audio = gr.Audio(label="The narrator speaks…", interactive=False)
                 gr.Markdown(
                     f"<sub>backend: `{backend.name}` · model: `{backend.model_id}` · "
                     "no cloud APIs — Off the Grid 🏕️</sub>"
@@ -79,4 +90,5 @@ def build_app() -> gr.Blocks:
         go.click(_narrate_handler, inputs=[image, style, hint], outputs=[card, narration])
         image.change(_narrate_handler, inputs=[image, style, hint], outputs=[card, narration])
         video.change(_narrate_video_handler, inputs=[video, style, hint], outputs=[card, narration])
+        speak_btn.click(_speak_handler, inputs=[narration], outputs=[audio])
     return demo

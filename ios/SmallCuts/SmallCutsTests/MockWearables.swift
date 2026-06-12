@@ -16,6 +16,10 @@ final class MockWearables: WearablesInterface, @unchecked Sendable {
     var devicesValue: [DeviceIdentifier] = []
     var createSessionError: DeviceSessionError = .noEligibleDevice
     var permissionStatus: PermissionStatus = .granted
+    /// What `startRegistration()` emits. Default mimics a successful deep-link
+    /// round trip; set to `[]` to park the controller mid-registration and
+    /// drive transitions manually via `emitRegistration`.
+    var startRegistrationEmits: [RegistrationState] = [.registering, .registered]
 
     // Recorded interactions
     private(set) var startRegistrationCallCount = 0
@@ -50,8 +54,9 @@ final class MockWearables: WearablesInterface, @unchecked Sendable {
 
     func startRegistration() async throws(RegistrationError) {
         startRegistrationCallCount += 1
-        emitRegistration(.registering)
-        emitRegistration(.registered)
+        for state in startRegistrationEmits {
+            emitRegistration(state)
+        }
     }
 
     func handleUrl(_ url: URL) async throws(WearablesHandleURLError) -> Bool { true }

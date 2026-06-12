@@ -47,6 +47,18 @@ targets:
               - smallcuts
         # Camera-only app: MWDAT.DAMEnabled deliberately omitted (Bug 4 — that key
         # is only for the Display capability).
+        #
+        # CREDENTIALS — verified against the working AeroWing app (2026-06-12):
+        # - MetaAppID "0" is the documented dev-mode value (on-device KB note).
+        # - AeroWing does NOT ship a literal ClientToken: it injects
+        #   $(MWDAT_CLIENT_TOKEN) from a gitignored xcconfig whose placeholder
+        #   shows the pattern "AR|<meta-app-id>|<token>" — a Wearables Developer
+        #   Center credential tied to that app's Meta App ID, so its value
+        #   cannot be reused here.
+        # TODO(LOUD, hardware runbook): if on-device registration fails with
+        # MetaAppID "0" / empty ClientToken, mint a WDC app id + client token
+        # for bundle id com.macayaven.smallcuts and fill both keys in
+        # (ClientToken format: "AR|<meta-app-id>|<token>").
         MWDAT:
           AppLinkURLScheme: "smallcuts://"
           MetaAppID: "0"

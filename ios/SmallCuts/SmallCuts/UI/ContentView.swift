@@ -56,9 +56,9 @@ struct ContentView: View {
                 Button("Start") { start() }
                     .buttonStyle(GoldButtonStyle(filled: true))
                     .disabled(activeSource != nil)
-                Button("Stop") { stopSource() }
+                Button("Stop") { stopTapped() }
                     .buttonStyle(GoldButtonStyle(filled: false))
-                    .disabled(activeSource == nil)
+                    .disabled(stopDisabled)
             }
 
             #if DEBUG
@@ -116,9 +116,32 @@ struct ContentView: View {
         }
     }
 
+    /// Stop must work even with no active FrameSource: a Connect-only flow
+    /// (registering/connecting/streaming) is cancelled via controller.stop().
+    private var stopDisabled: Bool {
+        if activeSource != nil { return false }
+        guard sourceKind == .glasses else { return true }
+        switch controller.state {
+        case .idle, .error:
+            return true
+        default:
+            return false
+        }
+    }
+
     private func connectGlasses() {
         startError = nil
         Task { await controller.connect() }
+    }
+
+    private func stopTapped() {
+        let hadSource = activeSource != nil
+        stopSource()
+        // No FrameSource was adopting the controller — stop it directly so an
+        // in-flight or established connect is cancelled/torn down too.
+        if !hadSource, sourceKind == .glasses {
+            controller.stop()
+        }
     }
 
     private func start() {

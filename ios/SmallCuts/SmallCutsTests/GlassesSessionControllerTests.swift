@@ -25,13 +25,28 @@ final class GlassesSessionControllerTests: XCTestCase {
 
     private func makeController(
         mock: MockWearables,
-        configurator: WearablesConfigurator? = nil
+        configurator: WearablesConfigurator? = nil,
+        registrationTimeout: TimeInterval = 120.0
     ) -> GlassesSessionController {
         GlassesSessionController(
             configurator: configurator ?? makeConfigured(),
             deviceWaitTimeout: 0.05, // keep fallback polling fast in tests
+            registrationTimeout: registrationTimeout,
             wearablesProvider: { mock }
         )
+    }
+
+    /// Polls (yield + tiny sleeps) until `condition` holds or `timeout` passes.
+    private func waitUntil(
+        timeout: TimeInterval = 2.0,
+        _ message: String = "condition not met in time",
+        _ condition: @MainActor () -> Bool
+    ) async {
+        let deadline = Date().addingTimeInterval(timeout)
+        while !condition() && Date() < deadline {
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTAssertTrue(condition(), message)
     }
 
     func test_connect_withNoDeviceAnywhere_endsInClearNoDeviceError() async {
@@ -141,5 +156,110 @@ final class GlassesSessionControllerTests: XCTestCase {
 
         await controller.stopAsync()
         XCTAssertEqual(controller.state, .idle)
+    }
+
+    // MARK: - Registration recoverability (T3 fix 2)
+
+    func test_registration_rekicksAfterUserCancelsInMetaAI() async {
+        let mock = MockWearables()
+        mock.registrationStateValue = .available
+        mock.startRegistrationEmits = [] // park: drive transitions manually
+        let controller = makeController(mock: mock)
+
+        let connectTask = Task { await controller.connect() }
+        await waitUntil("first registration kick never happened") {
+            mock.startRegistrationCallCount == 1
+        }
+
+        // Deep-link round trip lands back on .available after visible progress
+        // — the user cancelled inside Meta AI. The controller must re-kick.
+        mock.emitRegistration(.registering)
+        mock.emitRegistration(.available)
+        await waitUntil("controller did not re-kick after .registering -> .available") {
+            mock.startRegistrationCallCount == 2
+        }
+
+        // Second round trip completes.
+        mock.emitRegistration(.registering)
+        mock.emitRegistration(.registered)
+        await connectTask.value
+
+        XCTAssertEqual(mock.startRegistrationCallCount, 2)
+        guard case .error = controller.state else { // mock cannot mint a session
+            return XCTFail("expected terminal .error, got \(controller.state)")
+        }
+    }
+
+    func test_registration_timesOutWithRetryableError() async {
+        let mock = MockWearables()
+        mock.registrationStateValue = .available
+        mock.startRegistrationEmits = [] // round trip never completes
+        let controller = makeController(mock: mock, registrationTimeout: 0.1)
+
+        await controller.connect()
+
+        guard case .error(let message) = controller.state else {
+            return XCTFail("expected .error, got \(controller.state)")
+        }
+        XCTAssertTrue(
+            message.localizedCaseInsensitiveContains("timed out"),
+            "got: \(message)"
+        )
+    }
+
+    func test_stopAsync_cancelsParkedConnect() async {
+        let mock = MockWearables()
+        mock.registrationStateValue = .available
+        mock.startRegistrationEmits = [] // park inside the registration wait
+        let controller = makeController(mock: mock)
+
+        let connectTask = Task { await controller.connect() }
+        await waitUntil("connect never reached the registration park") {
+            mock.startRegistrationCallCount == 1
+        }
+        XCTAssertEqual(controller.state, .registering)
+
+        await controller.stopAsync()
+        await connectTask.value // parked connect must unwind, not hang
+
+        XCTAssertEqual(controller.state, .idle)
+    }
+
+    // MARK: - Teardown stream semantics (T3 fix 4)
+
+    func test_stopAsync_finishesFrameStreams() async {
+        let mock = MockWearables()
+        let controller = makeController(mock: mock)
+        let frames = controller.makeFrameStream()
+
+        let finished = expectation(description: "frame stream finished")
+        let consumer = Task {
+            for await _ in frames {}
+            finished.fulfill()
+        }
+
+        await controller.stopAsync()
+
+        await fulfillment(of: [finished], timeout: 2.0)
+        consumer.cancel()
+    }
+
+    // MARK: - Actionable SDK error mapping (T3 fix 5)
+
+    func test_connect_mapsGlassesAppUpdateRequiredToActionableMessage() async {
+        let mock = MockWearables()
+        mock.devicesValue = ["mock-device-1"] // reach the strategy-B createSession
+        mock.createSessionError = .datAppOnTheGlassesUpdateRequired
+        let controller = makeController(mock: mock)
+
+        await controller.connect()
+
+        guard case .error(let message) = controller.state else {
+            return XCTFail("expected .error, got \(controller.state)")
+        }
+        XCTAssertTrue(
+            message.localizedCaseInsensitiveContains("update the glasses app"),
+            "got: \(message)"
+        )
     }
 }

@@ -26,7 +26,7 @@ final class WearablesConfigurator {
 
     var isConfigured: Bool { phase == .configured }
 
-    private var waiters: [CheckedContinuation<Result<Void, ConfigurationFailure>, Never>] = []
+    private var waiters: [UUID: CheckedContinuation<Result<Void, ConfigurationFailure>, Never>] = [:]
 
     /// `internal` (not private) so tests can build isolated instances;
     /// production code uses `.shared`.
@@ -48,7 +48,9 @@ final class WearablesConfigurator {
     }
 
     /// Suspends until configuration finished; returns immediately if it already
-    /// did. Throws if configuration failed.
+    /// did. Throws if configuration failed, and `CancellationError` if the
+    /// waiting task is cancelled — so a connect parked on the gate can be
+    /// stopped instead of hanging forever.
     func awaitConfigured() async throws {
         switch phase {
         case .configured:
@@ -58,17 +60,45 @@ final class WearablesConfigurator {
         case .pending:
             break
         }
-        let result = await withCheckedContinuation { continuation in
-            waiters.append(continuation)
+        let id = UUID()
+        let result: Result<Void, ConfigurationFailure> = await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                switch phase {
+                case .configured:
+                    continuation.resume(returning: .success(()))
+                case .failed(let message):
+                    continuation.resume(returning: .failure(ConfigurationFailure(message: message)))
+                case .pending:
+                    if Task.isCancelled {
+                        // Cancelled before parking; the checkCancellation below
+                        // turns this into CancellationError.
+                        continuation.resume(returning: .success(()))
+                    } else {
+                        waiters[id] = continuation
+                    }
+                }
+            }
+        } onCancel: {
+            Task { @MainActor [weak self] in
+                self?.resumeCancelledWaiter(id)
+            }
         }
+        try Task.checkCancellation()
         try result.get()
     }
 
     private func resumeWaiters(with result: Result<Void, ConfigurationFailure>) {
         let parked = waiters
         waiters.removeAll()
-        for waiter in parked {
+        for waiter in parked.values {
             waiter.resume(returning: result)
         }
+    }
+
+    private func resumeCancelledWaiter(_ id: UUID) {
+        guard let waiter = waiters.removeValue(forKey: id) else { return }
+        // Resumed with .success; the awaiting side converts cancellation into
+        // CancellationError via Task.checkCancellation().
+        waiter.resume(returning: .success(()))
     }
 }

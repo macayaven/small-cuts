@@ -10,6 +10,11 @@ enum GlassesSessionError: LocalizedError, Equatable {
     case streamUnavailable
     case cameraPermissionDenied
     case registrationEnded
+    case registrationTimedOut
+    case glassesUpdateRequired
+    case hingesClosed
+    case glassesTooHot
+    case glassesLowBattery
     case connectFailed(String)
 
     var errorDescription: String? {
@@ -24,8 +29,93 @@ enum GlassesSessionError: LocalizedError, Equatable {
             return "Camera permission denied — grant it in the Meta AI app."
         case .registrationEnded:
             return "Registration stream ended before completing."
+        case .registrationTimedOut:
+            return "Registration timed out — retry."
+        case .glassesUpdateRequired:
+            return "Update the glasses app via Meta AI, then try again."
+        case .hingesClosed:
+            return "Open your glasses — the camera can't stream while they're folded."
+        case .glassesTooHot:
+            return "Glasses are too hot — let them cool down, then try again."
+        case .glassesLowBattery:
+            return "Glasses battery too low — charge them, then try again."
         case .connectFailed(let message):
             return message
+        }
+    }
+}
+
+extension GlassesSessionError {
+    /// Maps actionable session-level SDK errors to distinct user-facing cases
+    /// instead of flattening everything to `localizedDescription`.
+    init(sessionError: DeviceSessionError) {
+        switch sessionError {
+        case .datAppOnTheGlassesUpdateRequired:
+            self = .glassesUpdateRequired
+        case .thermalCritical, .thermalEmergency:
+            self = .glassesTooHot
+        case .batteryCritical, .peakPowerShutdown:
+            self = .glassesLowBattery
+        default:
+            self = .connectFailed(sessionError.errorDescription ?? "\(sessionError)")
+        }
+    }
+
+    /// Maps actionable stream-level SDK errors the same way.
+    init(streamError: MWDATCamera.StreamError) {
+        switch streamError {
+        case .hingesClosed:
+            self = .hingesClosed
+        case .thermalCritical, .thermalEmergency:
+            self = .glassesTooHot
+        case .batteryCritical, .peakPowerShutdown:
+            self = .glassesLowBattery
+        case .permissionDenied:
+            self = .cameraPermissionDenied
+        default:
+            self = .connectFailed("Stream error: \(streamError.localizedDescription)")
+        }
+    }
+}
+
+/// Thread-safe fan-out of frame continuations. Frames are yielded DIRECTLY
+/// from the SDK callback thread (`AsyncStream.Continuation` is Sendable and
+/// yield is thread-safe; `bufferingNewest` sheds backlog) — only the
+/// `latestImage` UI publish hops to the MainActor.
+final class FrameFanout: @unchecked Sendable {
+    private let lock = NSLock()
+    private var subscribers: [UUID: AsyncStream<CapturedFrame>.Continuation] = [:]
+
+    func add(_ id: UUID, _ continuation: AsyncStream<CapturedFrame>.Continuation) {
+        lock.lock()
+        subscribers[id] = continuation
+        lock.unlock()
+    }
+
+    func remove(_ id: UUID) {
+        lock.lock()
+        subscribers[id] = nil
+        lock.unlock()
+    }
+
+    func yield(_ frame: CapturedFrame) {
+        lock.lock()
+        let active = Array(subscribers.values)
+        lock.unlock()
+        for continuation in active {
+            continuation.yield(frame)
+        }
+    }
+
+    /// Finishes every live continuation so consumers observe stream
+    /// termination (same contract as `SimulatedFrameSource.stop()`).
+    func finishAll() {
+        lock.lock()
+        let active = Array(subscribers.values)
+        subscribers.removeAll()
+        lock.unlock()
+        for continuation in active {
+            continuation.finish()
         }
     }
 }
@@ -62,6 +152,9 @@ final class GlassesSessionController: ObservableObject {
     private let configurator: WearablesConfigurator
     /// Per-strategy budget for waiting on a device/session (intel: poll <= 5 s).
     private let deviceWaitTimeout: TimeInterval
+    /// Generous timebox for the registration deep-link round trip through
+    /// Meta AI — without it a parked connect is unrecoverable.
+    private let registrationTimeout: TimeInterval
     /// Lazy provider so `Wearables.shared` is NEVER touched before the configure
     /// gate opens (Bug 2). Tests inject a mock here.
     private let wearablesProvider: @MainActor () -> any WearablesInterface
@@ -72,28 +165,34 @@ final class GlassesSessionController: ObservableObject {
     private var cameraStream: MWDATCamera.Stream?
     private var listenerTokens: [any AnyListenerToken] = []
     private var watchTasks: [Task<Void, Never>] = []
-    private var frameSubscribers: [UUID: AsyncStream<CapturedFrame>.Continuation] = [:]
+    /// In-flight connect pipeline, retained so `stop()` can cancel it.
+    private var connectTask: Task<Void, Never>?
+    /// In-flight `Stream.start()`, retained so teardown can await/cancel it
+    /// before calling `stream.stop()`.
+    private var streamStartTask: Task<Void, Never>?
+    private let frameFanout = FrameFanout()
 
     init(
         configurator: WearablesConfigurator = .shared,
         deviceWaitTimeout: TimeInterval = 5.0,
+        registrationTimeout: TimeInterval = 120.0,
         wearablesProvider: @escaping @MainActor () -> any WearablesInterface = { Wearables.shared }
     ) {
         self.configurator = configurator
         self.deviceWaitTimeout = deviceWaitTimeout
+        self.registrationTimeout = registrationTimeout
         self.wearablesProvider = wearablesProvider
     }
 
     /// Fresh frame stream per consumer; safe to call repeatedly (an AsyncStream
     /// supports a single iteration, so each FrameSource gets its own).
     func makeFrameStream() -> AsyncStream<CapturedFrame> {
-        AsyncStream(bufferingPolicy: .bufferingNewest(2)) { continuation in
+        let fanout = frameFanout
+        return AsyncStream(bufferingPolicy: .bufferingNewest(2)) { continuation in
             let id = UUID()
-            self.frameSubscribers[id] = continuation
-            continuation.onTermination = { [weak self] _ in
-                Task { @MainActor in
-                    self?.frameSubscribers[id] = nil
-                }
+            fanout.add(id, continuation)
+            continuation.onTermination = { _ in
+                fanout.remove(id)
             }
         }
     }
@@ -108,8 +207,31 @@ final class GlassesSessionController: ObservableObject {
             return // already connecting/streaming — single concurrent session only
         }
 
+        // A previous failure (e.g. a stream error) may have left a live
+        // DeviceSession behind: without a teardown here the SDK throws
+        // sessionAlreadyExists on the next createSession, so the first
+        // reconnect after an error always failed. Keep new frame subscribers
+        // alive — only session-side state is cleared.
+        let needsTeardown: Bool
+        if case .error = state { needsTeardown = true } else { needsTeardown = false }
+
+        // Set synchronously (before any suspension) so a concurrent connect()
+        // call bails on the state guard above.
+        state = .configuring
+
+        let task = Task { [needsTeardown] in
+            if needsTeardown {
+                await teardown(finishingFrameStreams: false)
+            }
+            await runPipeline()
+        }
+        connectTask = task
+        await task.value
+    }
+
+    private func runPipeline() async {
+        defer { connectTask = nil }
         do {
-            state = .configuring
             try await configurator.awaitConfigured() // Bug 2 gate — no sleeps
             let wearables = wearablesProvider() // safe only after the gate
             self.wearables = wearables
@@ -126,6 +248,12 @@ final class GlassesSessionController: ObservableObject {
         } catch is CancellationError {
             await teardown()
             state = .idle
+        } catch let sessionError as DeviceSessionError {
+            await teardown()
+            state = .error(
+                GlassesSessionError(sessionError: sessionError).errorDescription
+                    ?? sessionError.localizedDescription
+            )
         } catch {
             await teardown()
             state = .error((error as? LocalizedError)?.errorDescription ?? "\(error)")
@@ -137,6 +265,13 @@ final class GlassesSessionController: ObservableObject {
     }
 
     func stopAsync() async {
+        // Cancel an in-flight connect and wait for it to unwind first so it
+        // cannot resurrect session state after our teardown.
+        if let task = connectTask {
+            connectTask = nil
+            task.cancel()
+            await task.value
+        }
         await teardown()
         state = .idle
     }
@@ -149,29 +284,55 @@ final class GlassesSessionController: ObservableObject {
 
         // Subscribe before kicking off so no transition is missed.
         let updates = wearables.registrationStateStream()
-        var kicked = false
+        var kickedBeforeWait = false
         if wearables.registrationState == .available {
-            kicked = true
+            kickedBeforeWait = true
             try await wearables.startRegistration() // deep-links out to Meta AI;
             // the return leg lands in SmallCutsApp.onOpenURL -> handleUrl.
         }
+        let initiallyKicked = kickedBeforeWait
 
-        for await registration in updates {
-            switch registration {
-            case .registered:
-                return
-            case .available:
-                if !kicked {
-                    kicked = true
-                    try await wearables.startRegistration()
+        // Timeboxed: the deep-link round trip through Meta AI can otherwise
+        // park forever (user never returns). If the state lands back on
+        // .available AFTER visible progress (.registering), the user cancelled
+        // in Meta AI — kick again instead of waiting on a dead round trip.
+        let registered = try await Self.raceThrowing(timeout: registrationTimeout) { () -> Bool in
+            var kicked = initiallyKicked
+            var sawProgress = false
+            for await registration in updates {
+                switch registration {
+                case .registered:
+                    return true
+                case .available:
+                    if !kicked {
+                        kicked = true
+                        try await wearables.startRegistration()
+                    } else if sawProgress {
+                        sawProgress = false
+                        try await wearables.startRegistration()
+                    }
+                    // A stale buffered .available (pre-kick snapshot) is
+                    // ignored: kicked && !sawProgress.
+                case .registering:
+                    sawProgress = true
+                case .unavailable:
+                    continue
+                @unknown default:
+                    continue
                 }
-            case .registering, .unavailable:
-                continue
-            @unknown default:
-                continue
             }
+            return false
         }
-        throw GlassesSessionError.registrationEnded
+
+        try Task.checkCancellation()
+        switch registered {
+        case true?:
+            return
+        case false?:
+            throw GlassesSessionError.registrationEnded
+        case nil:
+            throw GlassesSessionError.registrationTimedOut
+        }
     }
 
     // MARK: - Session (single concurrent DeviceSession, leaked-session guard)
@@ -266,6 +427,24 @@ final class GlassesSessionController: ObservableObject {
         }
     }
 
+    /// `race(timeout:_:)` for throwing operations (registration can re-kick,
+    /// and `startRegistration()` throws).
+    private static func raceThrowing<T: Sendable>(
+        timeout: TimeInterval,
+        _ operation: @escaping @Sendable () async throws -> T
+    ) async throws -> T? {
+        try await withThrowingTaskGroup(of: T?.self) { group in
+            group.addTask { try await operation() }
+            group.addTask {
+                try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
+                return nil
+            }
+            let first = try await group.next() ?? nil
+            group.cancelAll()
+            return first
+        }
+    }
+
     private func watchSession(_ session: DeviceSession) {
         watchTasks.append(Task { [weak self] in
             for await sessionState in session.stateStream() {
@@ -283,7 +462,10 @@ final class GlassesSessionController: ObservableObject {
         watchTasks.append(Task { [weak self] in
             for await sessionError in session.errorStream() {
                 guard let self else { return }
-                self.state = .error("Session error: \(sessionError.localizedDescription)")
+                self.state = .error(
+                    GlassesSessionError(sessionError: sessionError).errorDescription
+                        ?? sessionError.localizedDescription
+                )
             }
         })
     }
@@ -324,40 +506,58 @@ final class GlassesSessionController: ObservableObject {
             }
         })
 
+        // Frames are yielded to consumers DIRECTLY on the SDK callback thread
+        // (the fan-out is thread-safe and the buffering policy sheds backlog);
+        // only the latestImage UI publish hops to the MainActor.
+        let fanout = frameFanout
         listenerTokens.append(stream.videoFramePublisher.listen { [weak self] frame in
             guard let image = frame.makeUIImage() else { return }
             let captured = CapturedFrame(image: image, capturedAt: Date())
+            fanout.yield(captured)
             Task { @MainActor in
-                self?.broadcast(captured)
+                self?.latestImage = captured.image
             }
         })
 
         // Stream.start() is async and non-throwing; failures arrive here.
+        // Stream errors are terminal for this capture pipeline: surface an
+        // actionable message AND tear the session down, otherwise the live
+        // DeviceSession makes the next connect() throw sessionAlreadyExists.
         listenerTokens.append(stream.errorPublisher.listen { [weak self] streamError in
             Task { @MainActor in
-                self?.state = .error("Stream error: \(streamError.localizedDescription)")
+                guard let self else { return }
+                self.state = .error(
+                    GlassesSessionError(streamError: streamError).errorDescription
+                        ?? streamError.localizedDescription
+                )
+                await self.teardown()
             }
         })
 
-        Task { await stream.start() }
-    }
-
-    private func broadcast(_ frame: CapturedFrame) {
-        latestImage = frame.image
-        for continuation in frameSubscribers.values {
-            continuation.yield(frame)
-        }
+        streamStartTask = Task { await stream.start() }
     }
 
     // MARK: - Teardown
 
-    private func teardown() async {
+    /// Tears down the session-side pipeline. By default it also finishes all
+    /// frame-subscriber continuations (consumers observe stream termination,
+    /// matching SimulatedFrameSource semantics); `finishingFrameStreams: false`
+    /// is used when reconnecting from `.error` so subscribers created for the
+    /// NEW attempt survive the cleanup of the old session.
+    private func teardown(finishingFrameStreams: Bool = true) async {
         for task in watchTasks { task.cancel() }
         watchTasks.removeAll()
 
         let tokens = listenerTokens
         listenerTokens.removeAll()
         for token in tokens { await token.cancel() }
+
+        // Make sure an in-flight Stream.start() is not racing stream.stop().
+        if let task = streamStartTask {
+            streamStartTask = nil
+            task.cancel()
+            await task.value
+        }
 
         if let stream = cameraStream {
             cameraStream = nil
@@ -368,5 +568,9 @@ final class GlassesSessionController: ObservableObject {
             session.stop()
         }
         wearables = nil
+
+        if finishingFrameStreams {
+            frameFanout.finishAll()
+        }
     }
 }

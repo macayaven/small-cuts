@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import time
 from dataclasses import dataclass
+from functools import cache
 from typing import Protocol
 
 import numpy as np
@@ -56,7 +57,10 @@ class KokoroBackend:
                 raise RuntimeError(
                     "Kokoro TTS is not installed. Run `uv sync --extra tts` to enable it."
                 ) from exc
-            self._pipeline = KPipeline(lang_code="a")
+            # Pin to CPU: on ZeroGPU the hijacked CUDA is only usable inside
+            # @spaces.GPU, and the speak path runs outside it.
+            device = os.environ.get("SMALL_CUTS_TTS_DEVICE", "cpu")
+            self._pipeline = KPipeline(lang_code="a", device=device)
         return self._pipeline
 
     def synthesize(self, text: str) -> tuple[int, np.ndarray]:
@@ -79,11 +83,17 @@ _BACKENDS = {
 }
 
 
+@cache
+def _backend_instance(key: str) -> TTSBackend:
+    return _BACKENDS[key]()
+
+
 def get_tts_backend(name: str | None = None) -> TTSBackend:
     key = (name or os.environ.get("SMALL_CUTS_TTS_BACKEND", "mock")).lower()
     if key not in _BACKENDS:
         raise ValueError(f"Unknown TTS backend {key!r}; expected one of {sorted(_BACKENDS)}")
-    return _BACKENDS[key]()
+    # One instance per backend: the Kokoro pipeline loads once per process.
+    return _backend_instance(key)
 
 
 def speak(text: str, backend: TTSBackend | None = None) -> Speech:

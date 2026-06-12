@@ -14,6 +14,7 @@ from __future__ import annotations
 import os
 import time
 from dataclasses import dataclass
+from functools import cache
 from typing import Protocol
 
 from PIL import Image
@@ -84,11 +85,16 @@ class TransformersBackend:
             from transformers import AutoModelForImageTextToText, AutoProcessor
 
             self._processor = AutoProcessor.from_pretrained(self.model_id)
-            self._model = AutoModelForImageTextToText.from_pretrained(
-                self.model_id,
-                torch_dtype=torch.bfloat16 if torch.cuda.is_available() else torch.float32,
-                device_map="auto",
-            )
+            if torch.cuda.is_available():
+                # Explicit .to("cuda") — ZeroGPU packs weights on this call;
+                # accelerate's device_map dispatch would fight it.
+                self._model = AutoModelForImageTextToText.from_pretrained(
+                    self.model_id, torch_dtype=torch.bfloat16
+                ).to("cuda")
+            else:
+                self._model = AutoModelForImageTextToText.from_pretrained(
+                    self.model_id, torch_dtype=torch.float32, device_map="auto"
+                )
             self._pipe = True
         return self._processor, self._model
 
@@ -148,11 +154,17 @@ _BACKENDS = {
 }
 
 
+@cache
+def _backend_instance(key: str) -> Backend:
+    return _BACKENDS[key]()
+
+
 def get_backend(name: str | None = None) -> Backend:
     key = (name or os.environ.get("SMALL_CUTS_BACKEND", "mock")).lower()
     if key not in _BACKENDS:
         raise ValueError(f"Unknown backend {key!r}; expected one of {sorted(_BACKENDS)}")
-    return _BACKENDS[key]()
+    # One instance per backend: model weights load once per process, not per call.
+    return _backend_instance(key)
 
 
 def narrate(

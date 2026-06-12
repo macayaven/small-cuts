@@ -18,6 +18,7 @@ import os
 import shutil
 import socket
 import subprocess
+import threading
 import time
 from dataclasses import dataclass
 from functools import cache
@@ -164,9 +165,14 @@ class LlamaCppBackend:
         self._server_url = ""
         self._process: subprocess.Popen | None = None
         self._cleanup_registered = False
+        self._spawn_lock = threading.Lock()
 
     def generate(self, image: Image.Image, style_key: str, scene_hint: str) -> str:
-        server_url = self._external_url or self._ensure_server()
+        if self._external_url:
+            server_url = self._external_url
+        else:
+            with self._spawn_lock:  # Gradio handlers are threaded; spawn once
+                server_url = self._ensure_server()
         body = self._build_request(image, style_key, scene_hint)
         try:
             response = httpx.post(
@@ -258,7 +264,7 @@ class LlamaCppBackend:
             self._process = subprocess.Popen(
                 command,
                 stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
+                stderr=self._stderr_file(),
             )
         except OSError as exc:
             self._server_url = ""
@@ -295,12 +301,26 @@ class LlamaCppBackend:
             mmproj_path = hf_hub_download(LLAMA_REPO_ID, LLAMA_MMPROJ_FILENAME)
         return gguf_path, mmproj_path
 
+    def _stderr_file(self):
+        import tempfile
+
+        self._stderr_path = Path(tempfile.gettempdir()) / f"llama-server-{os.getpid()}.err"
+        return open(self._stderr_path, "w")
+
+    def _stderr_tail(self, lines: int = 5) -> str:
+        path = getattr(self, "_stderr_path", None)
+        if not path or not Path(path).exists():
+            return ""
+        tail = Path(path).read_text().splitlines()[-lines:]
+        return (" Last stderr lines: " + " | ".join(tail)) if tail else ""
+
     def _wait_for_health(self, server_url: str) -> None:
         deadline = time.monotonic() + LLAMA_TIMEOUT_S
         while time.monotonic() < deadline:
             if self._process is not None and self._process.poll() is not None:
                 raise RuntimeError(
-                    f"llama-server exited before becoming healthy at {server_url}. "
+                    f"llama-server exited before becoming healthy at {server_url} "
+                    f"(a port conflict is possible).{self._stderr_tail()} "
                     "Check the GGUF/mmproj paths and llama.cpp installation."
                 )
             try:

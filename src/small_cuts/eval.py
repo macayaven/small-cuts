@@ -29,17 +29,8 @@ CANDIDATE_MODELS = [
 
 EVAL_STYLES = ["deadpan", "noir", "nature_doc"]
 
-IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp"}
-
-# iPhone/Android shoot HEIC by default; register the opener if available so
-# Pillow can read them, and accept the suffixes.
-try:
-    import pillow_heif
-
-    pillow_heif.register_heif_opener()
-    IMAGE_SUFFIXES = IMAGE_SUFFIXES | {".heic", ".heif"}
-except ImportError:
-    pass
+# .heic/.heif (iPhone default) decode via pillow-heif, registered in small_cuts/__init__.py
+IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif"}
 
 # Real Small Cuts input is video (Ray-Ban / phone clips). When a directory holds
 # videos, we sample frames so the model eval runs on representative stills.

@@ -45,20 +45,14 @@ RUBRIC = (
 
 def _sample_video_frames(video: Path, every_n_seconds: float = 3.0) -> list[Path]:
     """Extract frames from a video into sibling JPEGs; return their paths."""
-    import av  # PyAV — ffmpeg-backed, reliable ARM64 wheels
+    from small_cuts.frames import sample_frames
 
+    images = sample_frames(video, every_n_seconds=every_n_seconds)
     out_paths: list[Path] = []
-    container = av.open(str(video))
-    stream = container.streams.video[0]
-    fps = float(stream.average_rate or 30)
-    step = max(1, int(fps * every_n_seconds))
-    for i, frame in enumerate(container.decode(stream)):
-        if i % step:
-            continue
+    for i, img in enumerate(images):
         out = video.with_name(f"{video.stem}_frame{i:06d}.jpg")
-        frame.to_image().save(out)
+        img.save(out)
         out_paths.append(out)
-    container.close()
     return out_paths
 
 

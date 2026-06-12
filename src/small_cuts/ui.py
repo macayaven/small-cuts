@@ -5,6 +5,7 @@ from __future__ import annotations
 import gradio as gr
 from PIL import Image
 
+from .frames import pick_frame, sample_frames
 from .narrator import get_backend, narrate
 from .styles import DEFAULT_STYLE_KEY, style_choices
 
@@ -29,6 +30,16 @@ def _narrate_handler(image: Image.Image | None, style_key: str, scene_hint: str)
     return result.text
 
 
+def _narrate_video_handler(video_path: str | None, style_key: str, scene_hint: str) -> str:
+    if not video_path:
+        return (
+            "The narrator squints at the projector. Nothing. He has narrated "
+            "blank screens before, but never by choice."
+        )
+    frames = sample_frames(video_path)
+    return _narrate_handler(pick_frame(frames), style_key, scene_hint)
+
+
 def build_app() -> gr.Blocks:
     backend = get_backend()
     with gr.Blocks(title=TITLE) as demo:
@@ -36,6 +47,10 @@ def build_app() -> gr.Blocks:
         with gr.Row():
             with gr.Column(scale=1):
                 image = gr.Image(label="Your moment", type="pil", sources=["upload", "webcam"])
+                video = gr.Video(
+                    label="…or a clip (glasses or phone, narrates the middle of the scene)",
+                    sources=["upload"],
+                )
                 style = gr.Dropdown(
                     choices=style_choices(),
                     value=DEFAULT_STYLE_KEY,
@@ -54,4 +69,5 @@ def build_app() -> gr.Blocks:
                 )
         go.click(_narrate_handler, inputs=[image, style, hint], outputs=narration)
         image.change(_narrate_handler, inputs=[image, style, hint], outputs=narration)
+        video.change(_narrate_video_handler, inputs=[video, style, hint], outputs=narration)
     return demo

@@ -18,6 +18,10 @@ local = [
     "torchvision>=0.19",
     "accelerate>=1.0",
 ]
+tts = [
+    "kokoro>=0.9",
+    "soundfile>=0.12",
+]
 llama = [
     "llama-cpp-python>=0.3",
 ]

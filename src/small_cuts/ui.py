@@ -8,6 +8,7 @@ from PIL import Image
 from .frames import pick_frame, sample_frames
 from .narrator import get_backend, narrate
 from .styles import DEFAULT_STYLE_KEY, style_choices
+from .theme import build_theme
 
 TITLE = "🎬 Small Cuts"
 TAGLINE = (
@@ -16,8 +17,8 @@ TAGLINE = (
     "Every model under 32B. Everything runs in this Space."
 )
 
-# Placeholder theme — replaced by a full custom cinematic theme in M2 (Off-Brand quest).
-THEME = gr.themes.Monochrome(font=[gr.themes.GoogleFont("Spectral"), "serif"])
+# Off-Brand cinematic theme for the M2 custom UI quest.
+THEME = build_theme()
 
 
 def _narrate_handler(image: Image.Image | None, style_key: str, scene_hint: str) -> str:

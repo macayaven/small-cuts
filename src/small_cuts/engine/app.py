@@ -28,8 +28,12 @@ class VisibilityPatch(BaseModel):
     visibility: Visibility
 
 
-def _sse_event(scene: dict[str, Any]) -> str:
-    return f"id: {scene['seq']}\ndata: {json.dumps(scene)}\n\n"
+def _sse_event(event: dict[str, Any]) -> str:
+    data = f"data: {json.dumps(event)}\n\n"
+    seq = event.get("seq")
+    # No seq -> ephemeral event (error frames): no id line, so it never becomes
+    # a Last-Event-ID resume cursor and is never expected in replay.
+    return data if seq is None else f"id: {seq}\n{data}"
 
 
 def _last_event_id(raw: str | None) -> int | None:
@@ -45,7 +49,11 @@ def _last_event_id(raw: str | None) -> int | None:
 async def scene_event_stream(
     library: SceneLibrary, last_event_id: int | None, heartbeat_s: float
 ) -> AsyncIterator[str]:
-    """SSE body: replay seq > Last-Event-ID, then live scenes; pings while idle."""
+    """SSE body: replay seq > Last-Event-ID, then live events; pings while idle.
+
+    Live events without a seq (pipeline errors) pass straight through —
+    they are ephemeral and never part of replay.
+    """
     queue = library.subscribe()
     try:
         last_seq = -1
@@ -56,14 +64,16 @@ async def scene_event_stream(
                 yield _sse_event(scene)
         while True:
             try:
-                scene = await asyncio.wait_for(queue.get(), timeout=heartbeat_s)
+                event = await asyncio.wait_for(queue.get(), timeout=heartbeat_s)
             except asyncio.TimeoutError:
                 yield ": ping\n\n"
                 continue
-            if scene["seq"] <= last_seq:  # stored between replay and the live loop
-                continue
-            last_seq = scene["seq"]
-            yield _sse_event(scene)
+            seq = event.get("seq")
+            if seq is not None:
+                if seq <= last_seq:  # stored between replay and the live loop
+                    continue
+                last_seq = seq
+            yield _sse_event(event)
     finally:
         library.unsubscribe(queue)
 
@@ -80,7 +90,9 @@ def build_engine_app(
     to replace the sink entirely (tests).
     """
     lib = library if library is not None else SceneLibrary()
-    state = EngineState(sink=scene_sink) if scene_sink is not None else EngineState(sink=lib)
+    sink = scene_sink if scene_sink is not None else lib
+    # Errors fan out to the viewer stream too (D9): the timeline shows failures.
+    state = EngineState(sink=sink, error_sink=lib.publish_event)
     app = FastAPI(title="small-cuts engine")
     app.state.library = lib
 

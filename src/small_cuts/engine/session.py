@@ -80,6 +80,7 @@ class EngineState:
     """Process-lifetime state shared across session sockets."""
 
     sink: SceneSink = _noop_sink
+    error_sink: SceneSink | None = None  # receives every error ControlFrame (viewer fan-out, D9)
     seen_moment_ids: MomentIdLRU = field(default_factory=MomentIdLRU)
 
 
@@ -235,6 +236,7 @@ class SessionRunner:
             return
 
         await self._hand_to_sink(
+            self._state.sink,
             {
                 "scene_id": payload["scene_id"],
                 "moment_id": moment_id,
@@ -252,12 +254,14 @@ class SessionRunner:
                     "tts": tts_ms,
                     "total": queue_ms + narration_ms + tts_ms,
                 },
-            }
+            },
         )
 
-    async def _hand_to_sink(self, scene: dict[str, Any]) -> None:
+    async def _hand_to_sink(self, sink: SceneSink | None, payload: dict[str, Any]) -> None:
+        if sink is None:
+            return
         with contextlib.suppress(Exception):  # a sink bug must not kill the session
-            result = self._state.sink(scene)
+            result = sink(payload)
             if inspect.isawaitable(result):
                 await result
 
@@ -285,19 +289,20 @@ class SessionRunner:
         retryable: bool,
         code: str | None = None,
     ) -> None:
-        await self._send_json(
-            {
-                "contract_version": CONTRACT_VERSION,
-                "kind": "error",
-                "moment_id": moment_id,
-                "error": {
-                    "stage": stage,
-                    "code": (code or type(exc).__name__)[:60],
-                    "message": str(exc)[:300],
-                    "retryable": retryable,
-                },
-            }
-        )
+        frame = {
+            "contract_version": CONTRACT_VERSION,
+            "kind": "error",
+            "moment_id": moment_id,
+            "error": {
+                "stage": stage,
+                "code": (code or type(exc).__name__)[:60],
+                "message": str(exc)[:300],
+                "retryable": retryable,
+            },
+        }
+        await self._send_json(frame)
+        # D9 honest timeline: the same failure fans out to the viewer stream.
+        await self._hand_to_sink(self._state.error_sink, frame)
 
     async def _emit_status(self) -> None:
         snapshot = (self._processing, int(self._pending is not None))

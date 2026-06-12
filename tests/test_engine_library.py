@@ -28,6 +28,7 @@ from test_engine_session import Reader, make_envelope  # noqa: E402
 
 CONTRACTS = Path(__file__).parent.parent / "docs" / "contracts"
 NARRATED_SCENE_SCHEMA = json.loads((CONTRACTS / "narrated-scene.schema.json").read_text())
+CONTROL_SCHEMA = json.loads((CONTRACTS / "control.schema.json").read_text())
 
 
 @pytest.fixture(autouse=True)
@@ -259,6 +260,73 @@ def test_sse_resume_replays_missed_scenes_then_goes_live(tmp_path):
     live_id, live_scene = parse_sse(live)
     assert live_id == 3
     jsonschema.validate(live_scene, NARRATED_SCENE_SCHEMA)
+
+
+def test_pipeline_error_fans_out_to_viewer_subscribers(monkeypatch, tmp_path):
+    """A failing narration reaches the mobile WS AND the viewer feed (D9 honest timeline)."""
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("model fell over")
+
+    monkeypatch.setattr("small_cuts.narrator.narrate", boom)
+    lib = SceneLibrary(tmp_path / "lib")
+    queue = lib.subscribe()  # what a live SSE connection would be draining
+    envelope = make_envelope()
+    with TestClient(build_engine_app(library=lib)) as client:
+        with client.websocket_connect("/v1/session") as ws:
+            reader = Reader(ws)
+            ws.send_text(json.dumps(envelope))
+            ws_error = reader.next(lambda f: f.get("kind") == "error")
+            # The idle status follows the error_sink hand-off: the publish has happened.
+            reader.next(lambda f: f.get("kind") == "status" and f["status"]["busy"] is False)
+
+        event = queue.get_nowait()
+        assert event == ws_error  # the very same ControlFrame, both directions
+        jsonschema.validate(event, CONTROL_SCHEMA)
+        assert event["error"]["stage"] == "narration"
+        assert "seq" not in event  # ephemeral: never enters the replay window
+        assert client.get("/v1/scenes").json()["scenes"] == []  # nothing was stored
+
+
+def test_sse_error_event_has_no_id_and_is_absent_from_replay(tmp_path):
+    error_frame = {
+        "contract_version": "1.1.0",
+        "kind": "error",
+        "moment_id": str(uuid.uuid4()),
+        "error": {
+            "stage": "narration",
+            "code": "RuntimeError",
+            "message": "model fell over",
+            "retryable": True,
+        },
+    }
+
+    async def run():
+        lib = SceneLibrary(tmp_path / "lib")
+        await lib(make_sink_scene())  # seq 0, stored before the viewer connects
+        stream = scene_event_stream(lib, last_event_id=None, heartbeat_s=30.0)
+        first = asyncio.ensure_future(anext(stream))
+        await asyncio.sleep(0)  # let the stream subscribe before events land
+        lib.publish_event(error_frame)
+        error_event = await asyncio.wait_for(first, timeout=10)
+        await lib(make_sink_scene())  # seq 1, lands live after the error
+        live_event = await asyncio.wait_for(anext(stream), timeout=10)
+        await stream.aclose()
+
+        # Reconnect resuming from seq 0: replay yields stored scenes only.
+        resumed = scene_event_stream(lib, last_event_id=0, heartbeat_s=0.01)
+        replayed = []
+        while (event := await asyncio.wait_for(anext(resumed), timeout=10)) != ": ping\n\n":
+            replayed.append(event)
+        await resumed.aclose()
+        return error_event, live_event, replayed
+
+    error_event, live_event, replayed = asyncio.run(run())
+    assert error_event == f"data: {json.dumps(error_frame)}\n\n"  # ephemeral: no id: line
+    jsonschema.validate(json.loads(error_event.removeprefix("data: ").rstrip("\n")), CONTROL_SCHEMA)
+    assert parse_sse(live_event)[0] == 1  # scenes around the error still carry ids
+    assert [parse_sse(event)[0] for event in replayed] == [1]  # the error did not replay
+    jsonschema.validate(parse_sse(replayed[0])[1], NARRATED_SCENE_SCHEMA)
 
 
 def test_last_event_id_header_parsing():

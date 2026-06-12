@@ -76,8 +76,15 @@ class SceneLibrary:
     async def __call__(self, scene: dict[str, Any]) -> None:
         """SceneSink entry point: persist off the event loop, then publish."""
         narrated = await asyncio.to_thread(self.store, scene)
+        self.publish_event(narrated)
+
+    def publish_event(self, payload: dict[str, Any]) -> None:
+        """Fan any event (stored scene or ControlFrame error) to live subscribers.
+
+        Events without a seq (errors) are EPHEMERAL: not persisted, not in Last-Event-ID replay.
+        """
         for queue in list(self._subscribers):
-            queue.put_nowait(narrated)
+            queue.put_nowait(payload)
 
     def store(self, scene: dict[str, Any]) -> dict[str, Any]:
         """Persist media + index row (blocking); returns the stored NarratedScene."""

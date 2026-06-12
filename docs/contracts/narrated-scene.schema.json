@@ -1,20 +1,22 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/macayaven/small-cuts/docs/contracts/1.0.0/narrated-scene.schema.json",
+  "$id": "https://github.com/macayaven/small-cuts/docs/contracts/1.1.0/narrated-scene.schema.json",
   "title": "NarratedScene",
   "description": "One narrated scene, produced by the engine. The SAME object is the viewer's live SSE event (D7) and the library's stored entry (D6); media fields are engine-served URLs.",
   "type": "object",
   "required": [
+    "captured_at",
     "contract_version",
-    "scene_id",
-    "moment_id",
-    "session_id",
     "created_at",
+    "media",
+    "moment_id",
+    "narration",
+    "scene_id",
+    "seq",
+    "session_id",
     "style_key",
     "title",
-    "narration",
-    "visibility",
-    "media"
+    "visibility"
   ],
   "additionalProperties": false,
   "properties": {
@@ -120,6 +122,27 @@
           }
         }
       }
+    },
+    "seq": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Monotonic engine event id - SSE id: field; clients resume with Last-Event-ID."
+    },
+    "captured_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "From the source MomentEnvelope - the library's chronology key (created_at is engine time)."
+    },
+    "owner": {
+      "type": "string",
+      "description": "Reserved for multi-user: identity that owns the scene. v1 single-user engines emit a constant."
+    },
+    "share_token": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Reserved: capability token for visibility=shared links. Enforcement spec lands with the library milestone."
     }
   }
 }

@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/macayaven/small-cuts/docs/contracts/1.1.0/control.schema.json",
+  "title": "ControlFrame",
+  "description": "Engine -> capture-app control messages on the session WebSocket: envelope acknowledgement, pipeline errors, and backpressure status (D8). Every MomentEnvelope receives exactly one ack; errors and status frames may arrive any time.",
+  "type": "object",
+  "required": ["contract_version", "kind"],
+  "additionalProperties": false,
+  "properties": {
+    "contract_version": { "type": "string", "pattern": "^1\\." },
+    "kind": { "enum": ["ack", "error", "status"] },
+    "moment_id": {
+      "type": ["string", "null"],
+      "description": "Set for ack and error; null for status frames."
+    },
+    "ack": {
+      "type": "object",
+      "description": "kind=ack: the envelope's fate at admission (NOT completion - completion is the SceneAudio/NarratedScene or an error frame).",
+      "additionalProperties": false,
+      "properties": {
+        "result": { "enum": ["accepted", "duplicate", "rejected", "dropped_coalesced"] },
+        "detail": { "type": "string", "maxLength": 200 }
+      }
+    },
+    "error": {
+      "type": "object",
+      "description": "kind=error: a pipeline failure for an accepted moment, so the app is never blind to downstream failures.",
+      "additionalProperties": false,
+      "properties": {
+        "stage": { "enum": ["validation", "narration", "tts", "storage"] },
+        "code": { "type": "string", "maxLength": 60 },
+        "message": { "type": "string", "maxLength": 300 },
+        "retryable": { "type": "boolean" }
+      }
+    },
+    "status": {
+      "type": "object",
+      "description": "kind=status: backpressure signal. Apps suppress the gate while busy=true (D8).",
+      "additionalProperties": false,
+      "properties": {
+        "busy": { "type": "boolean" },
+        "queue_depth": { "type": "integer", "minimum": 0 }
+      }
+    }
+  }
+}

@@ -1,5 +1,7 @@
 # SmallCuts — Device Runbook (live test)
 
+> **Cold-start tip:** the first narration after engine boot takes ~17 s (llama-server spawn + model load). Send one throwaway moment (Simulated source, tap Mark) right after starting the engine so the live glasses test runs warm (~6 s end-to-end).
+
 App: SmallCuts (`com.macayaven.smallcuts`, XcodeGen) · Phone: iPhone 14 Pro · Glasses: Ray-Ban Meta · Engine: Mac Studio (tailnet `mac-studio`, port 8077).
 
 ## 0. Prereqs (before leaving the desk)

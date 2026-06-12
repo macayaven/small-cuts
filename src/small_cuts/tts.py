@@ -58,9 +58,25 @@ class KokoroBackend:
                     "Kokoro TTS is not installed. Run `uv sync --extra tts` to enable it."
                 ) from exc
             # Pin to CPU: on ZeroGPU the hijacked CUDA is only usable inside
-            # @spaces.GPU, and the speak path runs outside it.
+            # @spaces.GPU, and the speak path runs outside it. Forcing
+            # map_location keeps torch.load from initializing CUDA in the
+            # main process while restoring the checkpoint — that cuInit
+            # poisons every later ZeroGPU worker fork ("No CUDA GPUs are
+            # available").
+            import torch
+
             device = os.environ.get("SMALL_CUTS_TTS_DEVICE", "cpu")
-            self._pipeline = KPipeline(lang_code="a", device=device)
+            original_load = torch.load
+
+            def _cpu_load(*args, **kwargs):
+                kwargs["map_location"] = "cpu"
+                return original_load(*args, **kwargs)
+
+            torch.load = _cpu_load
+            try:
+                self._pipeline = KPipeline(lang_code="a", device=device)
+            finally:
+                torch.load = original_load
         return self._pipeline
 
     def synthesize(self, text: str) -> tuple[int, np.ndarray]:

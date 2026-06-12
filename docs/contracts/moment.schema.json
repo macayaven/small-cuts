@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/macayaven/small-cuts/docs/contracts/1.0.0/moment.schema.json",
+  "$id": "https://github.com/macayaven/small-cuts/docs/contracts/1.1.0/moment.schema.json",
   "title": "MomentEnvelope",
   "description": "One gated moment from a capture app to the narration engine (D1/D2). Sent as a WebSocket text frame (JSON); frame payloads are base64 JPEG.",
   "type": "object",
@@ -115,6 +115,19 @@
             "cellular",
             "tailnet"
           ]
+        },
+        "tz_offset_min": {
+          "type": "integer",
+          "minimum": -840,
+          "maximum": 840
+        },
+        "orientation": {
+          "enum": [
+            "portrait",
+            "landscape",
+            "portrait_upside_down",
+            "landscape_flipped"
+          ]
         }
       }
     },
@@ -124,6 +137,16 @@
         "null"
       ],
       "description": "Chain for the engine's chronology; null at session start."
+    },
+    "seq": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Monotonic per-session counter for diagnosis; ordering authority is captured_at (engine dedupes on moment_id - idempotent resends after reconnect are safe)."
+    },
+    "sent_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Upload instant, for capture->engine latency attribution."
     }
   }
 }

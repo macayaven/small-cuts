@@ -18,7 +18,7 @@ _TINY_JPEG_B64 = base64.b64encode(b"\xff\xd8\xff\xdb fake-jpeg \xff\xd9").decode
 
 GOLDEN = {
     "moment.schema.json": {
-        "contract_version": "1.0.0",
+        "contract_version": "1.1.0",
         "moment_id": "1b4e28ba-2fa1-11d2-883f-0016d3cca427",
         "session_id": "2026-06-12-morning-walk",
         "captured_at": "2026-06-12T09:30:00Z",
@@ -33,7 +33,9 @@ GOLDEN = {
         "prev_moment_id": None,
     },
     "narrated-scene.schema.json": {
-        "contract_version": "1.0.0",
+        "contract_version": "1.1.0",
+        "seq": 412,
+        "captured_at": "2026-06-12T09:30:00Z",
         "scene_id": "9f1c7e4a-2fa1-11d2-883f-0016d3cca427",
         "moment_id": "1b4e28ba-2fa1-11d2-883f-0016d3cca427",
         "session_id": "2026-06-12-morning-walk",
@@ -55,14 +57,21 @@ GOLDEN = {
         },
     },
     "scene-audio.schema.json": {
-        "contract_version": "1.0.0",
+        "contract_version": "1.1.0",
         "scene_id": "9f1c7e4a-2fa1-11d2-883f-0016d3cca427",
         "moment_id": "1b4e28ba-2fa1-11d2-883f-0016d3cca427",
+        "created_at": "2026-06-12T09:30:08Z",
+        "play_by": "2026-06-12T09:31:08Z",
         "format": "wav_complete",
         "audio_b64": _TINY_JPEG_B64,
         "sample_rate": 24000,
-        "chunk_seq": None,
         "narration": "The bicycle is mustard yellow.",
+    },
+    "control.schema.json": {
+        "contract_version": "1.1.0",
+        "kind": "ack",
+        "moment_id": "1b4e28ba-2fa1-11d2-883f-0016d3cca427",
+        "ack": {"result": "accepted"},
     },
 }
 
@@ -87,3 +96,30 @@ def test_moment_frame_size_capped():
     oversized["frames"][0]["width"] = 2048  # violates the verified 1024px constraint
     with pytest.raises(jsonschema.ValidationError):
         jsonschema.validate(oversized, schema)
+
+
+CONTROL_VARIANTS = [
+    {
+        "contract_version": "1.1.0",
+        "kind": "error",
+        "moment_id": "1b4e28ba-2fa1-11d2-883f-0016d3cca427",
+        "error": {
+            "stage": "tts",
+            "code": "synth_failed",
+            "message": "kokoro oom",
+            "retryable": True,
+        },
+    },
+    {
+        "contract_version": "1.1.0",
+        "kind": "status",
+        "moment_id": None,
+        "status": {"busy": True, "queue_depth": 1},
+    },
+]
+
+
+@pytest.mark.parametrize("sample", CONTROL_VARIANTS)
+def test_control_frame_variants(sample):
+    schema = json.loads((CONTRACTS / "control.schema.json").read_text())
+    jsonschema.validate(sample, schema)

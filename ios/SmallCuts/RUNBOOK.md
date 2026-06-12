@@ -12,12 +12,13 @@ App: SmallCuts (`com.macayaven.smallcuts`, XcodeGen) · Phone: iPhone 14 Pro · 
 ## 1. Engine (Mac Studio)
 
 ```sh
-cd /Volumes/mac-studio-ssd/workspace/small-cuts
+cd /tmp/sdd-loop  # product/realtime-loop worktree — the engine module only exists here, NOT in the main checkout
 uv sync --extra dev --extra engine --extra tts
 SMALL_CUTS_BACKEND=llama_cpp SMALL_CUTS_TTS_BACKEND=kokoro uv run python -m small_cuts.engine
 ```
 
-- llama-server spawns automatically; first run loads models — allow ~1 min before connecting.
+- llama.cpp prereq: `llama-server` must be on PATH (`brew install llama.cpp`), or point `SMALL_CUTS_LLAMA_URL` at an already-running server.
+- llama-server spawns lazily on the FIRST moment, not at engine boot — the first narration takes ~1 min (GGUF auto-download from HF + model load); later ones are fast. The engine socket itself is ready immediately.
 - Quick smoke check without models: `SMALL_CUTS_BACKEND=mock uv run python -m small_cuts.engine`.
 - Leave the terminal visible — it is your engine log.
 
@@ -39,8 +40,8 @@ The four classic failure modes (check in this order):
 
 | Symptom | Cause | Fix |
 | --- | --- | --- |
-| `noEligibleDevice` / no device found | Glasses Developer Mode OFF in Meta AI | **Check this FIRST.** Meta AI → Settings → glasses → Developer Mode ON (resets after firmware updates). Retap Connect. |
-| Registration parks (stuck in "Registering…") | Meta AI never calls back | Built-in 120 s timeout re-kicks registration — wait it out, or retap Connect to re-kick immediately. |
+| "No glasses found — pair them in the Meta AI app…" (or an SDK `noEligibleDevice` error) | Glasses Developer Mode OFF in Meta AI | **Check this FIRST.** Meta AI → Settings → glasses → Developer Mode ON (resets after firmware updates). Retap Connect. |
+| Registration parks (stuck in "Registering…") | Meta AI never calls back | If you cancelled inside Meta AI the app re-kicks registration by itself. Otherwise a built-in 120 s timeout fails the connect with "Registration timed out — retry" — retap Connect. |
 | `sessionAlreadyExists` | Stale leaked session | Fixed via auto-teardown — just retap Connect. |
 | Transport failures (connects then drops, no frames) | Info.plist transport contract broken | Verify Info.plist still has: Bluetooth + camera + local-network usage strings, `NSBonjourServices` (`_meta-wearables._tcp/_udp`), `UISupportedExternalAccessoryProtocols` (`com.meta.ar.wearable`), `LSApplicationQueriesSchemes` (`fb-viewapp`). Source of truth: `project.yml`. |
 
@@ -61,12 +62,12 @@ Dev-mode credentials (`MetaAppID "0"` + empty ClientToken) should work. If regis
 
 - **Engine logs**: the terminal running `small_cuts.engine` on the Studio.
 - **Library** (captured moments): `~/.small-cuts/library` on the Studio.
-- **Scene viewer (SSE, JSON)**: `http://mac-studio:8077/v1/scenes` — watch scenes land in real time from any browser on the tailnet.
+- **Scene viewer**: `http://mac-studio:8077/v1/scenes` — JSON snapshot of captured scenes. Live SSE stream: `http://mac-studio:8077/v1/scenes/stream` — watch scenes land in real time from anything on the tailnet (`curl -N` is the most readable client).
 - **App stats line** (`sent X · ok X · coal X · rej X · err X · played X`):
   - `sent` — moments sent to the engine
   - `ok` — accepted by the engine
-  - `coal` — coalesced (dropped client-side in favor of a newer moment; normal under backpressure)
+  - `coal` — coalesced (queued moment dropped by the ENGINE in favor of a newer one; normal under backpressure)
   - `rej` — rejected by the engine (schema/contract problem if nonzero)
-  - `err` — transport errors (check tailnet/engine if climbing)
+  - `err` — engine pipeline errors (narration/TTS stage failures reported over the socket — check the engine log). Transport drops are NOT counted here; they show as the `reconnecting` badge below.
   - `played` — scenes voiced on the glasses; late clips are dropped, not played late, so `played` can lag `ok`
 - Engine link badge: idle / connecting / connected / reconnecting — `reconnecting` means transport dropped; check the phone's tailnet connection first.

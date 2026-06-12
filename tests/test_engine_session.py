@@ -233,6 +233,131 @@ def test_tts_failure_sends_error_frame(monkeypatch):
         assert error["error"]["retryable"] is True
 
 
+def test_oversized_decoded_frame_sends_validation_error():
+    # The declared width/height satisfy the schema; the pixels are what must be trusted.
+    big = io.BytesIO()
+    Image.new("RGB", (1100, 16), (10, 20, 30)).save(big, "JPEG")
+    envelope = make_envelope()
+    envelope["frames"][0]["jpeg_b64"] = base64.b64encode(big.getvalue()).decode()
+    with (
+        TestClient(build_engine_app()) as client,
+        client.websocket_connect("/v1/session") as ws,
+    ):
+        reader = Reader(ws)
+        ws.send_text(json.dumps(envelope))
+        assert reader.next_ack()["ack"]["result"] == "accepted"
+
+        error = reader.next(lambda f: f.get("kind") == "error")
+        assert error["moment_id"] == envelope["moment_id"]
+        assert error["error"]["stage"] == "validation"
+        assert error["error"]["code"] == "frame_exceeds_cap"
+        assert error["error"]["retryable"] is False
+
+
+def test_corrupt_jpeg_sends_validation_error_not_retryable():
+    envelope = make_envelope()
+    envelope["frames"][0]["jpeg_b64"] = base64.b64encode(b"definitely not a jpeg").decode()
+    with (
+        TestClient(build_engine_app()) as client,
+        client.websocket_connect("/v1/session") as ws,
+    ):
+        reader = Reader(ws)
+        ws.send_text(json.dumps(envelope))
+        assert reader.next_ack()["ack"]["result"] == "accepted"
+
+        error = reader.next(lambda f: f.get("kind") == "error")
+        assert error["error"]["stage"] == "validation"
+        assert error["error"]["code"] == "frame_decode_failed"
+        assert error["error"]["retryable"] is False
+
+        # The socket survives: a healthy envelope still narrates.
+        ws.send_text(json.dumps(make_envelope()))
+        assert reader.next_ack()["ack"]["result"] == "accepted"
+        reader.next_scene_audio()
+
+
+def test_failed_moment_resend_is_reprocessed(monkeypatch):
+    calls = {"n": 0}
+
+    def flaky_narrate(image, style_key=DEFAULT_STYLE_KEY, scene_hint="", backend=None):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("transient model failure")
+        return Narration(
+            text="Second time lucky.",
+            style_key=style_key,
+            backend="mock",
+            model_id="mock-narrator-0",
+            latency_s=0.0,
+        )
+
+    monkeypatch.setattr("small_cuts.narrator.narrate", flaky_narrate)
+    envelope = make_envelope()
+    with (
+        TestClient(build_engine_app()) as client,
+        client.websocket_connect("/v1/session") as ws,
+    ):
+        reader = Reader(ws)
+        ws.send_text(json.dumps(envelope))
+        assert reader.next_ack()["ack"]["result"] == "accepted"
+        error = reader.next(lambda f: f.get("kind") == "error")
+        assert error["error"]["retryable"] is True
+
+        # retryable:true is honest — the same moment_id is admitted again, not "duplicate".
+        ws.send_text(json.dumps(envelope))
+        assert reader.next_ack()["ack"]["result"] == "accepted"
+        scene = reader.next_scene_audio()
+        assert scene["moment_id"] == envelope["moment_id"]
+        assert calls["n"] == 2
+
+        # Success restores permanent dedupe.
+        ws.send_text(json.dumps(envelope))
+        assert reader.next_ack()["ack"]["result"] == "duplicate"
+
+
+def test_binary_frame_rejected_and_socket_survives():
+    with (
+        TestClient(build_engine_app()) as client,
+        client.websocket_connect("/v1/session") as ws,
+    ):
+        reader = Reader(ws)
+        ws.send_bytes(b"\x89PNG\r\n\x1a\n")
+        ack = reader.next_ack()
+        assert ack["ack"]["result"] == "rejected"
+        assert ack["moment_id"] is None
+        assert "binary" in ack["ack"]["detail"]
+
+        ws.send_text(json.dumps(make_envelope()))
+        assert reader.next_ack()["ack"]["result"] == "accepted"
+        reader.next_scene_audio()
+
+
+def test_scene_audio_schema_drift_sends_storage_error(monkeypatch):
+    class DriftedValidator:
+        def validate(self, payload):
+            raise jsonschema.ValidationError("payload drifted from scene-audio schema")
+
+    monkeypatch.setattr("small_cuts.engine.session._SCENE_AUDIO", DriftedValidator())
+    envelope = make_envelope()
+    with (
+        TestClient(build_engine_app()) as client,
+        client.websocket_connect("/v1/session") as ws,
+    ):
+        reader = Reader(ws)
+        ws.send_text(json.dumps(envelope))
+        assert reader.next_ack()["ack"]["result"] == "accepted"
+
+        error = reader.next(lambda f: f.get("kind") == "error")
+        assert error["moment_id"] == envelope["moment_id"]
+        assert error["error"]["stage"] == "storage"
+        assert error["error"]["code"] == "scene_audio_schema_drift"
+        assert error["error"]["retryable"] is False
+
+        # The drain task survived schema drift: the next envelope is still admitted.
+        ws.send_text(json.dumps(make_envelope()))
+        assert reader.next_ack()["ack"]["result"] == "accepted"
+
+
 def test_sink_receives_scene_dict():
     scenes: list[dict] = []
     envelope = make_envelope()

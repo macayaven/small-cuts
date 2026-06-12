@@ -129,3 +129,9 @@ def test_downscale_caps_longest_side():
 def test_downscale_leaves_small_images_alone():
     img = make_image(640, 480)
     assert _downscale(img, max_side=1024).size == (640, 480)
+
+
+def test_get_backend_resolves_llama_cpp(monkeypatch):
+    monkeypatch.setenv("SMALL_CUTS_BACKEND", "llama_cpp")
+    assert get_backend().name == "llama_cpp"
+    assert get_backend() is get_backend()  # singleton, like the other backends

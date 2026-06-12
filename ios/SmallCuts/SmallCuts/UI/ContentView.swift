@@ -99,7 +99,7 @@ struct ContentView: View {
                     .disabled(sourceKind != .glasses)
                 Button("Start") { start() }
                     .buttonStyle(GoldButtonStyle(filled: true))
-                    .disabled(coordinator.running)
+                    .disabled(coordinator.running || coordinator.starting)
                 Button("Mark") { coordinator.fireManual() }
                     .buttonStyle(GoldButtonStyle(filled: false))
                     .disabled(!coordinator.running)

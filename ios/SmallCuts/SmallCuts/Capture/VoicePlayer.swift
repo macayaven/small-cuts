@@ -26,11 +26,16 @@ final class AVAudioClipPlayer: NSObject, AudioClip, AVAudioPlayerDelegate {
         player.delegate = self
     }
 
+    /// Thrown when AVAudioPlayer.play() returns false — the hardware refused
+    /// (route/session contention). Surfaced so the queue policy drops the
+    /// clip and advances instead of wedging on a clip that never finishes.
+    struct PlaybackRefused: Error {}
+
     func play() throws {
         let session = AVAudioSession.sharedInstance()
         try session.setCategory(.playback)
         try session.setActive(true)
-        player.play()
+        guard player.play() else { throw PlaybackRefused() }
     }
 
     func stop() {
@@ -67,6 +72,7 @@ final class VoicePlayer: ObservableObject {
 
     private var queue: [SceneAudioMessage] = []
     private var current: (any AudioClip)?
+    private var interruptionObserver: (any NSObjectProtocol)?
 
     private let now: () -> Date
     private let makeClip: @MainActor (Data) throws -> any AudioClip
@@ -79,6 +85,25 @@ final class VoicePlayer: ObservableObject {
     ) {
         self.now = now
         self.makeClip = makeClip
+        // A call/Siri/another app taking the audio session stops our player
+        // without ever firing its delegate — treat the interrupted clip as
+        // finished so the queue advances instead of wedging.
+        interruptionObserver = NotificationCenter.default.addObserver(
+            forName: AVAudioSession.interruptionNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] note in
+            let type = (note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt)
+                .flatMap(AVAudioSession.InterruptionType.init(rawValue:))
+            guard type == .began else { return }
+            MainActor.assumeIsolated { self?.interruptionBegan() }
+        }
+    }
+
+    deinit {
+        if let interruptionObserver {
+            NotificationCenter.default.removeObserver(interruptionObserver)
+        }
     }
 
     func enqueue(_ message: SceneAudioMessage) {
@@ -127,5 +152,15 @@ final class VoicePlayer: ObservableObject {
         current = nil
         state = .idle
         playNextIfIdle()
+    }
+
+    /// The system took the audio session mid-clip. The interrupted clip will
+    /// never call back — stop it and let the D9 policy decide what in the
+    /// queue is still fresh enough to play.
+    private func interruptionBegan() {
+        guard let clip = current else { return }
+        clip.onFinished = nil
+        clip.stop()
+        clipFinished()
     }
 }

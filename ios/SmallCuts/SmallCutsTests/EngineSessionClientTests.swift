@@ -1,3 +1,4 @@
+import UIKit
 import XCTest
 
 @testable import SmallCuts
@@ -112,6 +113,28 @@ final class UnackedBufferTests: XCTestCase {
         buffer.record(momentId: "a", payload: "pa2")
         XCTAssertEqual(buffer.momentIds, ["a", "b"])
         XCTAssertEqual(buffer.pendingPayloads, ["pa2", "pb"])
+    }
+
+    func test_capDropsOldestAndCountsDrops() {
+        XCTAssertEqual(UnackedBuffer().capacity, 32, "default cap per T4 review")
+
+        var buffer = UnackedBuffer(capacity: 3)
+        for id in ["a", "b", "c"] { buffer.record(momentId: id, payload: "p\(id)") }
+        XCTAssertEqual(buffer.droppedCount, 0)
+
+        buffer.record(momentId: "d", payload: "pd")
+        XCTAssertEqual(buffer.momentIds, ["b", "c", "d"], "oldest evicted first")
+        XCTAssertEqual(buffer.pendingPayloads, ["pb", "pc", "pd"])
+        XCTAssertEqual(buffer.droppedCount, 1)
+
+        buffer.record(momentId: "e", payload: "pe")
+        XCTAssertEqual(buffer.momentIds, ["c", "d", "e"])
+        XCTAssertEqual(buffer.droppedCount, 2)
+
+        // Acks still clear normally below the cap.
+        buffer.clear(momentId: "d")
+        XCTAssertEqual(buffer.momentIds, ["c", "e"])
+        XCTAssertEqual(buffer.droppedCount, 2, "clears are not drops")
     }
 }
 
@@ -318,5 +341,101 @@ final class EngineSessionClientTests: XCTestCase {
         await fulfillment(of: [collected], timeout: 2.0)
         task.cancel()
         await client.disconnect()
+    }
+}
+
+// MARK: - Coordinator reconnect behaviour (suppression must not latch)
+
+/// Coordinator-level test through the existing seams (scripted socket factory
+/// via `makeClient`, scripted frame source): a `status busy` heard on one
+/// socket must not keep the gate suppressed after that socket dies — the
+/// engine never re-emits status on a fresh connection.
+@MainActor
+final class CaptureCoordinatorReconnectTests: XCTestCase {
+
+    final class ScriptedFrameSource: FrameSource {
+        let frames: AsyncStream<CapturedFrame>
+        private let continuation: AsyncStream<CapturedFrame>.Continuation
+
+        init() {
+            var continuation: AsyncStream<CapturedFrame>.Continuation!
+            frames = AsyncStream { continuation = $0 }
+            self.continuation = continuation
+        }
+
+        func start() async throws {}
+        func stop() { continuation.finish() }
+        func push(_ frame: CapturedFrame) { continuation.yield(frame) }
+    }
+
+    private func solidFrame(white: CGFloat) -> CapturedFrame {
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let size = CGSize(width: 8, height: 8)
+        let image = UIGraphicsImageRenderer(size: size, format: format).image { context in
+            UIColor(white: white, alpha: 1).setFill()
+            context.fill(CGRect(origin: .zero, size: size))
+        }
+        return CapturedFrame(image: image, capturedAt: Date())
+    }
+
+    private func waitUntil(
+        _ what: String,
+        timeout: TimeInterval = 2.0,
+        condition: @escaping () async -> Bool
+    ) async {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if await condition() { return }
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTFail("timed out waiting for \(what)")
+    }
+
+    func test_statusSuppressionResetsAcrossReconnect() async throws {
+        let factory = ScriptedSocketFactory()
+        let coordinator = CaptureCoordinator(
+            makeClient: {
+                EngineSessionClient(factory: factory, initialBackoff: 0.01, maxBackoff: 0.05)
+            },
+            deviceContext: { DeviceContext(tzOffsetMin: 0, orientation: "portrait", batteryPct: nil) }
+        )
+        let source = ScriptedFrameSource()
+        try await coordinator.start(
+            source: source,
+            engineURL: URL(string: "ws://engine.test:8077")!,
+            styleKey: "deadpan"
+        )
+        await waitUntil("first connect") {
+            factory.sockets.count == 1 && coordinator.engineLink == .connected
+        }
+
+        // Engine reports busy (D8 suppression)…
+        factory.sockets[0].push(
+            #"{"contract_version": "1.1.0", "kind": "status", "moment_id": null, "status": {"busy": true, "queue_depth": 1}}"#
+        )
+        // …proved consumed by an in-order marker ack right behind it.
+        factory.sockets[0].push(
+            #"{"contract_version": "1.1.0", "kind": "ack", "moment_id": "marker", "ack": {"result": "duplicate"}}"#
+        )
+        await waitUntil("status consumed") { coordinator.stats.duplicates == 1 }
+
+        // While suppressed, even a session_start frame must hold.
+        source.push(solidFrame(white: 0.2))
+        await waitUntil("frame observed") { coordinator.frameCount == 1 }
+        try await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertEqual(coordinator.stats.sent, 0, "suppressed gate must hold")
+
+        // The socket dies; the engine never re-sends status on the new one.
+        factory.sockets[0].fail()
+        await waitUntil("reconnect") {
+            factory.sockets.count == 2 && coordinator.engineLink == .connected
+        }
+
+        // Without the reset, suppression latches and this would never fire.
+        source.push(solidFrame(white: 0.8))
+        await waitUntil("post-reconnect fire") { coordinator.stats.sent == 1 }
+
+        coordinator.stop()
     }
 }

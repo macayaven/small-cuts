@@ -36,6 +36,9 @@ final class CaptureCoordinator: ObservableObject {
     }
 
     @Published private(set) var running = false
+    /// True from start() entry until it returns/throws — set synchronously
+    /// before the first await so a double-tap can't interleave two starts.
+    @Published private(set) var starting = false
     @Published private(set) var engineLink: EngineLink = .idle
     @Published private(set) var stats = Stats()
     @Published private(set) var lastError: String?
@@ -93,6 +96,10 @@ final class CaptureCoordinator: ObservableObject {
     }
 
     func start(source: any FrameSource, engineURL: URL, styleKey: String) async throws {
+        guard !starting else { return } // re-entrant start (double-tap) is a no-op
+        starting = true
+        defer { starting = false }
+
         stop()
         lastError = nil
         stats = Stats()
@@ -118,7 +125,7 @@ final class CaptureCoordinator: ObservableObject {
         frameTask = Task { [weak self] in
             for await frame in source.frames {
                 guard let self else { return }
-                self.handle(frame)
+                await self.handle(frame)
             }
             // Frame stream ended (source stopped or glasses session died).
             self?.running = false
@@ -147,35 +154,46 @@ final class CaptureCoordinator: ObservableObject {
     func fireManual() {
         guard running, let frame = lastFrame else { return }
         if case .fire(let scores) = gate.fireManually(frame) {
-            sendMoment(frame: frame, scores: scores)
+            Task { await sendMoment(frame: frame, scores: scores) }
         }
     }
 
     // MARK: - Pipeline
 
-    private func handle(_ frame: CapturedFrame) {
+    /// Gate decision stays on the frame path; the envelope build is awaited
+    /// here so consecutive fires keep their seq/prev_moment_id chronology.
+    private func handle(_ frame: CapturedFrame) async {
         preview = frame.image
         frameCount += 1
         lastFrame = frame
         if case .fire(let scores) = gate.evaluate(frame) {
-            sendMoment(frame: frame, scores: scores)
+            await sendMoment(frame: frame, scores: scores)
         }
     }
 
-    private func sendMoment(frame: CapturedFrame, scores: GateScores) {
+    private func sendMoment(frame: CapturedFrame, scores: GateScores) async {
         guard let client, builder != nil else { return }
-        guard let built = builder?.build(frame: frame, scores: scores, device: deviceContext())
-        else {
+        // JPEG downscale + encode is the expensive part — keep it off the
+        // main actor so the UI never stalls on a fired frame.
+        let image = frame.image
+        let encoded = await Task.detached(priority: .userInitiated) {
+            MomentBuilder.encodeFrame(image)
+        }.value
+        guard let encoded else {
             lastError = "frame JPEG encoding failed"
             return
         }
+        // stop()/start() may have raced the encode — drop, don't cross wires.
+        guard self.client === client,
+              let built = builder?.build(
+                  frame: frame, scores: scores, device: deviceContext(), encoded: encoded
+              )
+        else { return }
         stats.sent += 1
-        Task {
-            do {
-                try await client.send(envelope: built.envelope, momentId: built.momentId)
-            } catch {
-                lastError = "send failed: \(error.localizedDescription)"
-            }
+        do {
+            try await client.send(envelope: built.envelope, momentId: built.momentId)
+        } catch {
+            lastError = "send failed: \(error.localizedDescription)"
         }
     }
 
@@ -183,8 +201,12 @@ final class CaptureCoordinator: ObservableObject {
         switch event {
         case .connected:
             engineLink = .connected
+            // A fresh socket never re-emits status — without this reset a
+            // `busy` heard just before the drop would suppress forever.
+            gate.suppressed = false
         case .disconnected:
             engineLink = .reconnecting
+            gate.suppressed = false // stale suppression must not outlive its socket
         case .ack(_, let result, let detail):
             switch result {
             case .accepted:

@@ -109,14 +109,17 @@ struct MomentBuilder {
     }
 
     /// One fired frame -> (moment_id, envelope). Returns nil only if JPEG
-    /// encoding fails (never expected for camera/simulator frames).
+    /// encoding fails (never expected for camera/simulator frames). Pass a
+    /// pre-built `encoded` to keep the expensive `encodeFrame` off the main
+    /// actor — the call itself stays cheap dictionary assembly.
     mutating func build(
         frame: CapturedFrame,
         scores: GateScores,
         device: DeviceContext,
-        sentAt: Date = Date()
+        sentAt: Date = Date(),
+        encoded: EncodedFrame? = nil
     ) -> (momentId: String, envelope: [String: Any])? {
-        guard let encoded = Self.encodeFrame(frame.image) else { return nil }
+        guard let encoded = encoded ?? Self.encodeFrame(frame.image) else { return nil }
 
         let momentId = UUID().uuidString.lowercased()
         var context: [String: Any] = [

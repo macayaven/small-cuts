@@ -1,3 +1,4 @@
+import AVFoundation
 import XCTest
 
 @testable import SmallCuts
@@ -7,10 +8,15 @@ import XCTest
 final class VoicePlayerTests: XCTestCase {
 
     final class FakeClip: AudioClip {
+        struct PlayRefused: Error {}
         var onFinished: (() -> Void)?
+        var refusesToPlay = false
         private(set) var playCalls = 0
         private(set) var stopCalls = 0
-        func play() throws { playCalls += 1 }
+        func play() throws {
+            playCalls += 1
+            if refusesToPlay { throw PlayRefused() }
+        }
         func stop() { stopCalls += 1 }
         func finish() { onFinished?() }
     }
@@ -19,6 +25,8 @@ final class VoicePlayerTests: XCTestCase {
     final class Harness {
         var now: Date
         var clips: [FakeClip] = []
+        /// Creation indices (== attempted-play order) whose play() throws.
+        var refusingClipIndices: Set<Int> = []
         init(now: Date = Date(timeIntervalSince1970: 1_000_000)) { self.now = now }
     }
 
@@ -27,6 +35,7 @@ final class VoicePlayerTests: XCTestCase {
             now: { harness.now },
             makeClip: { _ in
                 let clip = FakeClip()
+                clip.refusesToPlay = harness.refusingClipIndices.contains(harness.clips.count)
                 harness.clips.append(clip)
                 return clip
             }
@@ -140,6 +149,53 @@ final class VoicePlayerTests: XCTestCase {
         harness.clips[0].finish()
         XCTAssertEqual(harness.clips.count, 1)
         XCTAssertEqual(player.state, .idle)
+    }
+
+    func test_failedPlayDropsClip_andAdvancesToNext() {
+        let harness = Harness()
+        harness.refusingClipIndices = [1] // the second clip refuses to start
+        let player = makePlayer(harness)
+        var dropped: [String] = []
+        player.onClipDropped = { dropped.append($0.narration ?? "") }
+
+        player.enqueue(message(playByOffset: 60, from: harness.now, narration: "first"))
+        player.enqueue(message(playByOffset: 60, from: harness.now, narration: "doomed"))
+        player.enqueue(message(playByOffset: 60, from: harness.now, narration: "third"))
+
+        harness.clips[0].finish()
+
+        // "doomed" failed to start: counted dropped, queue advanced to "third"
+        // — the player must not wedge waiting on a clip that never began.
+        XCTAssertEqual(dropped, ["doomed"])
+        XCTAssertEqual(player.droppedCount, 1)
+        XCTAssertEqual(player.playedCount, 2)
+        XCTAssertEqual(player.state, .playing(narration: "third"))
+    }
+
+    func test_audioSessionInterruption_stopsCurrentAndAdvances() {
+        let harness = Harness()
+        let player = makePlayer(harness)
+        player.enqueue(message(playByOffset: 60, from: harness.now, narration: "interrupted"))
+        player.enqueue(message(playByOffset: 60, from: harness.now, narration: "next"))
+
+        NotificationCenter.default.post(
+            name: AVAudioSession.interruptionNotification,
+            object: nil,
+            userInfo: [
+                AVAudioSessionInterruptionTypeKey:
+                    AVAudioSession.InterruptionType.began.rawValue
+            ]
+        )
+
+        // The interrupted clip is stopped (it will never call back) and the
+        // queue advances per D9.
+        XCTAssertEqual(harness.clips[0].stopCalls, 1)
+        XCTAssertEqual(harness.clips.count, 2)
+        XCTAssertEqual(player.state, .playing(narration: "next"))
+
+        // A stale onFinished from the stopped clip must not double-advance.
+        harness.clips[0].finish()
+        XCTAssertEqual(player.state, .playing(narration: "next"))
     }
 
     func test_onClipStartedFiresForStats() {

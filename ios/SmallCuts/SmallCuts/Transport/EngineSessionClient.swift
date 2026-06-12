@@ -114,9 +114,19 @@ enum EngineMessageParser {
 /// Envelopes sent but not yet admission-acked, in send order. After a
 /// reconnect every pending payload is resent — the engine dedupes on
 /// moment_id, so resends are idempotent. ANY ack result clears the entry.
+/// Bounded at `capacity`: a long outage drops the OLDEST envelopes (the
+/// stalest moments are the least worth narrating after reconnect) instead
+/// of hoarding base64 JPEGs without limit.
 struct UnackedBuffer {
+    let capacity: Int
     private var order: [String] = []
     private var payloads: [String: String] = [:]
+    /// Envelopes evicted oldest-first because the buffer hit `capacity`.
+    private(set) var droppedCount = 0
+
+    init(capacity: Int = 32) {
+        self.capacity = capacity
+    }
 
     var count: Int { order.count }
     var momentIds: [String] { order }
@@ -125,6 +135,11 @@ struct UnackedBuffer {
     mutating func record(momentId: String, payload: String) {
         if payloads[momentId] == nil { order.append(momentId) }
         payloads[momentId] = payload
+        while order.count > capacity {
+            let oldest = order.removeFirst()
+            payloads.removeValue(forKey: oldest)
+            droppedCount += 1
+        }
     }
 
     mutating func clear(momentId: String) {
@@ -164,14 +179,25 @@ final class URLSessionEngineSocket: EngineSocket, @unchecked Sendable {
         task.resume()
     }
 
-    func awaitOpen() async throws {
+    /// Resolved exactly once — by the pong or by the timeout, whichever lands
+    /// first. A host that blackholes the handshake can park sendPing's
+    /// callback indefinitely; without the deadline the whole reconnect loop
+    /// would wedge inside `makeSocket`.
+    func awaitOpen(timeout: TimeInterval = 10.0) async throws {
+        let task = self.task
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            let once = OnceFlag()
             task.sendPing { error in
+                guard once.trySet() else { return }
                 if let error {
                     continuation.resume(throwing: error)
                 } else {
                     continuation.resume()
                 }
+            }
+            DispatchQueue.global().asyncAfter(deadline: .now() + timeout) {
+                guard once.trySet() else { return }
+                continuation.resume(throwing: URLError(.timedOut))
             }
         }
     }
@@ -195,6 +221,21 @@ final class URLSessionEngineSocket: EngineSocket, @unchecked Sendable {
 
     func close() {
         task.cancel(with: .normalClosure, reason: nil)
+    }
+}
+
+/// Thread-safe one-shot flag so racing completion paths (pong vs timeout)
+/// resume a continuation exactly once.
+private final class OnceFlag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var fired = false
+
+    func trySet() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        let first = !fired
+        fired = true
+        return first
     }
 }
 
@@ -231,6 +272,8 @@ actor EngineSessionClient {
     private var unacked = UnackedBuffer()
 
     var unackedMomentIds: [String] { unacked.momentIds }
+    /// Envelopes evicted (oldest-first) because the un-acked cap was hit.
+    var droppedEnvelopeCount: Int { unacked.droppedCount }
 
     init(
         factory: any EngineSocketFactory = URLSessionEngineSocketFactory(),
@@ -283,8 +326,13 @@ actor EngineSessionClient {
         while !Task.isCancelled {
             do {
                 let socket = try await factory.makeSocket(url: url)
+                // disconnect() may have raced the dial: close the fresh socket
+                // instead of leaking a live connection nobody owns.
+                if Task.isCancelled {
+                    socket.close()
+                    break
+                }
                 self.socket = socket
-                backoff = initialBackoff
                 eventContinuation.yield(.connected)
                 for payload in unacked.pendingPayloads {
                     try await socket.sendText(payload) // idempotent: engine dedupes
@@ -292,9 +340,15 @@ actor EngineSessionClient {
                 while true {
                     let text = try await socket.receiveText()
                     try Task.checkCancellation()
+                    // Only a successful receive proves the link is real — the
+                    // open-ping alone must not reset backoff, or a host that
+                    // accepts then drops would hammer at 1 s forever.
+                    backoff = initialBackoff
                     handleInbound(text)
                 }
             } catch is CancellationError {
+                socket?.close()
+                socket = nil
                 break
             } catch {
                 socket?.close()

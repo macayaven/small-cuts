@@ -1,0 +1,279 @@
+"""Mobile-facing WebSocket session for the narration engine.
+
+MomentEnvelope in, ControlFrame + SceneAudio out, per docs/contracts.
+Backpressure is D8 (queue depth <= 1, coalesce-to-newest); freshness is D9
+(`play_by` = created_at + 60 s). Pipeline failures become error frames —
+the socket itself never crashes on a bad moment.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import base64
+import contextlib
+import inspect
+import io
+import json
+import time
+import uuid
+import wave
+from collections.abc import Callable
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from typing import Any
+
+import jsonschema
+import numpy as np
+from fastapi import WebSocket, WebSocketDisconnect
+from PIL import Image
+
+from small_cuts import narrator, tts
+from small_cuts.styles import DEFAULT_STYLE_KEY
+
+CONTRACT_VERSION = "1.1.0"
+PLAY_BY_SECONDS = 60
+_CONTRACTS = Path(__file__).resolve().parents[3] / "docs" / "contracts"
+
+SceneSink = Callable[[dict[str, Any]], Any]
+"""Receives every successful scene; Task 2 plugs the library/SSE fan-out here."""
+
+
+def _validator(name: str) -> jsonschema.Draft202012Validator:
+    return jsonschema.Draft202012Validator(json.loads((_CONTRACTS / name).read_text()))
+
+
+_MOMENT = _validator("moment.schema.json")
+_SCENE_AUDIO = _validator("scene-audio.schema.json")
+
+
+def _noop_sink(scene: dict[str, Any]) -> None:
+    return None
+
+
+@dataclass
+class EngineState:
+    """Process-lifetime state shared across session sockets."""
+
+    sink: SceneSink = _noop_sink
+    seen_moment_ids: set[str] = field(default_factory=set)
+
+
+@dataclass
+class _Queued:
+    envelope: dict[str, Any]
+    queued_at: float
+
+
+class SessionRunner:
+    """One connected capture app: admission, the single queue slot, the pipeline."""
+
+    def __init__(self, ws: WebSocket, state: EngineState) -> None:
+        self._ws = ws
+        self._state = state
+        self._send_lock = asyncio.Lock()
+        self._pending: _Queued | None = None
+        self._worker: asyncio.Task | None = None
+        self._processing = False
+        self._last_status: tuple[bool, int] | None = None
+
+    async def run(self) -> None:
+        try:
+            while True:
+                await self._admit(await self._ws.receive_text())
+        except WebSocketDisconnect:
+            pass
+        finally:
+            if self._worker is not None:
+                self._worker.cancel()
+
+    # -- admission (every envelope gets exactly one ack) ----------------------
+
+    async def _admit(self, raw: str) -> None:
+        try:
+            envelope = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            await self._send_ack(None, "rejected", f"invalid JSON: {exc}")
+            return
+        moment_id = envelope.get("moment_id") if isinstance(envelope, dict) else None
+        if not isinstance(moment_id, str):
+            moment_id = None
+        error = jsonschema.exceptions.best_match(_MOMENT.iter_errors(envelope))
+        if error is not None:
+            await self._send_ack(moment_id, "rejected", error.message)
+            return
+        if moment_id in self._state.seen_moment_ids:
+            await self._send_ack(moment_id, "duplicate")
+            return
+        self._state.seen_moment_ids.add(moment_id)
+
+        queued = _Queued(envelope, time.perf_counter())
+        if not self._processing:
+            self._processing = True
+            await self._send_ack(moment_id, "accepted")
+            self._worker = asyncio.create_task(self._drain(queued))
+        elif self._pending is None:
+            self._pending = queued
+            await self._send_ack(moment_id, "accepted")
+        else:  # D8: replace the un-started moment; stale narration is worse than none
+            dropped = self._pending
+            self._pending = queued
+            await self._send_ack(dropped.envelope["moment_id"], "dropped_coalesced")
+            await self._send_ack(moment_id, "accepted")
+        await self._emit_status()
+
+    # -- processing ------------------------------------------------------------
+
+    async def _drain(self, queued: _Queued) -> None:
+        current: _Queued | None = queued
+        try:
+            while current is not None:
+                await self._process(current)
+                current, self._pending = self._pending, None
+                await self._emit_status()
+        finally:
+            self._processing = False
+        await self._emit_status()  # skipped on cancellation: the socket is gone
+
+    async def _process(self, item: _Queued) -> None:
+        envelope = item.envelope
+        moment_id: str = envelope["moment_id"]
+        context = envelope.get("context") or {}
+        style_key = context.get("style_key") or DEFAULT_STYLE_KEY
+        started = time.perf_counter()
+        queue_ms = _ms(started - item.queued_at)
+        stage = "narration"
+        try:
+            image = _decode_first_frame(envelope)
+            narration = await asyncio.to_thread(
+                narrator.narrate,
+                image,
+                style_key=style_key,
+                scene_hint=context.get("user_hint", ""),
+            )
+            narration_ms = _ms(time.perf_counter() - started)
+            stage = "tts"
+            tts_started = time.perf_counter()
+            speech = await asyncio.to_thread(tts.speak, narration.text)
+            audio_b64 = base64.b64encode(_wav_bytes(speech.audio, speech.sample_rate)).decode()
+            tts_ms = _ms(time.perf_counter() - tts_started)
+        except Exception as exc:
+            await self._send_error(moment_id, stage, exc)
+            return
+
+        created_at = datetime.now(timezone.utc)
+        payload = {
+            "contract_version": CONTRACT_VERSION,
+            "scene_id": str(uuid.uuid4()),
+            "moment_id": moment_id,
+            "created_at": created_at.isoformat(),
+            "play_by": (created_at + timedelta(seconds=PLAY_BY_SECONDS)).isoformat(),
+            "format": "wav_complete",
+            "audio_b64": audio_b64,
+            "sample_rate": speech.sample_rate,
+            "narration": narration.text,
+        }
+        _SCENE_AUDIO.validate(payload)  # outgoing drift fails loudly, in tests first
+        await self._send_json(payload)
+        await self._hand_to_sink(
+            {
+                "scene_id": payload["scene_id"],
+                "moment_id": moment_id,
+                "session_id": envelope["session_id"],
+                "captured_at": envelope["captured_at"],
+                "created_at": payload["created_at"],
+                "style_key": style_key,
+                "narration": narration.text,
+                "image": image,
+                "audio": speech.audio,
+                "sample_rate": speech.sample_rate,
+                "latency_ms": {
+                    "queue": queue_ms,
+                    "narration": narration_ms,
+                    "tts": tts_ms,
+                    "total": queue_ms + narration_ms + tts_ms,
+                },
+            }
+        )
+
+    async def _hand_to_sink(self, scene: dict[str, Any]) -> None:
+        with contextlib.suppress(Exception):  # a sink bug must not kill the session
+            result = self._state.sink(scene)
+            if inspect.isawaitable(result):
+                await result
+
+    # -- outbound frames ---------------------------------------------------------
+
+    async def _send_ack(self, moment_id: str | None, result: str, detail: str = "") -> None:
+        ack: dict[str, Any] = {"result": result}
+        if detail:
+            ack["detail"] = detail[:200]
+        await self._send_json(
+            {
+                "contract_version": CONTRACT_VERSION,
+                "kind": "ack",
+                "moment_id": moment_id,
+                "ack": ack,
+            }
+        )
+
+    async def _send_error(self, moment_id: str, stage: str, exc: Exception) -> None:
+        await self._send_json(
+            {
+                "contract_version": CONTRACT_VERSION,
+                "kind": "error",
+                "moment_id": moment_id,
+                "error": {
+                    "stage": stage,
+                    "code": type(exc).__name__[:60],
+                    "message": str(exc)[:300],
+                    "retryable": True,
+                },
+            }
+        )
+
+    async def _emit_status(self) -> None:
+        snapshot = (self._processing, int(self._pending is not None))
+        if snapshot == self._last_status:
+            return
+        self._last_status = snapshot
+        await self._send_json(
+            {
+                "contract_version": CONTRACT_VERSION,
+                "kind": "status",
+                "moment_id": None,
+                "status": {"busy": snapshot[0], "queue_depth": snapshot[1]},
+            }
+        )
+
+    async def _send_json(self, payload: dict[str, Any]) -> None:
+        async with self._send_lock:
+            with contextlib.suppress(Exception):  # client gone mid-send; run() closes out
+                await self._ws.send_text(json.dumps(payload))
+
+
+def _decode_first_frame(envelope: dict[str, Any]) -> Image.Image:
+    data = base64.b64decode(envelope["frames"][0]["jpeg_b64"])
+    image = Image.open(io.BytesIO(data))
+    image.load()
+    return image
+
+
+def _wav_bytes(audio: np.ndarray, sample_rate: int) -> bytes:
+    buffer = io.BytesIO()
+    try:
+        import soundfile
+
+        soundfile.write(buffer, audio, sample_rate, format="WAV", subtype="PCM_16")
+    except ImportError:
+        pcm = (np.clip(audio, -1.0, 1.0) * 32767.0).astype("<i2")
+        with wave.open(buffer, "wb") as wav:
+            wav.setnchannels(1)
+            wav.setsampwidth(2)
+            wav.setframerate(sample_rate)
+            wav.writeframes(pcm.tobytes())
+    return buffer.getvalue()
+
+
+def _ms(seconds: float) -> int:
+    return max(0, round(seconds * 1000))

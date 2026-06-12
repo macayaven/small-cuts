@@ -68,11 +68,17 @@ async def scene_event_stream(
             except asyncio.TimeoutError:
                 yield ": ping\n\n"
                 continue
+            # Invariant: the library publishes each seq exactly once, so live
+            # events never need dedupe against each other. `last_seq` stays
+            # frozen at the replay boundary — it only filters scenes that were
+            # both replayed and queued (stored before replay, published after
+            # subscribe). It must NOT advance here: store() commits seq under
+            # the lock in a worker thread but publishes later on the loop, so
+            # concurrent sessions can publish out of seq order, and a moving
+            # cursor would drop the lower seq forever.
             seq = event.get("seq")
-            if seq is not None:
-                if seq <= last_seq:  # stored between replay and the live loop
-                    continue
-                last_seq = seq
+            if seq is not None and seq <= last_seq:
+                continue
             yield _sse_event(event)
     finally:
         library.unsubscribe(queue)

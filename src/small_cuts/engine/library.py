@@ -15,6 +15,7 @@ import contextlib
 import json
 import os
 import sqlite3
+import sys
 import threading
 from pathlib import Path
 from typing import Any
@@ -68,14 +69,44 @@ class SceneLibrary:
         self._db = sqlite3.connect(self.root / "library.sqlite3", check_same_thread=False)
         self._db.row_factory = sqlite3.Row
         with self._lock, self._db:
+            # WAL + busy_timeout: viewer reads don't block sink writes, and a
+            # briefly locked database waits instead of raising immediately.
+            self._db.execute("PRAGMA journal_mode=WAL")
+            self._db.execute("PRAGMA busy_timeout=5000")
             self._db.execute(_SCHEMA)
         self._subscribers: list[asyncio.Queue[dict[str, Any]]] = []
 
     # -- the sink -----------------------------------------------------------------
 
     async def __call__(self, scene: dict[str, Any]) -> None:
-        """SceneSink entry point: persist off the event loop, then publish."""
-        narrated = await asyncio.to_thread(self.store, scene)
+        """SceneSink entry point: persist off the event loop, then publish.
+
+        A failed store (disk full, sqlite error) must not be silent data loss:
+        the mobile client already received its SceneAudio, so log to stderr and
+        fan an error ControlFrame to the viewer stream — the timeline stays
+        honest. `_hand_to_sink`'s suppression remains the last-resort backstop.
+        """
+        try:
+            narrated = await asyncio.to_thread(self.store, scene)
+        except Exception as exc:
+            print(
+                f"small_cuts.engine: library write failed for scene {scene['scene_id']}: {exc!r}",
+                file=sys.stderr,
+            )
+            self.publish_event(
+                {
+                    "contract_version": CONTRACT_VERSION,
+                    "kind": "error",
+                    "moment_id": scene["moment_id"],
+                    "error": {
+                        "stage": "storage",
+                        "code": "library_write_failed",
+                        "message": str(exc)[:300],
+                        "retryable": False,
+                    },
+                }
+            )
+            return
         self.publish_event(narrated)
 
     def publish_event(self, payload: dict[str, Any]) -> None:

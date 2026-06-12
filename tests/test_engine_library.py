@@ -146,6 +146,7 @@ def test_library_root_from_env(tmp_path):
     lib = SceneLibrary()  # engine_env fixture points SMALL_CUTS_LIBRARY_DIR at tmp_path
     assert lib.root == (tmp_path / "library-env").resolve()
     assert (lib.root / "library.sqlite3").is_file()
+    assert lib._db.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
 
 
 def test_set_visibility_rejects_unknown_value(tmp_path):
@@ -288,6 +289,50 @@ def test_pipeline_error_fans_out_to_viewer_subscribers(monkeypatch, tmp_path):
         assert client.get("/v1/scenes").json()["scenes"] == []  # nothing was stored
 
 
+def test_storage_failure_observable_and_recoverable(monkeypatch, tmp_path, capsys):
+    """A failing store() is not silent loss: the mobile client keeps its SceneAudio,
+    stderr gets a line, the viewer feed gets a storage error frame, and the
+    library keeps working for the next scene."""
+    lib = SceneLibrary(tmp_path / "lib")
+    queue = lib.subscribe()  # what a live SSE connection would be draining
+    real_store = lib.store
+
+    def disk_full(scene):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(lib, "store", disk_full)
+    first, second = make_envelope(), make_envelope()
+    with TestClient(build_engine_app(library=lib)) as client:
+        with client.websocket_connect("/v1/session") as ws:
+            reader = Reader(ws)
+            ws.send_text(json.dumps(first))
+            audio = reader.next_scene_audio()  # the client got its scene before the store
+            assert audio["moment_id"] == first["moment_id"]
+            # The idle status follows the sink hand-off: the failure has been handled.
+            reader.next(lambda f: f.get("kind") == "status" and f["status"]["busy"] is False)
+
+            event = queue.get_nowait()
+            jsonschema.validate(event, CONTROL_SCHEMA)
+            assert event["kind"] == "error"
+            assert event["moment_id"] == first["moment_id"]
+            assert event["error"] == {
+                "stage": "storage",
+                "code": "library_write_failed",
+                "message": "disk full",
+                "retryable": False,
+            }
+            assert "small_cuts.engine: library write failed" in capsys.readouterr().err
+
+            monkeypatch.setattr(lib, "store", real_store)  # the disk came back
+            ws.send_text(json.dumps(second))
+            reader.next_scene_audio()
+            reader.next(lambda f: f.get("kind") == "status" and f["status"]["busy"] is False)
+
+        stored = client.get("/v1/scenes").json()["scenes"]
+        assert [s["moment_id"] for s in stored] == [second["moment_id"]]
+        assert queue.get_nowait()["moment_id"] == second["moment_id"]  # published live
+
+
 def test_sse_error_event_has_no_id_and_is_absent_from_replay(tmp_path):
     error_frame = {
         "contract_version": "1.1.0",
@@ -327,6 +372,37 @@ def test_sse_error_event_has_no_id_and_is_absent_from_replay(tmp_path):
     assert parse_sse(live_event)[0] == 1  # scenes around the error still carry ids
     assert [parse_sse(event)[0] for event in replayed] == [1]  # the error did not replay
     jsonschema.validate(parse_sse(replayed[0])[1], NARRATED_SCENE_SCHEMA)
+
+
+def test_sse_live_out_of_order_publish_delivers_both(tmp_path):
+    """store() commits seq in a worker thread; the publish lands on the loop later,
+    so concurrent sessions can publish seq 2 before seq 1. The dedupe cursor is
+    frozen at the replay boundary: it drops the replay/live overlap but must
+    never drop an out-of-order live scene."""
+
+    async def run():
+        lib = SceneLibrary(tmp_path / "lib")
+        overlap = lib.store(make_sink_scene())  # seq 0: the client's resume cursor
+        stream = scene_event_stream(lib, last_event_id=0, heartbeat_s=0.01)
+        first = asyncio.ensure_future(anext(stream))
+        await asyncio.sleep(0)  # subscribe + (empty) replay; the stream is live
+        # Two racing sessions: both rows committed before either publish runs.
+        one = lib.store(make_sink_scene())  # seq 1
+        two = lib.store(make_sink_scene())  # seq 2
+        lib.publish_event(overlap)  # replay overlap: already behind the cursor
+        lib.publish_event(two)  # the higher seq lands first
+        lib.publish_event(one)  # the lower seq must still be delivered
+        events = [await asyncio.wait_for(first, timeout=10)]
+        while (event := await asyncio.wait_for(anext(stream), timeout=10)) != ": ping\n\n":
+            events.append(event)
+        await stream.aclose()
+        return events
+
+    events = asyncio.run(run())
+    # seq 0 deduped (replay overlap); 2 then 1 delivered in publish order.
+    assert [parse_sse(event)[0] for event in events] == [2, 1]
+    for event in events:
+        jsonschema.validate(parse_sse(event)[1], NARRATED_SCENE_SCHEMA)
 
 
 def test_last_event_id_header_parsing():

@@ -78,8 +78,9 @@ def test_video_handler_narrates_with_mock_backend(tmp_path, monkeypatch):
     from small_cuts.ui import _narrate_video_handler
 
     clip = _write_clip(tmp_path / "clip.mp4", n_frames=90)
-    text = _narrate_video_handler(str(clip), "deadpan", "")
+    card, text = _narrate_video_handler(str(clip), "deadpan", "")
     assert "Deadpan" in text  # mock narration includes the style label
+    assert card.size == (1280, 720)  # title card rides along since M2 (#12)
 
 
 @pytest.mark.skipif(not FIXTURES.exists(), reason="real glasses fixtures not staged")

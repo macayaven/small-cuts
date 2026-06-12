@@ -14,6 +14,20 @@ STYLE_CARDS = {
 }
 
 
+def derive_title(text: str, max_len: int = 60) -> str:
+    value = text.strip()
+    if value.startswith("["):
+        tag_end = value.find("]")
+        if tag_end != -1:
+            value = value[tag_end + 1 :].strip()
+    if not value:
+        return "Untitled Scene"
+    title = _first_clause(value).strip()
+    if not title:
+        return "Untitled Scene"
+    return _truncate_title(title, max_len)
+
+
 def render_title_card(
     title: str,
     style_key: str,
@@ -70,6 +84,50 @@ def render_title_card(
     subtitle_y = min(height - getattr(subtitle_font, "size", 10) * 2, int(height * 0.78))
     _center(draw, style.label.upper(), width, subtitle_y, subtitle_font, fg)
     return image
+
+
+def _first_clause(text: str) -> str:
+    index = 0
+    while index < len(text):
+        if text.startswith("...", index):
+            if _ellipsis_ends_clause(text, index, 3):
+                return text[:index]
+            index += 3
+            continue
+        if text[index] == "…":
+            if _ellipsis_ends_clause(text, index, 1):
+                return text[:index]
+        elif text[index] in ".!?;—":
+            return text[:index]
+        index += 1
+    return text
+
+
+def _ellipsis_ends_clause(text: str, index: int, width: int) -> bool:
+    if len(text[:index].split()) < 3:
+        return False
+    next_index = index + width
+    if next_index >= len(text) or not text[next_index].isspace():
+        return False
+    while next_index < len(text) and text[next_index].isspace():
+        next_index += 1
+    return next_index < len(text) and text[next_index].isupper()
+
+
+def _truncate_title(title: str, max_len: int) -> str:
+    if max_len < 1:
+        return ""
+    if len(title) <= max_len:
+        return title
+    if max_len == 1:
+        return "…"
+    cut = -1
+    for index, char in enumerate(title[:max_len]):
+        if char.isspace():
+            cut = index
+    if cut <= 0:
+        return "…"
+    return f"{title[:cut].rstrip()}…"
 
 
 def _font(size):

@@ -36,9 +36,11 @@ REAL_JPEG_B64 = base64.b64encode(_buffer.getvalue()).decode()
 
 
 @pytest.fixture(autouse=True)
-def mock_backends(monkeypatch):
+def mock_backends(monkeypatch, tmp_path):
     monkeypatch.setenv("SMALL_CUTS_BACKEND", "mock")
     monkeypatch.setenv("SMALL_CUTS_TTS_BACKEND", "mock")
+    # build_engine_app() now persists scenes to a SceneLibrary; keep it off $HOME.
+    monkeypatch.setenv("SMALL_CUTS_LIBRARY_DIR", str(tmp_path / "library"))
 
 
 def make_envelope(**overrides) -> dict:

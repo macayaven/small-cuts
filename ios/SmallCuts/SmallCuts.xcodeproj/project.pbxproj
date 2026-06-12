@@ -1,0 +1,598 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		0182B87FF2BADFE367FEBA09 /* MomentBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F8660E1026A341E86A1D628 /* MomentBuilder.swift */; };
+		04AC0664C96CDB68C140E1AD /* SceneGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 747311FFFF3EBBE08579B573 /* SceneGate.swift */; };
+		1C699C9B8BDF1597FF5B5EC7 /* MWDATMockDevice in Frameworks */ = {isa = PBXBuildFile; productRef = 965C15ED97003637D957B94E /* MWDATMockDevice */; };
+		284837950350831DB8E2D463 /* WearablesConfiguratorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5AE63FCD178B040D4E5AACCA /* WearablesConfiguratorTests.swift */; };
+		2FAE9A5D44CC091E103D673D /* SmallCutsApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8BE8EFE87FBAEB667D037D5 /* SmallCutsApp.swift */; };
+		3B5C74042F368D706AF4C90F /* GlassesFrameSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = D267B2131EEBEDFE059D72D0 /* GlassesFrameSource.swift */; };
+		3FD6C8F9CF4814EA79057F31 /* MomentBuilderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0CA6E6EA32023B901FF0F493 /* MomentBuilderTests.swift */; };
+		41A6929A8EAC96EF89B43FC6 /* SceneGateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A55ECC61FBFF5D13B1E0C4E /* SceneGateTests.swift */; };
+		4401870527E956B28E828322 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 880FCDD4CBC896280003B194 /* ContentView.swift */; };
+		4B05C3B208C934BB3F25415D /* GlassesSessionController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B67D11D918137710F02749FD /* GlassesSessionController.swift */; };
+		5871CDA1E9D5FB33245184A7 /* MockGlassesDebugController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79916A519E7962A3ECB160A8 /* MockGlassesDebugController.swift */; };
+		63EE090BBD8E4B7CF087814E /* MWDATCore in Frameworks */ = {isa = PBXBuildFile; productRef = 8EB1B404036BFCCD7FF57C42 /* MWDATCore */; };
+		64D7D6D46F6F430FEFEEA44D /* GlassesSessionControllerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D6F4BA9FB54217A991614C5 /* GlassesSessionControllerTests.swift */; };
+		6A353C2C02C64E9657BE367A /* EngineSessionClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31D0A790E69CD08267B72A35 /* EngineSessionClientTests.swift */; };
+		7D5139A6D35FD05E744D4CC6 /* VoicePlayerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E9DDEF68041739F02721A89 /* VoicePlayerTests.swift */; };
+		83BDD19F1BBE8BF51058B7C7 /* CaptureCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A19AF4945B8733E10DFFDF16 /* CaptureCoordinator.swift */; };
+		871AB1F5FE0814DB70F255F6 /* SimulatedFrameSourceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CAC173A75920D39B139375BE /* SimulatedFrameSourceTests.swift */; };
+		AE9E22DC2E5DFD257EAC7118 /* WearablesConfigurator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73F07BCAAC50D048B18EEB5D /* WearablesConfigurator.swift */; };
+		C7DEA84FCDEF285AA62199C8 /* MWDATCore in Frameworks */ = {isa = PBXBuildFile; productRef = D51F7BE88A42D5D452245433 /* MWDATCore */; };
+		C9BDA4F6B08C0491B0ECC73E /* VoicePlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41132D629FB9E5F256BD6898 /* VoicePlayer.swift */; };
+		CE6036643BF4E487664F792C /* SimulatedFrameSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9EA3C204376F28F59E8B5592 /* SimulatedFrameSource.swift */; };
+		DE5D309947DC38633D58E171 /* FrameSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B69B2753ECED62682B756E4 /* FrameSource.swift */; };
+		E3C04106A0F64F24B5A89BE6 /* MWDATCamera in Frameworks */ = {isa = PBXBuildFile; productRef = 7479F73A35459057695F9DCB /* MWDATCamera */; };
+		EE17CB9889FAFF62B6F77ECE /* EngineSessionClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5910940C59EA51CEC91C7620 /* EngineSessionClient.swift */; };
+		EE971BCEF016CCE69A07E8BA /* MockWearables.swift in Sources */ = {isa = PBXBuildFile; fileRef = 583D4D6DCDF90B7420BE0024 /* MockWearables.swift */; };
+		EEDB9A7934E9685829CBDF2F /* EngineLoopSmokeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3143196467D93336B0F1931D /* EngineLoopSmokeTests.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		B700DDA22C46B3BBF1865216 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 6D1FFE8427D13994C165B3C9 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 3B54931FD28C91518EC027C1;
+			remoteInfo = SmallCuts;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		0CA6E6EA32023B901FF0F493 /* MomentBuilderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MomentBuilderTests.swift; sourceTree = "<group>"; };
+		107424152F0CCCDC3612560C /* SmallCutsTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = SmallCutsTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		23376BABE4247CA323AE33CA /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		3143196467D93336B0F1931D /* EngineLoopSmokeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EngineLoopSmokeTests.swift; sourceTree = "<group>"; };
+		31D0A790E69CD08267B72A35 /* EngineSessionClientTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EngineSessionClientTests.swift; sourceTree = "<group>"; };
+		41132D629FB9E5F256BD6898 /* VoicePlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoicePlayer.swift; sourceTree = "<group>"; };
+		4F8660E1026A341E86A1D628 /* MomentBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MomentBuilder.swift; sourceTree = "<group>"; };
+		583D4D6DCDF90B7420BE0024 /* MockWearables.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MockWearables.swift; sourceTree = "<group>"; };
+		5910940C59EA51CEC91C7620 /* EngineSessionClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EngineSessionClient.swift; sourceTree = "<group>"; };
+		5AE63FCD178B040D4E5AACCA /* WearablesConfiguratorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WearablesConfiguratorTests.swift; sourceTree = "<group>"; };
+		5D6F4BA9FB54217A991614C5 /* GlassesSessionControllerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlassesSessionControllerTests.swift; sourceTree = "<group>"; };
+		6A55ECC61FBFF5D13B1E0C4E /* SceneGateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneGateTests.swift; sourceTree = "<group>"; };
+		6B69B2753ECED62682B756E4 /* FrameSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrameSource.swift; sourceTree = "<group>"; };
+		73F07BCAAC50D048B18EEB5D /* WearablesConfigurator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WearablesConfigurator.swift; sourceTree = "<group>"; };
+		747311FFFF3EBBE08579B573 /* SceneGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneGate.swift; sourceTree = "<group>"; };
+		79916A519E7962A3ECB160A8 /* MockGlassesDebugController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MockGlassesDebugController.swift; sourceTree = "<group>"; };
+		880FCDD4CBC896280003B194 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		9E9DDEF68041739F02721A89 /* VoicePlayerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoicePlayerTests.swift; sourceTree = "<group>"; };
+		9EA3C204376F28F59E8B5592 /* SimulatedFrameSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SimulatedFrameSource.swift; sourceTree = "<group>"; };
+		A19AF4945B8733E10DFFDF16 /* CaptureCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureCoordinator.swift; sourceTree = "<group>"; };
+		B67D11D918137710F02749FD /* GlassesSessionController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlassesSessionController.swift; sourceTree = "<group>"; };
+		BE8D5D8A9097ADC2053624BC /* SmallCuts.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = SmallCuts.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		CAC173A75920D39B139375BE /* SimulatedFrameSourceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SimulatedFrameSourceTests.swift; sourceTree = "<group>"; };
+		D267B2131EEBEDFE059D72D0 /* GlassesFrameSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlassesFrameSource.swift; sourceTree = "<group>"; };
+		D8BE8EFE87FBAEB667D037D5 /* SmallCutsApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmallCutsApp.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		3B763488146166ADD7427B3E /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				63EE090BBD8E4B7CF087814E /* MWDATCore in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		5C4ED02C922A1B6F6AA59907 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C7DEA84FCDEF285AA62199C8 /* MWDATCore in Frameworks */,
+				E3C04106A0F64F24B5A89BE6 /* MWDATCamera in Frameworks */,
+				1C699C9B8BDF1597FF5B5EC7 /* MWDATMockDevice in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		3B9AB488596273A6C3640C1F /* Transport */ = {
+			isa = PBXGroup;
+			children = (
+				5910940C59EA51CEC91C7620 /* EngineSessionClient.swift */,
+			);
+			path = Transport;
+			sourceTree = "<group>";
+		};
+		495B7F71D609ABA69A38283D /* App */ = {
+			isa = PBXGroup;
+			children = (
+				D8BE8EFE87FBAEB667D037D5 /* SmallCutsApp.swift */,
+				73F07BCAAC50D048B18EEB5D /* WearablesConfigurator.swift */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		572FDDFE690661A0FAEC31A9 /* UI */ = {
+			isa = PBXGroup;
+			children = (
+				880FCDD4CBC896280003B194 /* ContentView.swift */,
+			);
+			path = UI;
+			sourceTree = "<group>";
+		};
+		5C63CE7EE96872F97D943402 /* SmallCuts */ = {
+			isa = PBXGroup;
+			children = (
+				23376BABE4247CA323AE33CA /* Info.plist */,
+				495B7F71D609ABA69A38283D /* App */,
+				C2CE144CCFD547185132F16F /* Capture */,
+				FDF7342E740F2253492E500E /* Glasses */,
+				90D2095CC0EE658F69AB7B7B /* Support */,
+				3B9AB488596273A6C3640C1F /* Transport */,
+				572FDDFE690661A0FAEC31A9 /* UI */,
+			);
+			path = SmallCuts;
+			sourceTree = "<group>";
+		};
+		76D4425680B8BC2C3FE326C9 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				BE8D5D8A9097ADC2053624BC /* SmallCuts.app */,
+				107424152F0CCCDC3612560C /* SmallCutsTests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		90D2095CC0EE658F69AB7B7B /* Support */ = {
+			isa = PBXGroup;
+			children = (
+				79916A519E7962A3ECB160A8 /* MockGlassesDebugController.swift */,
+			);
+			path = Support;
+			sourceTree = "<group>";
+		};
+		9CC680D0C1B6A66AF32B5E28 /* SmallCutsTests */ = {
+			isa = PBXGroup;
+			children = (
+				3143196467D93336B0F1931D /* EngineLoopSmokeTests.swift */,
+				31D0A790E69CD08267B72A35 /* EngineSessionClientTests.swift */,
+				5D6F4BA9FB54217A991614C5 /* GlassesSessionControllerTests.swift */,
+				583D4D6DCDF90B7420BE0024 /* MockWearables.swift */,
+				0CA6E6EA32023B901FF0F493 /* MomentBuilderTests.swift */,
+				6A55ECC61FBFF5D13B1E0C4E /* SceneGateTests.swift */,
+				CAC173A75920D39B139375BE /* SimulatedFrameSourceTests.swift */,
+				9E9DDEF68041739F02721A89 /* VoicePlayerTests.swift */,
+				5AE63FCD178B040D4E5AACCA /* WearablesConfiguratorTests.swift */,
+			);
+			path = SmallCutsTests;
+			sourceTree = "<group>";
+		};
+		A9A531601E5FCD9058F0E380 = {
+			isa = PBXGroup;
+			children = (
+				5C63CE7EE96872F97D943402 /* SmallCuts */,
+				9CC680D0C1B6A66AF32B5E28 /* SmallCutsTests */,
+				76D4425680B8BC2C3FE326C9 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		C2CE144CCFD547185132F16F /* Capture */ = {
+			isa = PBXGroup;
+			children = (
+				A19AF4945B8733E10DFFDF16 /* CaptureCoordinator.swift */,
+				6B69B2753ECED62682B756E4 /* FrameSource.swift */,
+				D267B2131EEBEDFE059D72D0 /* GlassesFrameSource.swift */,
+				4F8660E1026A341E86A1D628 /* MomentBuilder.swift */,
+				747311FFFF3EBBE08579B573 /* SceneGate.swift */,
+				9EA3C204376F28F59E8B5592 /* SimulatedFrameSource.swift */,
+				41132D629FB9E5F256BD6898 /* VoicePlayer.swift */,
+			);
+			path = Capture;
+			sourceTree = "<group>";
+		};
+		FDF7342E740F2253492E500E /* Glasses */ = {
+			isa = PBXGroup;
+			children = (
+				B67D11D918137710F02749FD /* GlassesSessionController.swift */,
+			);
+			path = Glasses;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		3B54931FD28C91518EC027C1 /* SmallCuts */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 8E46504E73C893C920440678 /* Build configuration list for PBXNativeTarget "SmallCuts" */;
+			buildPhases = (
+				A13F20900B3DD5AAEDC88600 /* Sources */,
+				5C4ED02C922A1B6F6AA59907 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = SmallCuts;
+			packageProductDependencies = (
+				D51F7BE88A42D5D452245433 /* MWDATCore */,
+				7479F73A35459057695F9DCB /* MWDATCamera */,
+				965C15ED97003637D957B94E /* MWDATMockDevice */,
+			);
+			productName = SmallCuts;
+			productReference = BE8D5D8A9097ADC2053624BC /* SmallCuts.app */;
+			productType = "com.apple.product-type.application";
+		};
+		599176B2C92C0600BB72BDD1 /* SmallCutsTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 2F6035E1375E41E41CC300E7 /* Build configuration list for PBXNativeTarget "SmallCutsTests" */;
+			buildPhases = (
+				A7C56219E8DFFEA9866A6D23 /* Sources */,
+				3B763488146166ADD7427B3E /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				EFB9ADFC0BD396A03A8334EF /* PBXTargetDependency */,
+			);
+			name = SmallCutsTests;
+			packageProductDependencies = (
+				8EB1B404036BFCCD7FF57C42 /* MWDATCore */,
+			);
+			productName = SmallCutsTests;
+			productReference = 107424152F0CCCDC3612560C /* SmallCutsTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		6D1FFE8427D13994C165B3C9 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+					3B54931FD28C91518EC027C1 = {
+						ProvisioningStyle = Automatic;
+					};
+				};
+			};
+			buildConfigurationList = AAD9A97ACF1AEE54024F76CC /* Build configuration list for PBXProject "SmallCuts" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = A9A531601E5FCD9058F0E380;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				683CA6C91C855DFB9DA702D5 /* XCRemoteSwiftPackageReference "meta-wearables-dat-ios" */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 76D4425680B8BC2C3FE326C9 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				3B54931FD28C91518EC027C1 /* SmallCuts */,
+				599176B2C92C0600BB72BDD1 /* SmallCutsTests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXSourcesBuildPhase section */
+		A13F20900B3DD5AAEDC88600 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				83BDD19F1BBE8BF51058B7C7 /* CaptureCoordinator.swift in Sources */,
+				4401870527E956B28E828322 /* ContentView.swift in Sources */,
+				EE17CB9889FAFF62B6F77ECE /* EngineSessionClient.swift in Sources */,
+				DE5D309947DC38633D58E171 /* FrameSource.swift in Sources */,
+				3B5C74042F368D706AF4C90F /* GlassesFrameSource.swift in Sources */,
+				4B05C3B208C934BB3F25415D /* GlassesSessionController.swift in Sources */,
+				5871CDA1E9D5FB33245184A7 /* MockGlassesDebugController.swift in Sources */,
+				0182B87FF2BADFE367FEBA09 /* MomentBuilder.swift in Sources */,
+				04AC0664C96CDB68C140E1AD /* SceneGate.swift in Sources */,
+				CE6036643BF4E487664F792C /* SimulatedFrameSource.swift in Sources */,
+				2FAE9A5D44CC091E103D673D /* SmallCutsApp.swift in Sources */,
+				C9BDA4F6B08C0491B0ECC73E /* VoicePlayer.swift in Sources */,
+				AE9E22DC2E5DFD257EAC7118 /* WearablesConfigurator.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A7C56219E8DFFEA9866A6D23 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				EEDB9A7934E9685829CBDF2F /* EngineLoopSmokeTests.swift in Sources */,
+				6A353C2C02C64E9657BE367A /* EngineSessionClientTests.swift in Sources */,
+				64D7D6D46F6F430FEFEEA44D /* GlassesSessionControllerTests.swift in Sources */,
+				EE971BCEF016CCE69A07E8BA /* MockWearables.swift in Sources */,
+				3FD6C8F9CF4814EA79057F31 /* MomentBuilderTests.swift in Sources */,
+				41A6929A8EAC96EF89B43FC6 /* SceneGateTests.swift in Sources */,
+				871AB1F5FE0814DB70F255F6 /* SimulatedFrameSourceTests.swift in Sources */,
+				7D5139A6D35FD05E744D4CC6 /* VoicePlayerTests.swift in Sources */,
+				284837950350831DB8E2D463 /* WearablesConfiguratorTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		EFB9ADFC0BD396A03A8334EF /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 3B54931FD28C91518EC027C1 /* SmallCuts */;
+			targetProxy = B700DDA22C46B3BBF1865216 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		43C754DFDD382AFC5AD730A0 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		45C93752B8E9CAE7DA5D4B69 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		9C9A8849F1BC578E008E8761 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_PREVIEWS = YES;
+				INFOPLIST_FILE = SmallCuts/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.macayaven.smallcuts;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+		A15382BB7FD71CA11BC3AB31 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_PREVIEWS = YES;
+				INFOPLIST_FILE = SmallCuts/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.macayaven.smallcuts;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		A1D7B5EB40530592323C82AE /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.macayaven.SmallCutsTests;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/SmallCuts.app/SmallCuts";
+			};
+			name = Debug;
+		};
+		AA79D9C9019C53D53E5E43C7 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.macayaven.SmallCutsTests;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/SmallCuts.app/SmallCuts";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		2F6035E1375E41E41CC300E7 /* Build configuration list for PBXNativeTarget "SmallCutsTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A1D7B5EB40530592323C82AE /* Debug */,
+				AA79D9C9019C53D53E5E43C7 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		8E46504E73C893C920440678 /* Build configuration list for PBXNativeTarget "SmallCuts" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A15382BB7FD71CA11BC3AB31 /* Debug */,
+				9C9A8849F1BC578E008E8761 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		AAD9A97ACF1AEE54024F76CC /* Build configuration list for PBXProject "SmallCuts" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				43C754DFDD382AFC5AD730A0 /* Debug */,
+				45C93752B8E9CAE7DA5D4B69 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		683CA6C91C855DFB9DA702D5 /* XCRemoteSwiftPackageReference "meta-wearables-dat-ios" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/facebook/meta-wearables-dat-ios";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.7.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		7479F73A35459057695F9DCB /* MWDATCamera */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 683CA6C91C855DFB9DA702D5 /* XCRemoteSwiftPackageReference "meta-wearables-dat-ios" */;
+			productName = MWDATCamera;
+		};
+		8EB1B404036BFCCD7FF57C42 /* MWDATCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 683CA6C91C855DFB9DA702D5 /* XCRemoteSwiftPackageReference "meta-wearables-dat-ios" */;
+			productName = MWDATCore;
+		};
+		965C15ED97003637D957B94E /* MWDATMockDevice */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 683CA6C91C855DFB9DA702D5 /* XCRemoteSwiftPackageReference "meta-wearables-dat-ios" */;
+			productName = MWDATMockDevice;
+		};
+		D51F7BE88A42D5D452245433 /* MWDATCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 683CA6C91C855DFB9DA702D5 /* XCRemoteSwiftPackageReference "meta-wearables-dat-ios" */;
+			productName = MWDATCore;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = 6D1FFE8427D13994C165B3C9 /* Project object */;
+}

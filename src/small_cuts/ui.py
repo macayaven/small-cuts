@@ -24,31 +24,56 @@ TAGLINE = (
 THEME = build_theme()
 
 
-def _narrate_handler(
-    image: Image.Image | None, style_key: str, scene_hint: str
+def _gpu(fn):
+    """Mark an event handler for ZeroGPU. No-op off-Space.
+
+    ZeroGPU's startup scan looks for the GPU mark on the functions Gradio
+    binds — decorating an inner helper instead leaves requests unscheduled
+    (worker dies with "No CUDA GPUs are available").
+    """
+    try:
+        import spaces
+    except ImportError:
+        return fn
+    return spaces.GPU(duration=90)(fn)
+
+
+def _narrate_core(
+    image: Image.Image | None, style_key: str, scene_hint: str, empty_text: str
 ) -> tuple[Image.Image, str]:
     if image is None:
-        text = (
-            "The narrator clears his throat, looks at the empty screen, and waits. "
-            "Some scenes, after all, require a scene."
-        )
+        text = empty_text
     else:
         result = narrate(image, style_key=style_key, scene_hint=scene_hint or "")
         text = result.text
     return render_title_card(derive_title(text), style_key), text
 
 
+@_gpu
+def _narrate_handler(
+    image: Image.Image | None, style_key: str, scene_hint: str
+) -> tuple[Image.Image, str]:
+    return _narrate_core(
+        image,
+        style_key,
+        scene_hint,
+        "The narrator clears his throat, looks at the empty screen, and waits. "
+        "Some scenes, after all, require a scene.",
+    )
+
+
+@_gpu
 def _narrate_video_handler(
     video_path: str | None, style_key: str, scene_hint: str
 ) -> tuple[Image.Image, str]:
-    if not video_path:
-        text = (
-            "The narrator squints at the projector. Nothing. He has narrated "
-            "blank screens before, but never by choice."
-        )
-        return render_title_card(derive_title(text), style_key), text
-    frames = sample_frames(video_path)
-    return _narrate_handler(pick_frame(frames), style_key, scene_hint)
+    frame = pick_frame(sample_frames(video_path)) if video_path else None
+    return _narrate_core(
+        frame,
+        style_key,
+        scene_hint,
+        "The narrator squints at the projector. Nothing. He has narrated "
+        "blank screens before, but never by choice.",
+    )
 
 
 def _speak_handler(text: str) -> tuple[int, np.ndarray] | None:

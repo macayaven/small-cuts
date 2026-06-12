@@ -24,18 +24,23 @@ TAGLINE = (
 THEME = build_theme()
 
 
-def _gpu(fn):
+def _gpu(duration: int = 90):
     """Mark an event handler for ZeroGPU. No-op off-Space.
 
     ZeroGPU's startup scan looks for the GPU mark on the functions Gradio
     binds — decorating an inner helper instead leaves requests unscheduled
-    (worker dies with "No CUDA GPUs are available").
+    (worker dies with "No CUDA GPUs are available"). TTS is marked too:
+    any torch forward in the main process poisons later worker forks.
     """
-    try:
-        import spaces
-    except ImportError:
-        return fn
-    return spaces.GPU(duration=90)(fn)
+
+    def deco(fn):
+        try:
+            import spaces
+        except ImportError:
+            return fn
+        return spaces.GPU(duration=duration)(fn)
+
+    return deco
 
 
 def _narrate_core(
@@ -49,7 +54,7 @@ def _narrate_core(
     return render_title_card(derive_title(text), style_key), text
 
 
-@_gpu
+@_gpu()
 def _narrate_handler(
     image: Image.Image | None, style_key: str, scene_hint: str
 ) -> tuple[Image.Image, str]:
@@ -62,7 +67,7 @@ def _narrate_handler(
     )
 
 
-@_gpu
+@_gpu()
 def _narrate_video_handler(
     video_path: str | None, style_key: str, scene_hint: str
 ) -> tuple[Image.Image, str]:
@@ -76,6 +81,7 @@ def _narrate_video_handler(
     )
 
 
+@_gpu(duration=30)
 def _speak_handler(text: str) -> tuple[int, np.ndarray] | None:
     if not text.strip():
         return None

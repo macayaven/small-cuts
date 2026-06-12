@@ -76,3 +76,8 @@ def test_speak_handler_empty_text_returns_none():
 
 def test_build_app_constructs():
     ui.build_app()
+
+
+def test_get_tts_backend_caches_instances(monkeypatch):
+    monkeypatch.setenv("SMALL_CUTS_TTS_BACKEND", "mock")
+    assert get_tts_backend() is get_tts_backend()  # pipeline must load once per process

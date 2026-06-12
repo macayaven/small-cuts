@@ -24,3 +24,6 @@ flagged/
 # Env — never commit secrets
 .env
 .env.*
+.playwright-mcp/
+ui-proposal.jpeg
+aimode-content.yml

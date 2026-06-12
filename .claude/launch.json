@@ -1,0 +1,16 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "small-cuts-mock",
+      "runtimeExecutable": "uv",
+      "runtimeArgs": ["run", "python", "app.py"],
+      "env": {
+        "SMALL_CUTS_BACKEND": "mock",
+        "SMALL_CUTS_TTS_BACKEND": "mock",
+        "GRADIO_SERVER_PORT": "7861"
+      },
+      "port": 7861
+    }
+  ]
+}

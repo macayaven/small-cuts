@@ -44,3 +44,8 @@ def test_narration_metadata():
     assert result.backend == "mock"
     assert result.latency_s >= 0
     assert "lunch" in result.text
+
+
+def test_get_backend_caches_instances(monkeypatch):
+    monkeypatch.setenv("SMALL_CUTS_BACKEND", "mock")
+    assert get_backend() is get_backend()  # weights must load once per process

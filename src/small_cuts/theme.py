@@ -56,6 +56,16 @@ class OffBrand(gr.themes.Base):
             button_secondary_background_fill_dark=LIFTED_CANVAS,
             button_secondary_text_color=BONE_WHITE,
             button_secondary_text_color_dark=BONE_WHITE,
+            button_secondary_border_color=BORDER,
+            button_secondary_border_color_dark=BORDER,
+            # P0 contrast fixes (#28): code chips rendered near-white-on-white
+            # and the in-block labels were too dim on the charcoal canvas.
+            code_background_fill=STYLE_CARDS["noir"][0],
+            code_background_fill_dark=STYLE_CARDS["noir"][0],
+            block_label_text_color=MARQUEE_GOLD,
+            block_label_text_color_dark=MARQUEE_GOLD,
+            block_label_background_fill=LIFTED_CANVAS,
+            block_label_background_fill_dark=LIFTED_CANVAS,
         )
 
 

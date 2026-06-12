@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/macayaven/small-cuts/docs/contracts/1.0.0/scene-audio.schema.json",
+  "title": "SceneAudio",
+  "description": "Voice-over returned from the engine to the capture app for in-ear playback (D4). WebSocket message; v1 is one complete clip per scene.",
+  "type": "object",
+  "required": [
+    "contract_version",
+    "scene_id",
+    "moment_id",
+    "format",
+    "audio_b64"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "contract_version": {
+      "type": "string",
+      "pattern": "^1\\."
+    },
+    "scene_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "moment_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "format": {
+      "enum": [
+        "wav_complete",
+        "pcm_chunk"
+      ],
+      "description": "v1 engines emit wav_complete only. pcm_chunk reserved for the streamed-TTS stretch goal - additive, non-breaking."
+    },
+    "audio_b64": {
+      "type": "string",
+      "contentEncoding": "base64"
+    },
+    "sample_rate": {
+      "type": "integer",
+      "default": 24000
+    },
+    "chunk_seq": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "description": "Only for pcm_chunk: 0-based sequence; null terminator chunk carries empty audio_b64."
+    },
+    "narration": {
+      "type": "string",
+      "description": "The text being spoken - lets the app show captions without waiting for the viewer."
+    }
+  }
+}

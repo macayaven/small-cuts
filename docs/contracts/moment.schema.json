@@ -1,0 +1,129 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/macayaven/small-cuts/docs/contracts/1.0.0/moment.schema.json",
+  "title": "MomentEnvelope",
+  "description": "One gated moment from a capture app to the narration engine (D1/D2). Sent as a WebSocket text frame (JSON); frame payloads are base64 JPEG.",
+  "type": "object",
+  "required": [
+    "contract_version",
+    "moment_id",
+    "session_id",
+    "captured_at",
+    "frames"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "contract_version": {
+      "type": "string",
+      "pattern": "^1\\."
+    },
+    "moment_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "session_id": {
+      "type": "string",
+      "description": "One continuous wearing session (glasses on -> off)."
+    },
+    "captured_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "frames": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 4,
+      "description": "Representative frames, best first. JPEG, longest side <= 1024 px (verified Qwen-VL vision-token constraint).",
+      "items": {
+        "type": "object",
+        "required": [
+          "jpeg_b64",
+          "width",
+          "height"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "jpeg_b64": {
+            "type": "string",
+            "contentEncoding": "base64"
+          },
+          "width": {
+            "type": "integer",
+            "maximum": 1024
+          },
+          "height": {
+            "type": "integer",
+            "maximum": 1024
+          },
+          "ts_offset_ms": {
+            "type": "integer",
+            "description": "Offset from captured_at for multi-frame moments."
+          }
+        }
+      }
+    },
+    "gate": {
+      "type": "object",
+      "description": "Why the gate fired - engine may use it for prompt salience; never required.",
+      "additionalProperties": false,
+      "properties": {
+        "scene_change_score": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "motion_score": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "trigger": {
+          "enum": [
+            "scene_change",
+            "interval",
+            "user",
+            "session_start"
+          ]
+        }
+      }
+    },
+    "context": {
+      "type": "object",
+      "description": "Capture-side context for the engine's session memory (D5).",
+      "additionalProperties": false,
+      "properties": {
+        "location_label": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "user_hint": {
+          "type": "string",
+          "maxLength": 280
+        },
+        "style_key": {
+          "type": "string",
+          "description": "Director's cut requested for this session; engine default if absent."
+        },
+        "battery_pct": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "network": {
+          "enum": [
+            "wifi",
+            "cellular",
+            "tailnet"
+          ]
+        }
+      }
+    },
+    "prev_moment_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Chain for the engine's chronology; null at session start."
+    }
+  }
+}

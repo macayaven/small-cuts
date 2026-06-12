@@ -1,4 +1,5 @@
 """Deterministic movie-style title cards for Small Cuts."""
+
 from PIL import Image, ImageDraw, ImageFont
 
 from .styles import STYLES
@@ -81,8 +82,10 @@ def _font(size):
 def _wrap(draw, text, font, max_width, spaced):
     def show(value):
         return " ".join(value) if spaced else value
+
     def fits(value):
         return _measure(draw, show(value), font)[0] <= max_width
+
     lines = []
     current = ""
     for word in text.split():

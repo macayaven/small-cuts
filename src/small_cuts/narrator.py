@@ -11,12 +11,21 @@ All backends are local: no cloud APIs (Off the Grid quest).
 
 from __future__ import annotations
 
+import atexit
+import base64
+import io
 import os
+import shutil
+import socket
+import subprocess
+import threading
 import time
 from dataclasses import dataclass
 from functools import cache
+from pathlib import Path
 from typing import Protocol
 
+import httpx
 from PIL import Image
 
 from .styles import DEFAULT_STYLE_KEY, STYLES, build_messages
@@ -24,6 +33,10 @@ from .styles import DEFAULT_STYLE_KEY, STYLES, build_messages
 # M1 final pick (docs/eval/run-006-scored.md): beats Qwen2.5-VL-7B head-to-head
 # for BOTH judges (Codex 7/10 vs 0/10, Gemini 9/10 vs 0/10 images passing).
 DEFAULT_MODEL_ID = "Qwen/Qwen3-VL-8B-Instruct"
+LLAMA_REPO_ID = "Qwen/Qwen3-VL-8B-Instruct-GGUF"
+LLAMA_GGUF_FILENAME = "Qwen3VL-8B-Instruct-Q4_K_M.gguf"
+LLAMA_MMPROJ_FILENAME = "mmproj-Qwen3VL-8B-Instruct-F16.gguf"
+LLAMA_TIMEOUT_S = 120.0
 
 
 @dataclass(frozen=True)
@@ -131,20 +144,236 @@ class TransformersBackend:
         return text.strip()
 
 
+def _downscale(image: Image.Image, max_side: int = 1024) -> Image.Image:
+    """Return a copy whose longest side is at most max_side."""
+    resized = image.copy()
+    if max(resized.size) > max_side:
+        resized.thumbnail((max_side, max_side), Image.Resampling.LANCZOS)
+    return resized
+
+
 class LlamaCppBackend:
     """GGUF vision model via llama.cpp — CPU fallback and Llama Champion quest."""
 
     name = "llama_cpp"
 
-    def __init__(self, gguf_path: str | None = None) -> None:
-        self.model_id = gguf_path or os.environ.get("SMALL_CUTS_GGUF_PATH", "")
-        self._llm = None
+    def __init__(self, gguf_path: str | None = None, mmproj_path: str | None = None) -> None:
+        self._external_url = os.environ.get("SMALL_CUTS_LLAMA_URL", "").rstrip("/")
+        self._gguf_path = gguf_path or os.environ.get("SMALL_CUTS_GGUF_PATH", "")
+        self._mmproj_path = mmproj_path or os.environ.get("SMALL_CUTS_MMPROJ_PATH", "")
+        self.model_id = Path(self._gguf_path).name if self._gguf_path else LLAMA_REPO_ID
+        self._server_url = ""
+        self._process: subprocess.Popen | None = None
+        self._cleanup_registered = False
+        self._spawn_lock = threading.Lock()
 
     def generate(self, image: Image.Image, style_key: str, scene_hint: str) -> str:
-        raise NotImplementedError(
-            "llama.cpp backend lands in M3 once the VLM GGUF choice is validated. "
-            "Set SMALL_CUTS_BACKEND=mock or =transformers meanwhile."
+        if self._external_url:
+            server_url = self._external_url
+        else:
+            with self._spawn_lock:  # Gradio handlers are threaded; spawn once
+                server_url = self._ensure_server()
+        body = self._build_request(image, style_key, scene_hint)
+        try:
+            response = httpx.post(
+                f"{server_url}/v1/chat/completions",
+                json=body,
+                timeout=LLAMA_TIMEOUT_S,
+            )
+            response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            raise RuntimeError(
+                f"llama-server at {server_url} returned HTTP "
+                f"{exc.response.status_code} for chat completion."
+            ) from exc
+        except httpx.RequestError as exc:
+            raise RuntimeError(f"Could not reach llama-server at {server_url}: {exc}") from exc
+
+        try:
+            content = response.json()["choices"][0]["message"]["content"]
+        except (ValueError, KeyError, IndexError, TypeError) as exc:
+            raise RuntimeError(
+                f"Unexpected llama-server response from {server_url}; expected "
+                "choices[0].message.content."
+            ) from exc
+        if not isinstance(content, str):
+            raise RuntimeError(
+                f"Unexpected llama-server response from {server_url}; message content was not text."
+            )
+        return content.strip()
+
+    def close(self) -> None:
+        process = self._process
+        if process is None:
+            return
+        if process.poll() is None:
+            process.terminate()
+            try:
+                process.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait(timeout=10)
+        self._process = None
+        self._server_url = ""
+
+    def _build_request(self, image: Image.Image, style_key: str, scene_hint: str) -> dict:
+        messages = build_messages(style_key, scene_hint)
+        data_uri = _image_data_uri(_downscale(image))
+        return {
+            "messages": [
+                {"role": "system", "content": messages[0]["content"]},
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "image_url", "image_url": {"url": data_uri}},
+                        {"type": "text", "text": messages[1]["content"]},
+                    ],
+                },
+            ],
+            "temperature": _temperature(),
+            "max_tokens": 160,
+        }
+
+    def _ensure_server(self) -> str:
+        if self._server_url and self._process is not None and self._process.poll() is None:
+            return self._server_url
+        if self._process is not None and self._process.poll() is not None:
+            self._process = None
+            self._server_url = ""
+
+        binary = _llama_server_binary()
+        gguf_path, mmproj_path = self._model_paths()
+        port = _free_port()
+        self._server_url = f"http://127.0.0.1:{port}"
+        command = [
+            binary,
+            "-m",
+            gguf_path,
+            "--mmproj",
+            mmproj_path,
+            "--port",
+            str(port),
+            "-c",
+            "8192",
+            "--image-max-tokens",
+            "1024",
+            "--host",
+            "127.0.0.1",
+        ]
+        try:
+            self._process = subprocess.Popen(
+                command,
+                stdout=subprocess.DEVNULL,
+                stderr=self._stderr_file(),
+            )
+        except OSError as exc:
+            self._server_url = ""
+            raise RuntimeError(
+                f"Could not start llama-server with {binary!r}. Install llama.cpp "
+                "with `brew install llama.cpp`, set SMALL_CUTS_LLAMA_SERVER to the "
+                "binary path, or point SMALL_CUTS_LLAMA_URL at an already-running server."
+            ) from exc
+
+        if not self._cleanup_registered:
+            atexit.register(self.close)
+            self._cleanup_registered = True
+        self._wait_for_health(self._server_url)
+        return self._server_url
+
+    def _model_paths(self) -> tuple[str, str]:
+        gguf_path = self._gguf_path
+        mmproj_path = self._mmproj_path
+        if gguf_path and mmproj_path:
+            return gguf_path, mmproj_path
+
+        try:
+            from huggingface_hub import hf_hub_download
+        except ImportError as exc:
+            raise RuntimeError(
+                "huggingface_hub is required to resolve the default llama.cpp model. "
+                "Install the local dependencies, or set SMALL_CUTS_GGUF_PATH and "
+                "SMALL_CUTS_MMPROJ_PATH to local files."
+            ) from exc
+
+        if not gguf_path:
+            gguf_path = hf_hub_download(LLAMA_REPO_ID, LLAMA_GGUF_FILENAME)
+        if not mmproj_path:
+            mmproj_path = hf_hub_download(LLAMA_REPO_ID, LLAMA_MMPROJ_FILENAME)
+        return gguf_path, mmproj_path
+
+    def _stderr_file(self):
+        import tempfile
+
+        self._stderr_path = Path(tempfile.gettempdir()) / f"llama-server-{os.getpid()}.err"
+        return open(self._stderr_path, "w")
+
+    def _stderr_tail(self, lines: int = 5) -> str:
+        path = getattr(self, "_stderr_path", None)
+        if not path or not Path(path).exists():
+            return ""
+        tail = Path(path).read_text().splitlines()[-lines:]
+        return (" Last stderr lines: " + " | ".join(tail)) if tail else ""
+
+    def _wait_for_health(self, server_url: str) -> None:
+        deadline = time.monotonic() + LLAMA_TIMEOUT_S
+        while time.monotonic() < deadline:
+            if self._process is not None and self._process.poll() is not None:
+                raise RuntimeError(
+                    f"llama-server exited before becoming healthy at {server_url} "
+                    f"(a port conflict is possible).{self._stderr_tail()} "
+                    "Check the GGUF/mmproj paths and llama.cpp installation."
+                )
+            try:
+                response = httpx.get(f"{server_url}/health", timeout=2.0)
+                if response.status_code == 200:
+                    return
+            except httpx.RequestError:
+                pass
+            time.sleep(0.5)
+
+        self.close()
+        raise RuntimeError(
+            f"Timed out waiting for llama-server at {server_url}/health after "
+            f"{int(LLAMA_TIMEOUT_S)} seconds. Check model load time, GGUF/mmproj paths, "
+            "or use SMALL_CUTS_LLAMA_URL to point at a server you started manually."
         )
+
+
+def _image_data_uri(image: Image.Image) -> str:
+    buffer = io.BytesIO()
+    image.convert("RGB").save(buffer, format="JPEG", quality=90)
+    encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
+    return f"data:image/jpeg;base64,{encoded}"
+
+
+def _temperature() -> float:
+    try:
+        return float(os.environ.get("SMALL_CUTS_TEMPERATURE", "0.3"))
+    except ValueError as exc:
+        raise RuntimeError("SMALL_CUTS_TEMPERATURE must be a floating-point number.") from exc
+
+
+def _llama_server_binary() -> str:
+    configured = os.environ.get("SMALL_CUTS_LLAMA_SERVER", "")
+    binary = configured or shutil.which("llama-server")
+    if binary and _is_executable(binary):
+        return binary
+    raise RuntimeError(
+        "llama.cpp backend needs a llama-server binary. Install it with "
+        "`brew install llama.cpp`, set SMALL_CUTS_LLAMA_SERVER to the binary path, "
+        "or set SMALL_CUTS_LLAMA_URL to an already-running llama-server."
+    )
+
+
+def _is_executable(path: str) -> bool:
+    resolved = path if os.path.sep in path else shutil.which(path)
+    return bool(resolved and Path(resolved).is_file() and os.access(resolved, os.X_OK))
+
+
+def _free_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        return int(sock.getsockname()[1])
 
 
 _BACKENDS = {

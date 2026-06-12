@@ -1,0 +1,96 @@
+name: SmallCuts
+options:
+  bundleIdPrefix: com.macayaven
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+
+packages:
+  # Mirrors AeroWing's reference (remote pin, not the local clone — the local
+  # repo's HEAD has no Package.swift; only release tags ship the SPM manifest).
+  meta-wearables-dat-ios:
+    url: https://github.com/facebook/meta-wearables-dat-ios
+    from: 0.7.0
+
+targets:
+  SmallCuts:
+    type: application
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - SmallCuts
+    info:
+      path: SmallCuts/Info.plist
+      properties:
+        CFBundleDisplayName: "Small Cuts"
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        # --- MWDAT transport-discovery contract (Bug 3; copied from AeroWing) ---
+        NSBluetoothAlwaysUsageDescription: "Small Cuts uses Bluetooth to discover and stream video from your Meta Ray-Ban glasses."
+        NSBluetoothPeripheralUsageDescription: "Small Cuts uses Bluetooth to discover and stream video from your Meta Ray-Ban glasses."
+        NSCameraUsageDescription: "Small Cuts streams the camera on your Meta Ray-Ban glasses to capture moments."
+        NSLocalNetworkUsageDescription: "Small Cuts uses the local network to establish a high-bandwidth transport with your Meta Ray-Ban glasses."
+        NSBonjourServices:
+          - "_meta-wearables._tcp"
+          - "_meta-wearables._udp"
+        UISupportedExternalAccessoryProtocols:
+          - com.meta.ar.wearable
+        LSApplicationQueriesSchemes:
+          - fb-viewapp
+        UIBackgroundModes:
+          - bluetooth-central
+          - bluetooth-peripheral
+          - external-accessory
+        CFBundleURLTypes:
+          - CFBundleURLSchemes:
+              - smallcuts
+        # Camera-only app: MWDAT.DAMEnabled deliberately omitted (Bug 4 — that key
+        # is only for the Display capability).
+        MWDAT:
+          AppLinkURLScheme: "smallcuts://"
+          MetaAppID: "0"
+          ClientToken: ""
+    dependencies:
+      - package: meta-wearables-dat-ios
+        product: MWDATCore
+      - package: meta-wearables-dat-ios
+        product: MWDATCamera
+      # Linked in all configs for simplicity; only imported under #if DEBUG.
+      - package: meta-wearables-dat-ios
+        product: MWDATMockDevice
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: com.macayaven.smallcuts
+      CODE_SIGN_STYLE: Automatic
+      ENABLE_PREVIEWS: YES
+      SWIFT_VERSION: "5.0"
+      TARGETED_DEVICE_FAMILY: "1"
+      MARKETING_VERSION: 0.1.0
+      CURRENT_PROJECT_VERSION: 1
+
+  SmallCutsTests:
+    type: bundle.unit-test
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - SmallCutsTests
+    dependencies:
+      - target: SmallCuts
+      - package: meta-wearables-dat-ios
+        product: MWDATCore
+    settings:
+      SWIFT_VERSION: "5.0"
+      GENERATE_INFOPLIST_FILE: YES
+
+schemes:
+  SmallCuts:
+    build:
+      targets:
+        SmallCuts: all
+        SmallCutsTests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - SmallCutsTests

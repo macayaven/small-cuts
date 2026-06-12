@@ -20,9 +20,9 @@ from PIL import Image
 
 from .styles import DEFAULT_STYLE_KEY, STYLES, build_messages
 
-# M1 provisional pick (docs/eval/run-005-scored.md): best G (3.40) and V (3.03)
-# of the judged candidates. Challenger Qwen3-VL-8B pending in run-006.
-DEFAULT_MODEL_ID = "Qwen/Qwen2.5-VL-7B-Instruct"
+# M1 final pick (docs/eval/run-006-scored.md): beats Qwen2.5-VL-7B head-to-head
+# for BOTH judges (Codex 7/10 vs 0/10, Gemini 9/10 vs 0/10 images passing).
+DEFAULT_MODEL_ID = "Qwen/Qwen3-VL-8B-Instruct"
 
 
 @dataclass(frozen=True)

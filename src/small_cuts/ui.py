@@ -9,6 +9,7 @@ from PIL import Image
 from .frames import pick_frame, sample_frames
 from .narrator import get_backend, narrate
 from .styles import DEFAULT_STYLE_KEY, style_choices
+from .title_card import derive_title, render_title_card
 from .tts import speak
 
 TITLE = "🎬 Small Cuts"
@@ -22,22 +23,29 @@ TAGLINE = (
 THEME = gr.themes.Monochrome(font=[gr.themes.GoogleFont("Spectral"), "serif"])
 
 
-def _narrate_handler(image: Image.Image | None, style_key: str, scene_hint: str) -> str:
+def _narrate_handler(
+    image: Image.Image | None, style_key: str, scene_hint: str
+) -> tuple[Image.Image, str]:
     if image is None:
-        return (
+        text = (
             "The narrator clears his throat, looks at the empty screen, and waits. "
             "Some scenes, after all, require a scene."
         )
-    result = narrate(image, style_key=style_key, scene_hint=scene_hint or "")
-    return result.text
+    else:
+        result = narrate(image, style_key=style_key, scene_hint=scene_hint or "")
+        text = result.text
+    return render_title_card(derive_title(text), style_key), text
 
 
-def _narrate_video_handler(video_path: str | None, style_key: str, scene_hint: str) -> str:
+def _narrate_video_handler(
+    video_path: str | None, style_key: str, scene_hint: str
+) -> tuple[Image.Image, str]:
     if not video_path:
-        return (
+        text = (
             "The narrator squints at the projector. Nothing. He has narrated "
             "blank screens before, but never by choice."
         )
+        return render_title_card(derive_title(text), style_key), text
     frames = sample_frames(video_path)
     return _narrate_handler(pick_frame(frames), style_key, scene_hint)
 
@@ -71,6 +79,7 @@ def build_app() -> gr.Blocks:
                 )
                 go = gr.Button("🎬 Roll narration", variant="primary")
             with gr.Column(scale=1):
+                card = gr.Image(label="Title card", interactive=False)
                 narration = gr.Textbox(label="The narrator says…", lines=8)
                 speak_btn = gr.Button("🔊 Read it to me", variant="secondary")
                 audio = gr.Audio(label="The narrator speaks…", interactive=False)
@@ -78,8 +87,8 @@ def build_app() -> gr.Blocks:
                     f"<sub>backend: `{backend.name}` · model: `{backend.model_id}` · "
                     "no cloud APIs — Off the Grid 🏕️</sub>"
                 )
-        go.click(_narrate_handler, inputs=[image, style, hint], outputs=narration)
-        image.change(_narrate_handler, inputs=[image, style, hint], outputs=narration)
-        video.change(_narrate_video_handler, inputs=[video, style, hint], outputs=narration)
+        go.click(_narrate_handler, inputs=[image, style, hint], outputs=[card, narration])
+        image.change(_narrate_handler, inputs=[image, style, hint], outputs=[card, narration])
+        video.change(_narrate_video_handler, inputs=[video, style, hint], outputs=[card, narration])
         speak_btn.click(_speak_handler, inputs=[narration], outputs=[audio])
     return demo

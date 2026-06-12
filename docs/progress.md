@@ -12,7 +12,12 @@
 | 2026-06-11 | M1 eval harness built + tested | ✅ | `src/small_cuts/eval.py`, `tests/test_eval.py` |
 | 2026-06-11 | Self-hosted runner on Spark registered + verified (GB10, CUDA 13.0, uv OK) | ✅ | Actions run 27370230783 (eval-on-spark on `eval/run-001`) |
 | — | Branch protection on `main` | ⚠️ Carlos reruns the `gh api` command (docs/setup.md) | — |
-| — | M1: run eval on DGX Spark, pick narrator model | ⬜ next — blocked only on eval photos (`/home/carlos/eval-photos` on the Spark exists but is empty) | docs/implementation-plan.md |
+| 2026-06-12 | run-004 eval (gemma + Qwen-3B) on Spark, HEIC photos | ✅ | Actions run 27374284507, docs/eval/run-004-scored.md |
+| 2026-06-12 | Automated judge: Codex (GPT-5 vision) scores narrations vs actual photos | ✅ | photo relay workflow + codex exec loop, ~7 min/report |
+| 2026-06-12 | Prompt A/B judged: v2 "find the story" was a pure loss; reverted+hardened as v3, temp 0.7→0.3 | ✅ | docs/eval/prompt-ab-comparison.md |
+| 2026-06-12 | M2 title-card renderer: Claude spec+tests, Codex implementation, 22/22 green | ✅ | docs/specs/title-card.md, src/small_cuts/title_card.py |
+| 2026-06-12 | 5 real glasses videos staged (Spark `~/eval-videos`) + relayed locally | ✅ | fetch-eval-photos workflow |
+| — | M1: pick narrator model | ⬜ run-005 (prompt v3, temp 0.3, + Qwen-7B) — no candidate meets S>=4&G>=4 bar yet | docs/eval/prompt-ab-comparison.md |
 | — | M2: TTS + title card + Off-Brand theme | ⬜ | — |
 | — | M3: Space live under hackathon org | ⬜ | — |
 | — | M4: demo video + social post + Field Notes | ⬜ | — |

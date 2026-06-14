@@ -32,8 +32,8 @@ Last updated: 2026-06-14 18:10 CEST.
 - [x] README identifies the app as the Gradio Space submission.
 - [x] README documents models under 32B: Qwen3-VL-8B + Kokoro.
 - [x] README claims `track:wood`, `achievement:offgrid`, `achievement:offbrand`, `achievement:llama`, and `achievement:fieldnotes`.
-- [ ] Redeploy README/frontmatter after this checklist update.
-- [ ] Verify the Space metadata shows `offgrid` and `llama` tags after redeploy.
+- [x] Redeploy README/frontmatter after this checklist update.
+- [x] Verify the Space metadata shows `offgrid` and `llama` tags after redeploy.
 - [ ] Add demo video link.
 - [ ] Add social post link.
 - [ ] Run the submission analyzer before final submission.

@@ -95,10 +95,18 @@ through contract-change review, not a silent engine-side switch.
   are 5–15 s; streaming TTS buys ~2 s at real complexity cost AND requires
   mobile-side buffered playback — so it is a future MAJOR contract version
   decided cross-team, not an engine-side toggle.
-- **D5 — Session context lives engine-side.** The phone sends only moment
-  metadata (time, optional location label, optional user hint); the engine
-  owns session memory (recent narrations, day timeline → #20) and prompt
-  construction. Mobile never sees prompts; Inference never sees raw streams.
+- **D5 — Session context lives engine-side; its v1 scope is the clip.** The
+  phone sends only moment metadata (time, optional location label, optional
+  user hint); the engine owns the context and prompt construction (Mobile
+  never sees prompts; Inference never sees raw streams). **Within a clip the
+  narration is built chunk-by-chunk** — each moment narrated in sequence, every
+  chunk carrying the chronological context of the clip's earlier chunks, so the
+  clip reads as one coherent, non-repeating little story rather than a string of
+  disconnected captions. The cadence is **human-digestible**: each chunk is short
+  enough to land as *recent past* (what just happened) — never racing ahead to
+  narrate a future event — at a pace a listener can follow and retain, and that
+  the viewer's subtitles mirror line-for-line. Cross-clip / day-timeline memory
+  (→ #20) is a later extension; v1 is **intra-clip only** (no cross-clip memory).
 - **D6 — Library is engine-side storage** (filesystem media + sqlite index),
   entries are `NarratedScene`s with visibility `private | shared | public`
   (default private). The viewer reads; it never writes media.

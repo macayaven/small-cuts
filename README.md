@@ -1,65 +1,132 @@
+---
+title: Small Cuts
+emoji: 🎬
+colorFrom: indigo
+colorTo: purple
+sdk: gradio
+sdk_version: 6.18.0
+app_file: app.py
+pinned: true
+license: mit
+short_description: A deadpan narrator for your life, from small open models.
+tags:
+  - track:wood
+  - achievement:offbrand
+  - achievement:fieldnotes
+---
+
 # Small Cuts 🎬
 
 > *"And that was the moment Carlos realized the coffee had been decaf all along."*
 
-**Small Cuts** turns moments of your life into cinematic narration — an omniscient,
-slightly-too-honest narrator in the spirit of *The Invention of Lying*, powered
-entirely by **small open models (≤32B)** running inside a Hugging Face Space.
+**Small Cuts** turns first-person moments into grounded, cinematic, **spoken** narration —
+an omniscient, slightly-too-honest narrator in the spirit of *The Invention of Lying* —
+using only **small (≤32B) open models**. No script, no cloud LLM: a small vision-language
+model watches your moment and a small TTS speaks the line, the way a film narrator would
+if your life were the film.
 
-Point it at a photo or a short clip of what's happening around you (from your
-phone, webcam, or Ray-Ban Meta glasses footage), pick a director, and Small Cuts
-writes — and speaks — the narration of your scene as if your life were a film
-and someone wonderful (or merciless) were narrating it.
+There is exactly **one narrator** — a single deadpan, unnamed voice. No menus, no
+director to pick. You point at what's happening; it tells you what it means.
 
 This is the **challenger submission** for the
 [Build Small Hackathon](https://huggingface.co/build-small-hackathon)
-(Gradio × Hugging Face, submissions close **June 15, 2026**), built in parallel
-to the original *Director's Cut* project. It is rule-shaped from day one:
+("Small Models, Big Adventures" — Gradio × Hugging Face, submissions close
+**June 15, 2026, 23:59 UTC**), the strategic successor to the original
+*Director's Cut* project.
 
-| Hackathon rule | How Small Cuts complies |
+## The soul of it — the real-time loop
+
+Small Cuts was born wearing glasses. The intended experience is a **live loop**:
+
+```
+Ray-Ban Meta glasses  ──video+audio──▶  home engine (small VLM + TTS)  ──▶  narration in your ear
+                                              │
+                                              └──── finished cuts ────▶  the Space (watch · library)
+```
+
+You walk through a moment; the narrator speaks it back to you, **chunk by chunk**, in
+near-real-time — each line short enough to land while the moment is still *recent past*,
+never racing ahead of what just happened. Within a single clip the narrator remembers what
+it already said (intra-clip coherence), so the clip reads as one continuous wry little story.
+
+**One pipeline, two surfaces:** the same narration plays *in your ear* live, and lands in the
+**Space** below as a finished cut you can re-watch — with film-style subtitles that crawl in
+sync with the voice — and publish to a library.
+
+## What's in this Space
+
+The Space is the **view platform + library** half of the loop — a small streaming-channel UI:
+
+- **A live stage** with the current moment, ●REC chip, and **movie-style subtitles** (short
+  phrase-sized lines over a constant dark bar, advancing with the voice-over).
+- **Voice-over on by default**, with the player's own volume/mute and a "report this clip" control.
+- **A hero library** of real Ray-Ban Meta glasses moments, seeded so the channel is never empty.
+- **"Try it"** — a tucked-away sandbox (open only on request) to narrate your *own* short video.
+
+## How it was built
+
+| Piece | Choice | Why |
+|---|---|---|
+| Narrator (VLM) | `Qwen/Qwen3-VL-8B-Instruct` | Strong grounded captioning at 8B — well under 32B |
+| Voice (TTS) | **Kokoro** (24 kHz) | Tiny, expressive, open; one signature deadpan delivery |
+| Space runtime | Gradio 6 on **ZeroGPU**, self-contained | The judged canvas; no external APIs at runtime |
+| Real-time engine | FastAPI WS home node, **llama.cpp** option | The live in-ear loop + demo video |
+| Capture | iOS app for Ray-Ban Meta glasses (`ios/SmallCuts/`) | First-person moments, the way it's meant to be lived |
+
+Implementation is a cross-model team effort: **Claude (Opus)** orchestrates, **Codex (GPT-5.x)**
+implements, with **GLM** review and a **Gemini** eval judge.
+
+## Hackathon compliance
+
+| Rule | How Small Cuts complies |
 |---|---|
-| Gradio app hosted as a Space under the org | The app **is** the product — no companion app required |
-| Models ≤ 32B total parameters | Small VLM narrator + small TTS, all open weights |
-| Demo video + social post | Filmed POV with Ray-Ban Meta glasses → narrated by the app |
-| Track 2 — Thousand Token Wood | Delightful, AI-load-bearing, original |
+| Gradio app hosted as a Space under the org | The app **is** the product — this Space |
+| Every model < 32B | 8B VLM narrator + small Kokoro TTS, all open weights |
+| Demo video | Filmed POV with Ray-Ban Meta glasses → narrated by the app *(link below)* |
+| Social post | Linked from this README *(link below)* |
+| Track 2 — **Thousand Token Wood** (`track:wood`) | Whimsical, delightful, AI-load-bearing, original |
 
-Targeted bonus quests: **Off the Grid** (no cloud APIs), **Llama Champion**
-(llama.cpp runtime), **Off-Brand** (custom cinematic frontend), **Field Notes**
-(blog post), and **Well-Tuned** (published narrator-style fine-tune, stretch).
+- 📹 **Demo video:** _TODO — add public link before submission_
+- 📣 **Social post:** _TODO — add link before submission_
+- 📝 **Field notes:** [hf.co/blog/macayaven/small-cuts-field-notes](https://huggingface.co/blog/macayaven/small-cuts-field-notes)
+
+**Bonus quests claimed:** Off-Brand (`offbrand`, custom cinematic frontend) · Field Notes
+(`fieldnotes`, the write-up above). **Under review** (see maintainers' notes): `offgrid`
+(the deadline build is self-contained — no cloud APIs at runtime), `llama` (llama.cpp home
+engine), and the OpenAI / Modal sponsor prizes.
 
 ## Quick start
 
 ```bash
-# install (uv recommended)
+# install (CI-equivalent minimal)
 uv sync --extra dev
 
-# run the app with the deterministic mock backend (no model download)
-SMALL_CUTS_BACKEND=mock uv run python app.py
+# run the Space/viewer locally with the deterministic mock backend (no model download)
+SMALL_CUTS_BACKEND=mock uv run --no-sync python app.py
 
-# run with a real local VLM (downloads weights)
-SMALL_CUTS_BACKEND=transformers uv run python app.py
+# run with the real local VLM (downloads weights)
+SMALL_CUTS_BACKEND=transformers uv run --no-sync python app.py
 
-# tests + lint
-uv run pytest
-uv run ruff check .
+# run the real-time engine (needs `brew install llama.cpp`)
+SMALL_CUTS_BACKEND=llama_cpp SMALL_CUTS_TTS_BACKEND=kokoro uv run python -m small_cuts.engine
+
+# the gate (mirrors CI exactly)
+uv run ruff check . && uv run ruff format --check . && uv run pytest
 ```
 
 ## Repository map
 
-- `app.py` — Hugging Face Space entrypoint (Gradio)
-- `src/small_cuts/` — narrator pipeline: style presets, prompt builder, pluggable model backends
-- `tests/` — unit tests (run in CI with the mock backend, no GPU needed)
-- `docs/` — [hackathon rules](docs/hackathon-rules.md) · [product strategy](docs/product-strategy.md) · [architecture](docs/architecture.md) · [setup](docs/setup.md) · [implementation plan](docs/implementation-plan.md) · [progress](docs/progress.md) · [demo readiness](docs/demo-readiness.md)
-- `kb/` — knowledge-base notes (mirrors of the canonical `.knowledge/` KB on Mac Studio; see `kb/README.md`)
+- `app.py` — Hugging Face Space entrypoint (Gradio, ZeroGPU)
+- `src/small_cuts/` — the product: `viewer.py` (streaming viewer), `narrator.py` (VLM backends),
+  `tts.py` (Kokoro), `styles.py` (grounded prompt), `engine/` (real-time home node), `seed_media/`
+- `ios/SmallCuts/` — the Ray-Ban Meta glasses capture app
+- `docs/` — [hackathon rules](docs/hackathon-rules.md) · [architecture](docs/product/architecture.md) ·
+  [contracts](docs/contracts/) · [progress](docs/progress.md)
+- `CLAUDE.md` — operational conventions (the canonical command list lives here)
 
 ## Engineering discipline
 
-- `main` is protected (PR-based workflow; see `docs/setup.md` for the required
-  branch-protection settings — they must be enabled once by an admin).
-- CI on every push/PR: ruff lint + format check, pytest, gitleaks secret scan.
-- No secrets in the repo, ever. Secrets live in 1Password Connect (local dev)
-  and HF Space secrets (deployment).
-
-## Status
-
-Bootstrap phase — see [docs/progress.md](docs/progress.md) for the live tracker.
+- `main` is protected (PR-based workflow); CI runs ruff lint + format check, pytest, and a
+  gitleaks secret scan on every push/PR.
+- **No secrets in the repo, ever.** Secrets live in 1Password Connect (local dev) and HF Space
+  secrets (deployment). Client-facing endpoints use Tailnet MagicDNS HTTPS, never raw IPs.

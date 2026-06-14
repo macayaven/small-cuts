@@ -235,19 +235,51 @@ class SessionRunner:
             await self._send_error(moment_id, stage, exc, code=code, retryable=retryable)
             return
 
+        storage_task = asyncio.create_task(
+            self._finish_scene_storage(
+                envelope=envelope,
+                image=image,
+                scene_audio=payload,
+                narration_text=narration.text,
+                speech=speech,
+                style_key=style_key,
+                queue_ms=queue_ms,
+                narration_ms=narration_ms,
+                tts_ms=tts_ms,
+            )
+        )
+        try:
+            await asyncio.shield(storage_task)
+        except asyncio.CancelledError:
+            storage_task.add_done_callback(_log_worker_failure)
+            raise
+
+    async def _finish_scene_storage(
+        self,
+        *,
+        envelope: dict[str, Any],
+        image: Image.Image,
+        scene_audio: dict[str, Any],
+        narration_text: str,
+        speech: tts.Speech,
+        style_key: str,
+        queue_ms: int,
+        narration_ms: int,
+        tts_ms: int,
+    ) -> None:
         clip_frames = await asyncio.to_thread(
-            _decode_clip_frames_for_storage, envelope, image, payload["scene_id"]
+            _decode_clip_frames_for_storage, envelope, image, scene_audio["scene_id"]
         )
         await self._hand_to_sink(
             self._state.sink,
             {
-                "scene_id": payload["scene_id"],
-                "moment_id": moment_id,
+                "scene_id": scene_audio["scene_id"],
+                "moment_id": envelope["moment_id"],
                 "session_id": envelope["session_id"],
                 "captured_at": envelope["captured_at"],
-                "created_at": payload["created_at"],
+                "created_at": scene_audio["created_at"],
                 "style_key": style_key,
-                "narration": narration.text,
+                "narration": narration_text,
                 "image": image,
                 "clip_frames": clip_frames,
                 "audio": speech.audio,

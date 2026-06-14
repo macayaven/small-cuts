@@ -7,6 +7,7 @@ import base64
 import io
 import json
 import threading
+import time
 import uuid
 import wave
 from datetime import datetime, timedelta
@@ -22,6 +23,7 @@ from fastapi.testclient import TestClient  # noqa: E402
 from PIL import Image  # noqa: E402
 
 from small_cuts.engine import build_engine_app  # noqa: E402
+from small_cuts.engine import session as engine_session  # noqa: E402
 from small_cuts.narrator import Narration  # noqa: E402
 from small_cuts.styles import DEFAULT_STYLE_KEY  # noqa: E402
 from test_contracts import GOLDEN  # noqa: E402
@@ -108,6 +110,31 @@ def test_valid_envelope_acked_and_narrated():
         # Busy status surfaced while the moment was in flight, idle after.
         reader.next(lambda f: f.get("kind") == "status" and f["status"]["busy"] is False)
         assert any(s["busy"] for s in reader.statuses())
+
+
+def test_disconnect_after_scene_audio_still_publishes_scene(monkeypatch):
+    original_decode = engine_session._decode_clip_frames_for_storage
+
+    def slow_decode(*args, **kwargs):
+        time.sleep(0.2)
+        return original_decode(*args, **kwargs)
+
+    monkeypatch.setattr(engine_session, "_decode_clip_frames_for_storage", slow_decode)
+    envelope = make_envelope()
+    with TestClient(build_engine_app()) as client:
+        with client.websocket_connect("/v1/session") as ws:
+            reader = Reader(ws)
+            ws.send_text(json.dumps(envelope))
+            audio = reader.next_scene_audio()
+
+        for _ in range(20):
+            scenes = client.get("/v1/scenes").json()["scenes"]
+            if scenes:
+                break
+            time.sleep(0.05)
+        assert len(scenes) == 1
+        assert scenes[0]["scene_id"] == audio["scene_id"]
+        assert scenes[0]["moment_id"] == envelope["moment_id"]
 
 
 def test_invalid_envelope_rejected_with_detail():

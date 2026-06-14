@@ -96,10 +96,10 @@ struct ContentView: View {
             HStack(spacing: 12) {
                 Button("Connect") { connectGlasses() }
                     .buttonStyle(GoldButtonStyle(filled: false))
-                    .disabled(sourceKind != .glasses)
+                    .disabled(sourceKind != .glasses || coordinator.running || coordinator.starting)
                 Button("Start") { start() }
                     .buttonStyle(GoldButtonStyle(filled: true))
-                    .disabled(coordinator.running || coordinator.starting)
+                    .disabled(sourceKind == .glasses || coordinator.running || coordinator.starting)
                 Button("Mark") { coordinator.fireManual() }
                     .buttonStyle(GoldButtonStyle(filled: false))
                     .disabled(!coordinator.running)
@@ -206,7 +206,7 @@ struct ContentView: View {
 
     private func connectGlasses() {
         startError = nil
-        Task { await controller.connect() }
+        start()
     }
 
     private func stopTapped() {

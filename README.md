@@ -11,7 +11,9 @@ license: mit
 short_description: A deadpan narrator for your life, from small open models.
 tags:
   - track:wood
+  - achievement:offgrid
   - achievement:offbrand
+  - achievement:llama
   - achievement:fieldnotes
 ---
 
@@ -39,7 +41,7 @@ This is the **challenger submission** for the
 Small Cuts was born wearing glasses. The intended experience is a **live loop**:
 
 ```
-Ray-Ban Meta glasses  ──video+audio──▶  home engine (small VLM + TTS)  ──▶  narration in your ear
+Ray-Ban Meta glasses  ──image frames──▶  home engine (small VLM + TTS)  ──▶  narration in your ear
                                               │
                                               └──── finished cuts ────▶  the Space (watch · library)
 ```
@@ -57,9 +59,10 @@ sync with the voice — and publish to a library.
 
 The Space is the **view platform + library** half of the loop — a small streaming-channel UI:
 
-- **A live stage** with the current moment, ●REC chip, and **movie-style subtitles** (short
+- **A live stage** with the current moment and **movie-style subtitles** (short
   phrase-sized lines over a constant dark bar, advancing with the voice-over).
-- **Voice-over on by default**, with the player's own volume/mute and a "report this clip" control.
+- **Voice-over replay**, with a compact custom player whose video, sound, captions, and progress
+  share the same audio clock.
 - **A hero library** of real Ray-Ban Meta glasses moments, seeded so the channel is never empty.
 - **"Try it"** — a tucked-away sandbox (open only on request) to narrate your *own* short video.
 
@@ -69,8 +72,8 @@ The Space is the **view platform + library** half of the loop — a small stream
 |---|---|---|
 | Narrator (VLM) | `Qwen/Qwen3-VL-8B-Instruct` | Strong grounded captioning at 8B — well under 32B |
 | Voice (TTS) | **Kokoro** (24 kHz) | Tiny, expressive, open; one signature deadpan delivery |
-| Space runtime | Gradio 6 on **ZeroGPU**, self-contained | The judged canvas; no external APIs at runtime |
-| Real-time engine | FastAPI WS home node, **llama.cpp** option | The live in-ear loop + demo video |
+| Space runtime | Gradio 6 on CPU, viewer-only for live demo | The judged canvas: public theater + library |
+| Real-time engine | FastAPI WS home node, **llama.cpp** | The live in-ear loop + demo video; no cloud LLM/TTS API |
 | Capture | iOS app for Ray-Ban Meta glasses (`ios/SmallCuts/`) | First-person moments, the way it's meant to be lived |
 
 Implementation is a cross-model team effort: **Claude (Opus)** orchestrates, **Codex (GPT-5.x)**
@@ -85,15 +88,16 @@ implements, with **GLM** review and a **Gemini** eval judge.
 | Demo video | Filmed POV with Ray-Ban Meta glasses → narrated by the app *(link below)* |
 | Social post | Linked from this README *(link below)* |
 | Track 2 — **Thousand Token Wood** (`track:wood`) | Whimsical, delightful, AI-load-bearing, original |
+| Off the Grid (`achievement:offgrid`) | Live inference/TTS runs on local hardware; public Space reads finished cuts only |
+| Llama (`achievement:llama`) | The live engine runs through `llama.cpp` |
 
 - 📹 **Demo video:** _TODO — add public link before submission_
 - 📣 **Social post:** _TODO — add link before submission_
 - 📝 **Field notes:** [hf.co/blog/macayaven/small-cuts-field-notes](https://huggingface.co/blog/macayaven/small-cuts-field-notes)
 
-**Bonus quests claimed:** Off-Brand (`offbrand`, custom cinematic frontend) · Field Notes
-(`fieldnotes`, the write-up above). **Under review** (see maintainers' notes): `offgrid`
-(the deadline build is self-contained — no cloud APIs at runtime), `llama` (llama.cpp home
-engine), and the OpenAI / Modal sponsor prizes.
+**Bonus quests claimed:** Off-Brand (`offbrand`, custom cinematic frontend) · Off the Grid
+(`offgrid`, local small-model engine for the live loop) · Llama (`llama`, llama.cpp) · Field
+Notes (`fieldnotes`, the write-up above).
 
 ## Quick start
 

@@ -1,30 +1,54 @@
 # Demo-Readiness Checklist
 
-## Space (the judged artifact)
+Last updated: 2026-06-14 18:10 CEST.
 
-- [ ] Space lives at `build-small-hackathon/small-cuts` and is public
-- [ ] Cold start < 60s on ZeroGPU; CPU fallback functional
-- [ ] Narration latency acceptable (< ~15s ZeroGPU, < ~60s CPU)
-- [ ] Works from iPhone Safari and Android Chrome (judge-on-phone path)
-- [ ] All 6 director styles produce distinct, grounded narration
-- [ ] No cloud API calls anywhere (verify: network audit) — Off the Grid
-- [ ] Total model parameters ≤ 32B documented in README
-- [ ] Custom theme clearly beyond default Gradio — Off-Brand
-- [ ] Example gallery preloaded (3 sample moments) so judges get instant gratification
-- [ ] Graceful failure: bad/empty image → narrator quips instead of stack trace
+## Judged Space
 
-## Demo video (≤90s)
+- [x] Space lives at `build-small-hackathon/small-cuts` and is public.
+- [x] Space runs on `cpu-basic` as a viewer/library, not as the inference host.
+- [x] `SMALL_CUTS_ENGINE_URL` points at the public read gate.
+- [x] Visibility controls are disabled in Space engine mode.
+- [x] Space loads a live engine scene through Cloudflare.
+- [x] Space fetches `frame.jpg`, `card.webp`, `voice.wav`, and `clip.mp4` through `/media/*`.
+- [x] Custom player uses file-backed `<audio id="sc-voice">` as the master clock.
+- [x] Play/pause is bound to trusted DOM gestures instead of a Gradio callback.
+- [ ] Human browser smoke: click play on the Space and confirm video, sound, captions, and progress advance together.
+- [ ] Mobile browser smoke on iPhone Safari.
 
-- [ ] POV footage from Ray-Ban Metas captured (2–3 moments, day + indoor)
-- [ ] Screen capture of the Space narrating those exact moments
-- [ ] Audio: TTS narration audible and performing
-- [ ] Closing card: small-models claim + quest badges
-- [ ] Uploaded + linked per submission requirements
+## Private Live Path
 
-## Submission
+- [x] Mac Studio engine listens privately on Tailnet-compatible `:8077`.
+- [x] Public Cloudflare path points to read gate on `127.0.0.1:8078`, not directly to the engine.
+- [x] Public `GET /v1/scenes` returns `200`.
+- [x] Public `GET /v1/session` returns `403`.
+- [x] Public `PATCH /v1/scenes/*` returns `403`.
+- [x] Synthetic 12-frame moment returns `ack accepted` and `SceneAudio`.
+- [x] Synthetic scene stores both audio and `clip.mp4`.
+- [ ] Physical iPhone simulated-source smoke after reinstalling the latest app.
+- [ ] Physical Ray-Ban Meta glasses smoke: in-ear narration returns while the Space receives the same cut.
 
-- [ ] Submission mechanics verified (org page/Discord)
-- [ ] Social post drafted + published
-- [ ] Field Notes blog post published — Field Notes quest
-- [ ] Quest claims tagged/declared per official mechanism
-- [ ] Submitted with ≥12h buffer before close
+## Submission Metadata
+
+- [x] README identifies the app as the Gradio Space submission.
+- [x] README documents models under 32B: Qwen3-VL-8B + Kokoro.
+- [x] README claims `track:wood`, `achievement:offgrid`, `achievement:offbrand`, `achievement:llama`, and `achievement:fieldnotes`.
+- [ ] Redeploy README/frontmatter after this checklist update.
+- [ ] Verify the Space metadata shows `offgrid` and `llama` tags after redeploy.
+- [ ] Add demo video link.
+- [ ] Add social post link.
+- [ ] Run the submission analyzer before final submission.
+
+## Demo Video
+
+- [ ] Capture one motion-rich first-person moment from the glasses.
+- [ ] Show in-ear narration returning to the wearer.
+- [ ] Show the HF Space receiving the same just-happened POV clip.
+- [ ] Show the custom theater player replaying video, audio, captions, and title.
+- [ ] Keep final cut under 2 minutes, ideally around 60-90 seconds.
+
+## Known Constraints
+
+- Capture is image-frame only for this version; source audio is intentionally not part of the payload.
+- The Space is the public viewer, while local hardware runs the live small-model inference/TTS path.
+- Browser autoplay with sound is intentionally not promised; sound starts from the explicit play gesture.
+- Cloudflare quick-tunnel hostnames are ephemeral. Use the named `small-cuts.carloscrespomacaya.com` tunnel for final demo if time allows.

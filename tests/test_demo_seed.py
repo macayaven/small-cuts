@@ -43,7 +43,10 @@ def test_stage_renders_video_when_clip_present():
         "data:image/jpeg;base64,xxx", "a caption", live=False, clip_src="/gradio_api/file=/x/c.mp4"
     )
     assert "<video" in html and "/gradio_api/file=/x/c.mp4" in html
-    assert "autoplay muted loop playsinline" in html
+    # Muted + looping + inline, but NOT autoplay: the video is driven by the shared play/pause
+    # clock (PLAYBACK_SYNC_JS) so it starts/freezes with the voice instead of running free.
+    assert "muted loop playsinline" in html
+    assert "autoplay" not in html
     # no clip → falls back to a still image
     img_html = viewer.render_stage_html("http://x/f.jpg", "c", live=True)
     assert "<img" in img_html and "<video" not in img_html

@@ -20,6 +20,7 @@
 | 2026-06-12 | run-005 judged: v3+temp lifted all models (3B pass cells 13%→30%); none meets "most images" bar | ✅ | docs/eval/run-005-scored.md |
 | 2026-06-12 | M1 provisional pick: **Qwen2.5-VL-7B** (best G 3.40 + best V 3.03); DEFAULT_MODEL_ID updated | ✅ | src/small_cuts/narrator.py |
 | — | M1 confirm: run-006 challenger (Qwen3-VL-8B, the KB's original target) executing on Spark | ⏳ | Actions run 27399170174, issue #10 |
+| 2026-06-14 | Review-3 viewer: single playback clock (custom file-backed `<audio>` — gr.Audio plays via wavesurfer, can't be the clock) couples video+captions+progress; theater layout (stage + gallery rail, no scrollbars desktop+mobile); 9:16 preserved; Voice-Cut app icon | ✅ | `src/small_cuts/viewer.py`, KB `2026-06-14-small-cuts-review3-*`, 153 pytest, Playwright 1440+390 |
 | — | M2: TTS + title card + Off-Brand theme | ⬜ | — |
 | — | M3: Space live under hackathon org | ⬜ | — |
 | — | M4: demo video + social post + Field Notes | ⬜ | — |

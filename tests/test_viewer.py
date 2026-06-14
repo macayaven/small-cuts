@@ -7,6 +7,7 @@ viewer's formatter is pinned to the same shape the contract suite enforces.
 
 import json
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import gradio as gr
 import httpx
@@ -134,7 +135,9 @@ def test_poll_engine_renders_the_whole_page():
     assert "Happening now" in header  # fresh scene = live capture
     assert f"{ENGINE_URL}/media/9f1c7e4a/frame.jpg" in stage
     assert "mustard yellow" in feed
-    assert audio == f"{ENGINE_URL}/media/9f1c7e4a/voice.wav"
+    # audio is now the hidden master-clock <audio> element carrying the served voice URL
+    assert "<audio" in audio and 'id="sc-voice"' in audio
+    assert f"{ENGINE_URL}/media/9f1c7e4a/voice.wav" in audio
     assert shelf == [(f"{ENGINE_URL}/media/9f1c7e4a/card.webp", "The Bicycle Is Mustard Yellow")]
     assert scenes == [GOLDEN_SCENE]
     assert current == GOLDEN_SCENE["scene_id"]
@@ -252,21 +255,25 @@ def test_go_live_handler_survives_tts_failure(monkeypatch):
     _header, stage, _feed, _shelf, audio, scenes, _pinned = viewer._go_live_handler(
         make_image(), None, "noir", "", []
     )
-    assert audio is None  # no voice...
+    # TTS failed -> an empty <audio> host (no src = no voice), but the stage still renders
+    assert "<audio" in audio and "src=" not in audio
+    assert scenes[0]["audio_src"] is None
     assert len(scenes) == 1  # ...but the scene still staged
     assert "sc-stage-shell" in stage
 
 
-def test_go_live_handler_stashes_audio_for_replay(monkeypatch):
-    """The generated voice-over is stored on the scene so shelf replay isn't silent."""
+def test_go_live_handler_writes_voice_file(monkeypatch):
+    """The generated voice-over is written to a served WAV so shelf replay isn't silent."""
     monkeypatch.delenv("SMALL_CUTS_BACKEND", raising=False)
     monkeypatch.delenv("SMALL_CUTS_TTS_BACKEND", raising=False)
-    *_page, scenes, _pinned = viewer._go_live_handler(make_image(), None, "noir", "", [])
-    audio_value = scenes[0]["audio_value"]
-    assert audio_value is not None
-    sample_rate, samples = audio_value
-    assert sample_rate > 0
-    assert isinstance(samples, np.ndarray) and samples.size > 0
+    _header, _stage, _feed, _shelf, audio, scenes, _pinned = viewer._go_live_handler(
+        make_image(), None, "noir", "", []
+    )
+    audio_src = scenes[0]["audio_src"]
+    assert audio_src is not None and audio_src.endswith(".wav")
+    assert Path(audio_src).exists()  # written to the served generated-audio dir
+    # the page's audio slot carries that file as the master-clock <audio> element
+    assert "<audio" in audio and "gradio_api/file=" in audio
 
 
 def test_subtitle_chunks_are_short_and_robust():

@@ -21,9 +21,11 @@ import base64
 import html
 import io
 import os
+import tempfile
 import uuid
 import warnings
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any
 
 import gradio as gr
@@ -63,6 +65,35 @@ EMPTY_STAGE_CAPTION = (
 EMPTY_VIDEO_CAPTION = (
     "The narrator squints at the projector. Nothing. He has narrated "
     "blank screens before, but never by choice."
+)
+
+# Brand marks (Review-3): the "Voice Cut" app icon, inlined. The brand mark sits in the
+# top bar (replacing the generic clapperboard emoji); the same motif is the favicon (injected
+# in PLAYBACK_SYNC_JS). The rail mark (film-cut glyph, currentColor) heads the library.
+BRAND_MARK_SVG = (
+    '<svg class="sc-brand-mark" viewBox="0 0 64 64" width="20" height="20" aria-hidden="true">'
+    "<defs>"
+    '<linearGradient id="scb" x1="6" y1="4" x2="58" y2="60" gradientUnits="userSpaceOnUse">'
+    '<stop offset="0" stop-color="#26272c"/><stop offset="1" stop-color="#0d0e11"/>'
+    "</linearGradient>"
+    '<linearGradient id="scg" x1="20" y1="9" x2="45" y2="56" gradientUnits="userSpaceOnUse">'
+    '<stop offset="0" stop-color="#e1c98b"/><stop offset="1" stop-color="#8e7845"/>'
+    "</linearGradient></defs>"
+    '<rect width="64" height="64" rx="14" fill="url(#scb)"/>'
+    '<rect x="21" y="8" width="22" height="48" rx="7" fill="#17181b" stroke="url(#scg)" '
+    'stroke-width="5"/>'
+    '<path d="M23 41 41 23" stroke="url(#scg)" stroke-width="8" stroke-linecap="round"/>'
+    '<path d="M25 48c3 0 3-5 6-5s3 5 6 5" stroke="#d8d4c7" stroke-width="3.2" fill="none" '
+    'stroke-linecap="round"/></svg>'
+)
+RAIL_MARK_SVG = (
+    '<svg class="sc-rail-mark" viewBox="0 0 24 24" width="16" height="16" fill="none" '
+    'aria-hidden="true">'
+    '<g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" '
+    'stroke-linejoin="round">'
+    '<rect x="4" y="5" width="16" height="14" rx="2"/>'
+    '<path d="M8 5v14M16 5v14"/><path d="M4 9h4M16 9h4M4 15h4M16 15h4"/>'
+    '<path d="M8.5 17 15.5 7"/></g></svg>'
 )
 
 # De-Gradio CSS: the Off-Brand theme stays the base; this layer turns blocks
@@ -144,7 +175,7 @@ footer { display: none !important; }
   max-width: 560px; margin: 4px auto 0; padding: 6px 16px;
   background: linear-gradient(180deg,#1c1d22,#141419); border: 1px solid #2A292F;
   border-radius: 999px; }
-.sc-controls .sc-audio { max-width: 330px; flex: 1 1 auto; }
+/* custom file-backed player styles (audio host + volume slider) live below (Review-3). */
 .sc-meta { display: flex; align-items: center; justify-content: center; gap: 18px;
   max-width: 560px; margin: 8px auto 0; }
 .sc-icbtn { min-width: 0 !important; width: 42px !important; height: 42px !important;
@@ -159,12 +190,84 @@ footer { display: none !important; }
 .sc-upload { width: 36px !important; height: 36px !important;
   -webkit-mask-size: 24px; mask-size: 24px; background-color: #8a8894 !important; }
 .sc-ico-like-filled.sc-icbtn { background-color: #D4AF37 !important; }
-/* gr.Audio: hide its internal ±1.2s skip (confusable with clip rewind/forward) + export
-   buttons; keep play/pause + volume + waveform-as-seek (custom slim player = Tier-2) */
-.sc-controls .sc-audio button.rewind,
-.sc-controls .sc-audio button.skip,
-.sc-controls .sc-audio button[aria-label="Download"],
-.sc-controls .sc-audio button[aria-label="Share"] { display: none !important; }
+/* custom file-backed player (Review-3): the master clock is a hidden <audio id="sc-voice"> in
+   .sc-audio-host. gr.Audio can't serve as the clock — it plays via wavesurfer, leaving its own
+   <audio> element empty/unreadable. The pill's play/pause + volume drive #sc-voice via JS. */
+.sc-audio-host { display: none !important; }
+.sc-vol-ctl { display: inline-flex; align-items: center; flex: 0 0 auto; }
+.sc-vol { -webkit-appearance: none; appearance: none; width: 62px; height: 4px; border-radius: 3px;
+  background: #3a3942; outline: none; cursor: pointer; }
+.sc-vol::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 12px;
+  height: 12px; border-radius: 50%; background: #D4AF37; cursor: pointer; }
+.sc-vol::-moz-range-thumb { width: 12px; height: 12px; border: none; border-radius: 50%;
+  background: #D4AF37; cursor: pointer; }
+
+/* --- Review-3 theater layout: fit one viewport (no scroll), stage + gallery rail --- */
+/* Lock the page to a single viewport so the main container never scrolls (#4). The gallery
+   lives in a side rail inside this height, so nothing is clipped. */
+html, body { overflow: hidden; height: 100%; }
+.gradio-container { height: 100dvh !important; }
+.gradio-container .main.fillable.app { max-height: 100dvh !important; overflow: hidden !important;
+  padding-top: 8px !important; padding-bottom: 10px !important; }
+.gradio-container .main.fillable, .gradio-container .main.fillable > .wrap,
+.gradio-container .wrap > .contain,
+.gradio-container .contain > .column { min-height: 0 !important; }
+.sc-soul { display: none; }   /* the poetic subline costs vertical budget; brand stays */
+
+.sc-theater { flex: 1 1 auto !important; min-height: 0 !important; align-items: stretch !important;
+  gap: 22px !important; max-width: 1180px; margin: 6px auto 0 !important; width: 100%; }
+.sc-stage-col { display: flex !important; flex-direction: column; min-height: 0 !important;
+  align-items: center; flex: 1 1 auto !important; gap: 4px !important; }
+/* collapse Gradio's default inter-block gaps; centering comes from align-items + each row's
+   own max-width, so zeroing block margins is safe. */
+.sc-stage-col > * { width: 100%; margin: 0 !important; }
+.sc-stage-block { flex: 0 0 auto; min-height: 0; display: flex !important;
+  justify-content: center; }
+/* Bind the stage to the viewport HEIGHT (chrome reserved), width derived from 9:16 — so the
+   ratio is preserved and the controls below it always stay on-screen. The aspect-ratio must
+   NOT drive height off the column width (that overflowed the viewport). */
+.sc-stage-block .sc-stage-shell { height: min(calc(100dvh - 322px), 1480px) !important;
+  max-height: calc(100dvh - 322px); width: auto; flex: 0 0 auto; }
+.sc-rail-col { flex: 0 0 286px !important; min-height: 0 !important; display: flex !important;
+  flex-direction: column; }
+.sc-rail-head { display: flex; align-items: center; gap: 4px; color: #8a8894;
+  font-family: 'IBM Plex Mono', monospace; font-size: .72rem; letter-spacing: .16em;
+  text-transform: uppercase; padding: 4px 2px 8px; }
+.sc-rail-col .sc-shelf { flex: 1 1 auto; min-height: 0; }
+.sc-rail-col .sc-shelf .grid-wrap { grid-template-columns: repeat(2, 1fr) !important;
+  height: 100% !important; max-height: 100% !important; overflow-y: auto !important;
+  overflow-x: hidden !important; }
+
+/* header doubles as the "back to live" affordance (the standalone button is hidden) */
+.sc-header { cursor: pointer; }
+.sc-live-btn { display: none !important; }
+.sc-brand-line { display: inline-flex; align-items: center; white-space: nowrap; }
+.sc-brand-mark { margin-right: 5px; flex: 0 0 auto; }
+
+/* mobile: collapse the theater to one column; gallery becomes a horizontal swipe rail (#7).
+   nowrap is essential — Gradio's row wraps flex-column children into side-by-side columns when
+   the height is bounded; !important is needed to beat the desktop rules above. */
+@media (max-width: 860px) {
+  .sc-theater { flex-direction: column !important; flex-wrap: nowrap !important;
+    gap: 6px !important; }
+  /* trim the chrome so a big-enough stage + pill + gallery rail all fit one phone screen */
+  .sc-header { padding: 0 4px 4px !important; gap: 6px !important; }
+  .sc-header-title { font-size: 1.12rem !important; }
+  .sc-stage-col { flex: 0 0 auto !important; width: 100% !important; gap: 4px !important; }
+  .sc-stage-block { flex: 0 0 auto !important; }
+  .sc-stage-block .sc-stage-shell { height: min(46vh, 400px) !important;
+    max-height: 46vh !important; }
+  .sc-rail-col { flex: 0 0 auto !important; width: 100% !important; min-width: 0 !important;
+    overflow: hidden !important; }
+  .sc-rail-head { padding: 0 2px 2px !important; }
+  .sc-rail-col .sc-shelf { width: 100% !important; height: 94px !important;
+    flex: 0 0 auto !important; }
+  .sc-rail-col .sc-shelf .grid-wrap { grid-template-columns: none !important;
+    grid-auto-flow: column !important; grid-auto-columns: 30% !important;
+    grid-template-rows: 100% !important; width: 100% !important; max-width: 100% !important;
+    height: 94px !important; max-height: 94px !important;
+    overflow-x: auto !important; overflow-y: hidden !important; }
+}
 """
 VIEWER_CSS += ICON_CSS
 
@@ -283,9 +386,12 @@ def render_stage_html(
     """
     if clip_src:
         poster = f' poster="{html.escape(frame_src, quote=True)}"' if frame_src else ""
+        # No `autoplay`: the video is muted and driven by the shared play/pause clock
+        # (PLAYBACK_SYNC_JS) so it starts/freezes with the voice. It loops while playing so a
+        # short clip keeps moving under a longer narration; on pause it freezes on its frame.
         body = (
             f'<video src="{html.escape(clip_src, quote=True)}"{poster} '
-            "autoplay muted loop playsinline></video>"
+            "muted loop playsinline></video>"
         )
     elif frame_src:
         body = f'<img src="{html.escape(frame_src, quote=True)}" alt="">'
@@ -440,7 +546,7 @@ def poll_engine(
     ids = [scene.get("scene_id") for scene in scenes]
     shelf = shelf_items(scenes, client) if ids != prev_ids else gr.skip()
     if payload["audio_src"] and payload["scene_id"] != playing_id:
-        audio, playing_id = payload["audio_src"], payload["scene_id"]
+        audio, playing_id = _audio_html(payload["audio_src"]), payload["scene_id"]
     else:
         audio = gr.skip()
     visibility = gr.update(value=payload["visibility"]) if payload["visibility"] else gr.skip()
@@ -502,15 +608,14 @@ def _go_live_handler(
         empty_caption = EMPTY_VIDEO_CAPTION
     card, narration = _narrate_core(frame, style_key, scene_hint or "", empty_caption)
     scene = make_local_scene(frame, card, narration, style_key)
-    # Voice-over is on by default — narrate, then voice. A TTS hiccup must not crash the
-    # stage, and the decoded audio is stashed on the scene so shelf replay isn't silent.
+    # Voice-over is on by default — narrate, then voice. A TTS hiccup must not crash the stage;
+    # the voice is written to a served WAV so the <audio> master clock can replay it from the shelf.
     try:
         speech = speak(narration)
-        audio_value = (speech.sample_rate, speech.audio)
         scene["duration"] = len(speech.audio) / speech.sample_rate if speech.sample_rate else None
+        scene["audio_src"] = _write_voice(speech.audio, speech.sample_rate, scene["scene_id"])
     except Exception:
-        audio_value = None
-    scene["audio_value"] = audio_value
+        scene["audio_src"] = None
     scenes = [*(scenes or []), scene][-SHELF_LIMIT:]
     payload = format_stage(scene)
     return (
@@ -526,7 +631,7 @@ def _go_live_handler(
         ),
         render_feed_html([feed_entry(s) for s in scenes[-FEED_LIMIT:]]),
         local_shelf_items(scenes),
-        audio_value,
+        _audio_html(scene["audio_src"]),
         scenes,
         None,  # a fresh scene un-pins the stage: back to live
     )
@@ -552,7 +657,8 @@ def _seed_scenes() -> list[dict[str, Any]]:
 
     Dated into the past so they read as finished cuts (STANDBY), not a live moment.
     """
-    gr.set_static_paths([demo_seed.SEED_DIR])
+    GENERATED_AUDIO_DIR.mkdir(parents=True, exist_ok=True)
+    gr.set_static_paths([demo_seed.SEED_DIR, GENERATED_AUDIO_DIR])
     base = datetime.now(timezone.utc) - timedelta(hours=6)
     scenes: list[dict[str, Any]] = []
     for offset, (clip, poster, title, narration, visibility) in enumerate(demo_seed.SEED):
@@ -586,19 +692,44 @@ def _clamp_index(evt_index: Any, length: int) -> int:
     return max(0, min(int(index), length - 1))
 
 
-def _load_audio(path: str | None) -> tuple[int, Any] | None:
-    """Decode a bundled voice-over into a (sample_rate, samples) value for gr.Audio.
+# Generated voice-overs are written here as served WAV files (ephemeral, not the library) so the
+# custom <audio> master clock can stream them — see _write_voice. Registered via set_static_paths.
+GENERATED_AUDIO_DIR = Path(tempfile.gettempdir()) / "small_cuts_voice"
 
-    gr.Audio won't serve an arbitrary absolute file path, but it reliably serves a
-    decoded (sr, ndarray) — Gradio writes its own temp file for that.
-    """
-    if not path:
+
+def _audio_url(src: str | None) -> str | None:
+    """A browser-loadable URL for the voice-over. Engine scenes already carry http(s) or
+    `/gradio_api` URLs; local file paths are served through Gradio's static-file route (the seed
+    dir + GENERATED_AUDIO_DIR are registered via gr.set_static_paths)."""
+    if not src:
+        return None
+    if src.startswith(("http://", "https://", "/gradio_api/")):
+        return src
+    return f"/gradio_api/file={src}"
+
+
+def _audio_html(src: str | None) -> str:
+    """The hidden master-clock `<audio>` element — no native controls; the pill drives it via JS
+    (PLAYBACK_SYNC_JS). Re-rendered into its host on each scene change so the source swaps with the
+    cut. gr.Audio can't serve as the clock: it plays via wavesurfer, leaving its `<audio>` empty."""
+    url = _audio_url(src)
+    if not url:
+        return '<audio id="sc-voice" preload="auto"></audio>'
+    return f'<audio id="sc-voice" src="{html.escape(url, quote=True)}" preload="auto"></audio>'
+
+
+def _write_voice(samples: Any, sample_rate: int, scene_id: str) -> str | None:
+    """Persist generated TTS to a served 16-bit PCM WAV (universal browser support) so the master
+    clock can stream it. Ephemeral — temp dir, not the library (Try-it audio is 'not saved')."""
+    if sample_rate <= 0:
         return None
     try:
-        samples, sample_rate = sf.read(path)
+        GENERATED_AUDIO_DIR.mkdir(parents=True, exist_ok=True)
+        path = str(GENERATED_AUDIO_DIR / f"{scene_id}.wav")
+        sf.write(path, samples, sample_rate, subtype="PCM_16")
+        return path
     except Exception:
         return None
-    return int(sample_rate), samples
 
 
 def _audio_duration(path: str | None) -> float | None:
@@ -611,33 +742,88 @@ def _audio_duration(path: str | None) -> float | None:
         return None
 
 
-SUBTITLE_SYNC_JS = """
+# One clock for the whole stage (Review-3 #3). gr.Audio's native <audio> is the master:
+# the (muted) video and the captions/progress follow ITS play/pause + currentTime, so play
+# runs all three and pause freezes all three on the same frame. Replaces the old three-clock
+# arrangement (video autoplay-loop + gr.Audio + a Date.now() caption estimate) that let the
+# video drift free of the narration. Also injects the Voice-Cut favicon and wires the header
+# as the "back to live" affordance (the standalone button is hidden).
+PLAYBACK_SYNC_JS = """
 () => {
-  if (window.__scSub) return;
-  // the caption clock starts at the first interaction (≈ when the voice can first play),
-  // not at page load — otherwise the boot caption would jump straight to its last line.
-  document.addEventListener('click', () => {
-    if (!window.__scStarted) window.__scT0 = Date.now();
-    window.__scStarted = true;
+  if (window.__scInit) return;
+  window.__scInit = true;
+
+  // favicon: replace Gradio's default with the Small Cuts Voice-Cut mark
+  try {
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">`
+      + `<defs>`
+      + `<linearGradient id="b" x1="6" y1="4" x2="58" y2="60" gradientUnits="userSpaceOnUse">`
+      + `<stop offset="0" stop-color="#26272c"/>`
+      + `<stop offset="1" stop-color="#0d0e11"/></linearGradient>`
+      + `<linearGradient id="g" x1="20" y1="9" x2="45" y2="56" gradientUnits="userSpaceOnUse">`
+      + `<stop offset="0" stop-color="#e1c98b"/>`
+      + `<stop offset="1" stop-color="#8e7845"/></linearGradient></defs>`
+      + `<rect width="64" height="64" rx="14" fill="url(#b)"/>`
+      + `<rect x="21" y="8" width="22" height="48" rx="7" fill="#17181b" `
+      + `stroke="url(#g)" stroke-width="5"/>`
+      + `<path d="M23 41 41 23" stroke="url(#g)" stroke-width="8" stroke-linecap="round"/>`
+      + `<path d="M25 48c3 0 3-5 6-5s3 5 6 5" stroke="#d8d4c7" stroke-width="3.2" `
+      + `fill="none" stroke-linecap="round"/></svg>`;
+    let link = document.querySelector("link[rel~='icon']");
+    if (!link) {
+      link = document.createElement('link'); link.rel = 'icon';
+      document.head.appendChild(link);
+    }
+    link.type = 'image/svg+xml';
+    link.href = 'data:image/svg+xml,' + encodeURIComponent(svg);
+  } catch (e) {}
+
+  // header click = back to live (un-pin / re-follow); forwards to the hidden Gradio button
+  document.addEventListener('click', (e) => {
+    if (e.target.closest && e.target.closest('.sc-header')) {
+      const b = document.querySelector('.sc-live-btn button')
+        || document.querySelector('.sc-live-btn');
+      if (b) b.click();
+    }
   }, true);
-  let key = null;
-  window.__scT0 = 0;
-  window.__scSub = setInterval(() => {
+
+  // volume slider -> the voice clock's volume (delegated; survives audio re-renders)
+  document.addEventListener('input', (e) => {
+    if (e.target && e.target.classList && e.target.classList.contains('sc-vol')) {
+      const a = document.querySelector('#sc-voice');
+      if (a) a.volume = parseFloat(e.target.value);
+    }
+  }, true);
+
+  window.__scClock = setInterval(() => {
+    const audio = document.querySelector('#sc-voice');   // our own master clock <audio>
+    const video = document.querySelector('.sc-stage-shell video');
     const sub = document.querySelector('#sc-subtitle');
     const fill = document.querySelector('#sc-progress-fill');
+    const playBtn = document.querySelector('.sc-play-btn');
+
+    // couple the muted video to the voice's play/pause state (a muted video may play()
+    // programmatically without a user gesture; the voice itself is unlocked by the play tap)
+    if (audio && video) {
+      if (audio.paused) { if (!video.paused) video.pause(); }
+      else if (video.paused) { video.play().catch(() => {}); }
+    }
+    // the play button shows the action it WILL do: play icon when paused, pause icon when playing
+    if (playBtn) {
+      const playing = !!(audio && !audio.paused);
+      playBtn.classList.toggle('sc-ico-pause', playing);
+      playBtn.classList.toggle('sc-ico-play', !playing);
+    }
+
+    // captions + progress advance on the REAL voice clock — true currentTime sync
     if (!sub) { if (fill) fill.style.width = '0%'; return; }
     const lines = sub.querySelectorAll('.sc-sub-line');
     if (!lines.length) return;
-    const k = sub.textContent;
-    if (k !== key) { key = k; window.__scT0 = Date.now(); }   // new cut → restart the clock
-    let idx = 0, p = 0;
-    if (window.__scStarted) {
-      // exact voice length when we know it; else ~16 chars/sec (measured Kokoro rate)
-      const raw = parseFloat(sub.dataset.duration);
-      const dur = (Number.isFinite(raw) && raw > 0) ? raw : Math.max(4, k.length / 16);
-      p = Math.max(0, Math.min(1, (Date.now() - window.__scT0) / 1000 / dur));
-      idx = Math.min(lines.length - 1, Math.floor(p * lines.length));
+    let p = 0;
+    if (audio && isFinite(audio.duration) && audio.duration > 0) {
+      p = Math.max(0, Math.min(1, audio.currentTime / audio.duration));
     }
+    const idx = Math.min(lines.length - 1, Math.floor(p * lines.length));
     lines.forEach((l, i) => { l.hidden = (i !== idx); });
     if (fill) fill.style.width = (p * 100).toFixed(1) + '%';
   }, 120);
@@ -654,7 +840,7 @@ def build_viewer_app() -> gr.Blocks:
     if client:
         boot_header = render_header_html("Tuning the antenna…", "standby", live=False)
         boot_stage = render_stage_html(None, "Waiting for the engine's first scene.", live=False)
-        boot_audio = None
+        boot_audio = _audio_html(None)
     else:
         boot = format_stage(seed[-1] if seed else None)
         boot_header = render_header_html(boot["title"], boot["style_label"], live=False)
@@ -665,7 +851,7 @@ def build_viewer_app() -> gr.Blocks:
             clip_src=boot["clip_src"],
             duration=boot["duration"],
         )
-        boot_audio = _load_audio(boot["audio_src"])
+        boot_audio = _audio_html(boot["audio_src"])
 
     with warnings.catch_warnings():
         # Gradio 6 moved `css` to launch(), but the constructor value is kept
@@ -682,69 +868,114 @@ def build_viewer_app() -> gr.Blocks:
 
         with gr.Row(elem_classes="sc-topbar"):
             gr.HTML(
-                '<div class="sc-brand">🎬 Small Cuts · always rolling'
+                f'<div class="sc-brand"><span class="sc-brand-line">{BRAND_MARK_SVG}'
+                " Small Cuts · always rolling</span>"
                 '<span class="sc-soul">Born on the glasses — what the narrator says in your '
                 "ear lands here as a cut you can keep.</span></div>",
                 padding=False,
             )
             if client is None:
                 upload_btn = gr.Button("", elem_classes=["sc-icbtn", "sc-upload", "sc-ico-upload"])
-        header = gr.HTML(boot_header, elem_classes="sc-plain", padding=False)
-        stage = gr.HTML(boot_stage, elem_classes="sc-plain", padding=False)
-        gr.HTML(
-            '<div class="sc-progress">'
-            '<div class="sc-progress-fill" id="sc-progress-fill"></div></div>',
-            elem_classes="sc-plain",
-            padding=False,
-        )
-        with gr.Row(elem_classes="sc-controls"):
-            rewind_btn = gr.Button("", elem_classes=["sc-icbtn", "sc-ico-rewind"])
-            audio = gr.Audio(
-                label="voice-over",
-                show_label=False,
-                interactive=False,
-                autoplay=True,
-                value=boot_audio,
-                elem_classes="sc-audio",
-            )
-            forward_btn = gr.Button("", elem_classes=["sc-icbtn", "sc-ico-forward"])
-        with gr.Row(elem_classes="sc-meta"):
-            if client is None:
-                # one signature voice — no director menu; voice-over is on by default
-                style = gr.State(DEFAULT_STYLE_KEY)
-                like_btn = gr.Button("", elem_classes=["sc-icbtn", "sc-ico-like", "sc-like-btn"])
-                report_btn = gr.Button("", elem_classes=["sc-icbtn", "sc-ico-flag"])
-            else:
-                visibility = gr.Radio(
-                    choices=list(VISIBILITIES),
-                    value="private",
-                    label="share",
-                    show_label=False,
+        # Theater layout (Review-3): stage + controls on the left, the library as a side rail on
+        # the right. Fills the width and keeps everything in one viewport (no main scroll); the
+        # media query in VIEWER_CSS collapses it to a single column + horizontal rail on mobile.
+        with gr.Row(elem_classes="sc-theater"):
+            with gr.Column(elem_classes="sc-stage-col"):
+                header = gr.HTML(boot_header, elem_classes="sc-plain", padding=False)
+                stage = gr.HTML(
+                    boot_stage, elem_classes=["sc-plain", "sc-stage-block"], padding=False
                 )
-            live_btn = gr.Button("⟲ Back to live", size="sm", variant="secondary")
-        feed = gr.HTML(
-            render_feed_html([feed_entry(s) for s in seed[-FEED_LIMIT:]]),
-            elem_classes="sc-plain",
-            padding=False,
-            visible=SHOW_FEED,
-        )
+                gr.HTML(
+                    '<div class="sc-progress">'
+                    '<div class="sc-progress-fill" id="sc-progress-fill"></div></div>',
+                    elem_classes="sc-plain",
+                    padding=False,
+                )
+                with gr.Row(elem_classes="sc-controls"):
+                    # Custom file-backed player (Review-3): gr.Audio can't be the clock — it plays
+                    # via wavesurfer, leaving its <audio> element empty/unreadable. So the master
+                    # clock is our own hidden <audio id="sc-voice"> (in `audio`, re-rendered per
+                    # scene), driven by these controls + PLAYBACK_SYNC_JS. Boots PAUSED; the play
+                    # tap is the one user gesture that starts audio+video+captions as a unit.
+                    rewind_btn = gr.Button("", elem_classes=["sc-icbtn", "sc-ico-rewind"])
+                    play_btn = gr.Button(
+                        "", elem_classes=["sc-icbtn", "sc-ico-play", "sc-play-btn"]
+                    )
+                    gr.HTML(
+                        '<span class="sc-vol-ctl">'
+                        '<input type="range" class="sc-vol" min="0" max="1" step="0.05" '
+                        'value="1" aria-label="volume"></span>',
+                        elem_classes="sc-plain",
+                        padding=False,
+                    )
+                    forward_btn = gr.Button("", elem_classes=["sc-icbtn", "sc-ico-forward"])
+                    if client is None:
+                        # like (honest no-count toggle) + flag now live in the pill, aligned
+                        # with the controls (Review-3 #2 — no longer orphaned below).
+                        like_btn = gr.Button(
+                            "", elem_classes=["sc-icbtn", "sc-ico-like", "sc-like-btn"]
+                        )
+                        report_btn = gr.Button("", elem_classes=["sc-icbtn", "sc-ico-flag"])
+                    # hidden master-clock <audio> host (re-rendered on each scene change)
+                    audio = gr.HTML(boot_audio, elem_classes="sc-audio-host", padding=False)
+                # the play tap toggles the voice clock — a real user gesture, so sound is allowed
+                play_btn.click(
+                    fn=None,
+                    js="() => { const a = document.querySelector('#sc-voice');"
+                    " if (a) { a.paused ? a.play() : a.pause(); } }",
+                )
+                if client is None:
+                    # one signature voice — no director menu; voice-over is on by default
+                    style = gr.State(DEFAULT_STYLE_KEY)
+                else:
+                    with gr.Row(elem_classes="sc-meta"):
+                        visibility = gr.Radio(
+                            choices=list(VISIBILITIES),
+                            value="private",
+                            label="share",
+                            show_label=False,
+                        )
+                feed = gr.HTML(
+                    render_feed_html([feed_entry(s) for s in seed[-FEED_LIMIT:]]),
+                    elem_classes="sc-plain",
+                    padding=False,
+                    visible=SHOW_FEED,
+                )
+                if client is None:
+                    # The upload sandbox opens on demand from the top-right icon — off the main
+                    # view, video-only (the product narrates video, not stills).
+                    image_none = gr.State(None)
+                    with gr.Accordion(
+                        "▸ Try it — narrate your own video",
+                        open=False,
+                        visible=False,
+                        elem_classes="sc-tryit",
+                    ) as tryit_panel:
+                        drop_video = gr.Video(sources=["upload"], show_label=False, height=140)
+                        hint = gr.Textbox(
+                            show_label=False,
+                            container=False,
+                            placeholder="whisper context to the narrator (optional)",
+                        )
+                        go = gr.Button("🎬 Narrate this video", variant="primary", size="sm")
+            with gr.Column(elem_classes="sc-rail-col"):
+                gr.HTML(
+                    f'<div class="sc-rail-head">{RAIL_MARK_SVG}<span>Library</span></div>',
+                    elem_classes="sc-plain",
+                    padding=False,
+                )
+                shelf = gr.Gallery(
+                    value=(local_shelf_items(seed) if seed else []),
+                    show_label=False,
+                    columns=2,
+                    allow_preview=False,
+                    object_fit="cover",
+                    elem_classes="sc-shelf",
+                )
+        # "Back to live" is now the (clickable) header; this button stays for its un-pin /
+        # re-follow-live wiring but is hidden via CSS and triggered by the header click in JS.
+        live_btn = gr.Button("⟲ Back to live", elem_classes=["sc-live-btn"])
         if client is None:
-            # The upload sandbox opens on demand from the top-right icon — off the main view,
-            # video-only (the product narrates video, not stills).
-            image_none = gr.State(None)
-            with gr.Accordion(
-                "▸ Try it — narrate your own video",
-                open=False,
-                visible=False,
-                elem_classes="sc-tryit",
-            ) as tryit_panel:
-                drop_video = gr.Video(sources=["upload"], show_label=False, height=140)
-                hint = gr.Textbox(
-                    show_label=False,
-                    container=False,
-                    placeholder="whisper context to the narrator (optional)",
-                )
-                go = gr.Button("🎬 Narrate this video", variant="primary", size="sm")
             upload_btn.click(lambda: gr.update(open=True, visible=True), outputs=[tryit_panel])
             like_btn.click(
                 lambda: gr.Info("Liked — thanks; likes help surface good cuts."),
@@ -754,16 +985,6 @@ def build_viewer_app() -> gr.Blocks:
                     " b.classList.toggle('sc-ico-like-filled'); } }"
                 ),
             )
-        shelf = gr.Gallery(
-            value=(local_shelf_items(seed) if seed else []),
-            show_label=False,
-            columns=12,
-            rows=1,
-            height=170,
-            allow_preview=False,
-            object_fit="cover",
-            elem_classes="sc-shelf",
-        )
 
         if client is not None:
             engine = client  # narrow the type for the closures below
@@ -802,7 +1023,7 @@ def build_viewer_app() -> gr.Blocks:
                         clip_src=payload["clip_src"],
                         duration=payload["duration"],
                     ),
-                    payload["audio_src"] or gr.skip(),
+                    _audio_html(payload["audio_src"]) if payload["audio_src"] else gr.skip(),
                     payload["scene_id"],
                     payload["scene_id"],
                     payload["scene_id"],
@@ -842,7 +1063,7 @@ def build_viewer_app() -> gr.Blocks:
                         clip_src=payload["clip_src"],
                         duration=payload["duration"],
                     ),
-                    payload["audio_src"] or gr.skip(),
+                    _audio_html(payload["audio_src"]) if payload["audio_src"] else gr.skip(),
                     payload["scene_id"],
                     payload["scene_id"],
                     payload["scene_id"],
@@ -896,7 +1117,7 @@ def build_viewer_app() -> gr.Blocks:
                         clip_src=payload["clip_src"],
                         duration=payload["duration"],
                     ),
-                    scene.get("audio_value") or _load_audio(payload["audio_src"]),
+                    _audio_html(payload["audio_src"]),
                     payload["scene_id"],
                 )
 
@@ -904,9 +1125,6 @@ def build_viewer_app() -> gr.Blocks:
                 scenes = scenes or []
                 scene = scenes[-1] if scenes else None
                 payload = format_stage(scene)
-                replay = (scene.get("audio_value") if scene else None) or _load_audio(
-                    payload["audio_src"]
-                )
                 return (
                     render_header_html(payload["title"], payload["style_label"], payload["live"]),
                     render_stage_html(
@@ -916,7 +1134,7 @@ def build_viewer_app() -> gr.Blocks:
                         clip_src=payload["clip_src"],
                         duration=payload["duration"],
                     ),
-                    replay,
+                    _audio_html(payload["audio_src"]),
                     None,
                 )
 
@@ -939,7 +1157,7 @@ def build_viewer_app() -> gr.Blocks:
                         clip_src=payload["clip_src"],
                         duration=payload["duration"],
                     ),
-                    scene.get("audio_value") or _load_audio(payload["audio_src"]),
+                    _audio_html(payload["audio_src"]),
                     scene["scene_id"],
                 )
 
@@ -971,5 +1189,5 @@ def build_viewer_app() -> gr.Blocks:
                 outputs=step_outputs,
             )
 
-        demo.load(js=SUBTITLE_SYNC_JS)
+        demo.load(js=PLAYBACK_SYNC_JS)
     return demo

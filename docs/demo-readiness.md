@@ -7,6 +7,8 @@ Last updated: 2026-06-14 18:10 CEST.
 - [x] Space lives at `build-small-hackathon/small-cuts` and is public.
 - [x] Space runs on `cpu-basic` as a viewer/library, not as the inference host.
 - [x] `SMALL_CUTS_ENGINE_URL` points at the public read gate.
+- [x] Active Space endpoint uses the known-good quick tunnel:
+  `https://lincoln-greene-paragraph-tcp.trycloudflare.com`.
 - [x] Visibility controls are disabled in Space engine mode.
 - [x] Space loads a live engine scene through Cloudflare.
 - [x] Space fetches `frame.jpg`, `card.webp`, `voice.wav`, and `clip.mp4` through `/media/*`.
@@ -51,4 +53,7 @@ Last updated: 2026-06-14 18:10 CEST.
 - Capture is image-frame only for this version; source audio is intentionally not part of the payload.
 - The Space is the public viewer, while local hardware runs the live small-model inference/TTS path.
 - Browser autoplay with sound is intentionally not promised; sound starts from the explicit play gesture.
-- Cloudflare quick-tunnel hostnames are ephemeral. Use the named `small-cuts.carloscrespomacaya.com` tunnel for final demo if time allows.
+- Cloudflare quick-tunnel hostnames are ephemeral. The named `small-cuts.carloscrespomacaya.com`
+  tunnel direct smoke is `200` for reads and `403` for writes, but the HF Space stayed on
+  "Signal lost" when pointed at it during this run. Keep the Space on the known-good quick tunnel
+  until that Cloudflare/HF interaction is isolated.

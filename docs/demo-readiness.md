@@ -1,6 +1,6 @@
 # Demo-Readiness Checklist
 
-Last updated: 2026-06-14 18:28 CEST.
+Last updated: 2026-06-14 18:45 CEST.
 
 ## Judged Space
 
@@ -14,8 +14,8 @@ Last updated: 2026-06-14 18:28 CEST.
 - [x] Space fetches `frame.jpg`, `card.webp`, `voice.wav`, and `clip.mp4` through `/media/*`.
 - [x] Custom player uses file-backed `<audio id="sc-voice">` as the master clock.
 - [x] Play/pause is bound to trusted DOM gestures instead of a Gradio callback.
-- [x] Latest Space source deploy includes the storage-after-disconnect fix:
-  `9364ce9ce71f428736ac62da92d5e929ebb7fb73`.
+- [x] Latest Space source deploy includes retained scene-storage tasks:
+  `91353f3e803a8712141008f7adc2b50aba83eb22`.
 - [x] Browser automation verifies the active Space renders the real POV `rayuela` scene with
   ready `clip.mp4` and `voice.wav` on desktop.
 - [ ] Human browser smoke: click play on the Space and confirm video, sound, captions, and progress advance together.
@@ -33,6 +33,8 @@ Last updated: 2026-06-14 18:28 CEST.
 - [x] Synthetic scene stores both audio and `clip.mp4`.
 - [x] Real seed POV clip (`rayuela.mp4`) returns `ack accepted`, `SceneAudio`, idle status,
   and public `clip.mp4`/`voice.wav` through the read gate.
+- [x] Latest local engine restart is on the retained-storage-task fix, then warmed with
+  `rayuela.mp4` scene `aeffab3c-e651-48dd-bd1a-4261a2035298`.
 - [ ] Physical iPhone simulated-source smoke after reinstalling the latest app.
 - [ ] Physical Ray-Ban Meta glasses smoke: in-ear narration returns while the Space receives the same cut.
 

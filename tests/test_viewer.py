@@ -241,6 +241,32 @@ def test_voice_handler_prefers_pinned_scene(monkeypatch):
     assert viewer._current_scene([first, second], "missing") is second
 
 
+def test_scene_actions_are_scoped_to_current_scene():
+    liked, reported = {"a"}, {"b"}
+
+    assert viewer._scene_action_classes("a", liked, reported) == (
+        ["sc-icbtn", "sc-ico-like-filled", "sc-like-btn"],
+        ["sc-icbtn", "sc-ico-flag", "sc-report-btn"],
+    )
+    assert viewer._scene_action_classes("b", liked, reported) == (
+        ["sc-icbtn", "sc-ico-like", "sc-like-btn"],
+        ["sc-icbtn", "sc-ico-flag-filled", "sc-report-btn"],
+    )
+
+
+def test_scene_action_toggles_target_only_current_scene():
+    liked, reported = set(), set()
+
+    liked, like_update = viewer._toggle_scene_like("a", liked, reported)
+    assert liked == {"a"}
+    assert "sc-ico-like-filled" in like_update["elem_classes"]
+
+    reported, report_update = viewer._toggle_scene_report("b", liked, reported)
+    assert reported == {"b"}
+    assert "sc-ico-flag-filled" in report_update["elem_classes"]
+    assert "sc-ico-like-filled" not in report_update["elem_classes"]
+
+
 # -- review-hardening regressions (cross-family Codex+GLM review, 2026-06-14) ----------
 
 

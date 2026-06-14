@@ -85,6 +85,12 @@ def test_temperature_env_override(fake_server, monkeypatch):
     assert fake_server.requests[-1]["temperature"] == pytest.approx(0.7)
 
 
+def test_max_tokens_env_override(fake_server, monkeypatch):
+    monkeypatch.setenv("SMALL_CUTS_MAX_NEW_TOKENS", "60")
+    LlamaCppBackend().generate(make_image(), "deadpan", "")
+    assert fake_server.requests[-1]["max_tokens"] == 60
+
+
 def test_narrate_integration(fake_server, monkeypatch):
     monkeypatch.setenv("SMALL_CUTS_BACKEND", "llama_cpp")
     result = narrate(make_image(), "deadpan", backend=LlamaCppBackend())

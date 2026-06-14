@@ -37,6 +37,7 @@ LLAMA_REPO_ID = "Qwen/Qwen3-VL-8B-Instruct-GGUF"
 LLAMA_GGUF_FILENAME = "Qwen3VL-8B-Instruct-Q4_K_M.gguf"
 LLAMA_MMPROJ_FILENAME = "mmproj-Qwen3VL-8B-Instruct-F16.gguf"
 LLAMA_TIMEOUT_S = 120.0
+DEFAULT_MAX_NEW_TOKENS = 160
 
 
 @dataclass(frozen=True)
@@ -136,7 +137,10 @@ class TransformersBackend:
         # heat feeds it. Overridable per-run for eval sweeps.
         temperature = float(os.environ.get("SMALL_CUTS_TEMPERATURE", "0.3"))
         output = model.generate(
-            **inputs, max_new_tokens=160, do_sample=temperature > 0, temperature=temperature
+            **inputs,
+            max_new_tokens=_max_output_tokens(),
+            do_sample=temperature > 0,
+            temperature=temperature,
         )
         text = processor.batch_decode(
             output[:, inputs["input_ids"].shape[1] :], skip_special_tokens=True
@@ -231,7 +235,7 @@ class LlamaCppBackend:
                 },
             ],
             "temperature": _temperature(),
-            "max_tokens": 160,
+            "max_tokens": _max_output_tokens(),
         }
 
     def _ensure_server(self) -> str:
@@ -351,6 +355,19 @@ def _temperature() -> float:
         return float(os.environ.get("SMALL_CUTS_TEMPERATURE", "0.3"))
     except ValueError as exc:
         raise RuntimeError("SMALL_CUTS_TEMPERATURE must be a floating-point number.") from exc
+
+
+def _max_output_tokens() -> int:
+    raw = os.environ.get("SMALL_CUTS_MAX_NEW_TOKENS", "").strip()
+    if not raw:
+        return DEFAULT_MAX_NEW_TOKENS
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise RuntimeError("SMALL_CUTS_MAX_NEW_TOKENS must be an integer.") from exc
+    if value < 1:
+        raise RuntimeError("SMALL_CUTS_MAX_NEW_TOKENS must be greater than zero.")
+    return value
 
 
 def _llama_server_binary() -> str:

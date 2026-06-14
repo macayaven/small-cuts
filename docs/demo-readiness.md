@@ -1,6 +1,6 @@
 # Demo-Readiness Checklist
 
-Last updated: 2026-06-14 18:45 CEST.
+Last updated: 2026-06-14 18:47 CEST.
 
 ## Judged Space
 
@@ -35,6 +35,7 @@ Last updated: 2026-06-14 18:45 CEST.
   and public `clip.mp4`/`voice.wav` through the read gate.
 - [x] Latest local engine restart is on the retained-storage-task fix, then warmed with
   `rayuela.mp4` scene `aeffab3c-e651-48dd-bd1a-4261a2035298`.
+- [x] iOS simulator suite passes: 63 tests, 1 live-engine smoke skipped, 0 failures.
 - [ ] Physical iPhone simulated-source smoke after reinstalling the latest app.
 - [ ] Physical Ray-Ban Meta glasses smoke: in-ear narration returns while the Space receives the same cut.
 

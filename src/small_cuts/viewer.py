@@ -23,20 +23,32 @@ import io
 import os
 import uuid
 import warnings
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import gradio as gr
 import httpx
+import soundfile as sf
 from PIL import Image
 
+from . import demo_seed
+from ._icons import ICON_CSS
 from .frames import pick_frame, sample_frames
-from .styles import DEFAULT_STYLE_KEY, STYLES, style_choices
+from .styles import DEFAULT_STYLE_KEY, STYLES
 from .title_card import derive_title
+from .tts import speak
 from .ui import THEME as THEME  # re-export: app.py launches the viewer with the Off-Brand theme
 from .ui import TITLE, _gpu, _narrate_core, _speak_handler
 
 ENGINE_URL_ENV = "SMALL_CUTS_ENGINE_URL"
+# The narrator-as-chat feed is dropped from the default layout (single centered column);
+# flip this on to revive it (a future "see transcription" surface for non-live clips).
+SHOW_FEED = os.environ.get("SMALL_CUTS_SHOW_FEED", "").strip().lower() not in (
+    "",
+    "0",
+    "false",
+    "no",
+)
 POLL_SECONDS = 2.0
 LIVE_WINDOW_S = 60.0  # ●REC reads LIVE when the newest scene is younger than this
 FEED_LIMIT = 12
@@ -62,23 +74,32 @@ footer { display: none !important; }
 
 .sc-brand { font-family: 'IBM Plex Mono', monospace; font-size: .72rem; letter-spacing: .22em;
   color: #8a8894; text-transform: uppercase; padding: 2px 4px 0; }
+.sc-soul { display: block; font-family: 'Spectral', serif; font-style: italic;
+  text-transform: none; letter-spacing: normal; font-size: .82rem; color: #6f6d78;
+  margin-top: 3px; }
 
 .sc-header { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;
   padding: 2px 4px 10px; border-bottom: 1px solid #2A292F; }
 .sc-header-title { font-family: 'Spectral', serif; font-size: 1.35rem; color: #E8E4D8; }
 .sc-header-channel { font-family: 'IBM Plex Mono', monospace; font-size: .78rem; color: #D4AF37;
   letter-spacing: .08em; text-transform: uppercase; }
+.sc-live-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+  background: #D4AF37; margin-right: 9px; vertical-align: middle;
+  animation: sc-pulse 1.4s ease-in-out infinite; }
 
 .sc-stage-shell { position: relative; height: min(70vh, 640px); aspect-ratio: 9 / 16;
   margin: 0 auto; border-radius: 18px; overflow: hidden; background: #000;
   border: 1px solid #2A292F; }
-.sc-stage-shell img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.sc-stage-shell img, .sc-stage-shell video {
+  width: 100%; height: 100%; object-fit: cover; display: block; }
 .sc-stage-empty { width: 100%; height: 100%; display: flex; align-items: center;
   justify-content: center; font-size: 3rem; opacity: .35; }
-.sc-caption { position: absolute; left: 0; right: 0; bottom: 0; padding: 56px 18px 16px;
-  background: linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,.85) 72%);
-  color: #E8E4D8; font-family: 'Spectral', serif; font-size: 1.02rem; line-height: 1.45;
-  text-shadow: 0 1px 3px rgba(0,0,0,.9); }
+.sc-subtitle { position: absolute; left: 50%; transform: translateX(-50%); bottom: 26px;
+  width: min(92%, 600px); min-height: 2.7em; display: flex; align-items: center;
+  justify-content: center; text-align: center; background: rgba(8,8,10,.72);
+  color: #f3efe4; border-radius: 9px; padding: 11px 16px; font-family: 'Spectral', serif;
+  font-size: 1.04rem; line-height: 1.38; text-shadow: 0 1px 2px rgba(0,0,0,.85); }
+.sc-subtitle .sc-sub-line[hidden] { display: none; }
 
 .sc-rec { position: absolute; top: 12px; left: 12px; display: inline-flex; align-items: center;
   gap: 7px; background: rgba(16,16,20,.78); color: #D4AF37; padding: 4px 11px;
@@ -111,7 +132,41 @@ footer { display: none !important; }
 .sc-dropzone-label { font-family: 'IBM Plex Mono', monospace; font-size: .72rem;
   letter-spacing: .14em; color: #8a8894; text-transform: uppercase; }
 .sc-shelf { background: transparent !important; border: none !important; }
+
+/* --- Review-2 relayout: single centered column, control pill, masked icons --- */
+.sc-topbar { display: flex; align-items: flex-start; gap: 12px; }
+.sc-topbar .sc-brand { flex: 1 1 auto; }
+.sc-header { justify-content: center; text-align: center; }
+.sc-progress { max-width: 560px; height: 4px; margin: 12px auto 2px; border-radius: 3px;
+  background: #2A292F; overflow: hidden; }
+.sc-progress-fill { height: 100%; width: 0%; background: #D4AF37; transition: width .12s linear; }
+.sc-controls { display: flex; align-items: center; justify-content: center; gap: 12px;
+  max-width: 560px; margin: 4px auto 0; padding: 6px 16px;
+  background: linear-gradient(180deg,#1c1d22,#141419); border: 1px solid #2A292F;
+  border-radius: 999px; }
+.sc-controls .sc-audio { max-width: 330px; flex: 1 1 auto; }
+.sc-meta { display: flex; align-items: center; justify-content: center; gap: 18px;
+  max-width: 560px; margin: 8px auto 0; }
+.sc-icbtn { min-width: 0 !important; width: 42px !important; height: 42px !important;
+  padding: 0 !important; border: none !important; box-shadow: none !important;
+  background-image: none !important; background-color: #aaa798 !important;
+  color: transparent !important; flex: 0 0 auto; border-radius: 0 !important;
+  -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat;
+  -webkit-mask-position: center; mask-position: center;
+  -webkit-mask-size: 22px 22px; mask-size: 22px 22px;
+  transition: background-color .15s ease; }
+.sc-icbtn:hover { background-color: #fff5d5 !important; }
+.sc-upload { width: 36px !important; height: 36px !important;
+  -webkit-mask-size: 24px; mask-size: 24px; background-color: #8a8894 !important; }
+.sc-ico-like-filled.sc-icbtn { background-color: #D4AF37 !important; }
+/* gr.Audio: hide its internal ±1.2s skip (confusable with clip rewind/forward) + export
+   buttons; keep play/pause + volume + waveform-as-seek (custom slim player = Tier-2) */
+.sc-controls .sc-audio button.rewind,
+.sc-controls .sc-audio button.skip,
+.sc-controls .sc-audio button[aria-label="Download"],
+.sc-controls .sc-audio button[aria-label="Share"] { display: none !important; }
 """
+VIEWER_CSS += ICON_CSS
 
 
 # -- scene formatting (pure, both modes) -------------------------------------------
@@ -164,7 +219,9 @@ def format_stage(
             "style_label": "off air",
             "caption": "",
             "frame_src": None,
+            "clip_src": None,
             "audio_src": None,
+            "duration": None,
             "live": False,
             "visibility": None,
         }
@@ -182,7 +239,9 @@ def format_stage(
         "style_label": _style_label(scene.get("style_key", "")),
         "caption": scene.get("narration", ""),
         "frame_src": scene.get("frame_src") or _absolute(media.get("frame_url")),
+        "clip_src": scene.get("clip_src") or _absolute(media.get("clip_url")),
         "audio_src": scene.get("audio_src") or _absolute(media.get("audio_url")),
+        "duration": scene.get("duration"),
         "live": is_fresh(scene.get("created_at"), now=now),
         "visibility": scene.get("visibility"),
     }
@@ -191,39 +250,81 @@ def format_stage(
 # -- HTML renderers (pure) -----------------------------------------------------------
 
 
-def render_stage_html(frame_src: str | None, caption: str, live: bool) -> str:
-    """The 9:16 stage: frame, ●REC chip, lower-third caption over a scrim."""
-    chip_class = "sc-rec" if live else "sc-rec standby"
-    chip_text = "LIVE" if live else "STANDBY"
-    if frame_src:
+def _subtitle_chunks(text: str, max_words: int = 5) -> list[str]:
+    """Short subtitle lines — broken at clause punctuation, capped at max_words.
+
+    Real-time narration arrives in small recent-past pieces; the captions mirror that
+    cadence (a few words at a time) rather than dumping a whole sentence at once — so they
+    can advance fast enough to track the voice instead of lagging behind it.
+    """
+    chunks: list[str] = []
+    cur: list[str] = []
+    for word in text.split():
+        cur.append(word)
+        if word[-1:] in ",.;:!?" or len(cur) >= max_words:
+            chunks.append(" ".join(cur))
+            cur = []
+    if cur:
+        chunks.append(" ".join(cur))
+    return chunks or [text.strip()]
+
+
+def render_stage_html(
+    frame_src: str | None,
+    caption: str,
+    live: bool,
+    clip_src: str | None = None,
+    duration: float | None = None,
+) -> str:
+    """The 9:16 stage: the moment (video clip or still frame) + lower-third caption.
+
+    `live` is retained for signature stability — the live/finished state now lives in the
+    header ("Happening now" vs. the auto-title), not a REC chip on the stage.
+    """
+    if clip_src:
+        poster = f' poster="{html.escape(frame_src, quote=True)}"' if frame_src else ""
+        body = (
+            f'<video src="{html.escape(clip_src, quote=True)}"{poster} '
+            "autoplay muted loop playsinline></video>"
+        )
+    elif frame_src:
         body = f'<img src="{html.escape(frame_src, quote=True)}" alt="">'
     else:
         body = '<div class="sc-stage-empty">🎬</div>'
-    caption_html = f'<div class="sc-caption">{html.escape(caption)}</div>' if caption else ""
-    return (
-        '<div class="sc-stage-shell">'
-        f"{body}"
-        f'<div class="{chip_class}"><span class="sc-rec-dot"></span>REC · {chip_text}</div>'
-        f"{caption_html}"
-        "</div>"
-    )
+    if caption and caption.strip():
+        spans = "".join(
+            f'<span class="sc-sub-line"{"" if i == 0 else " hidden"}>{html.escape(c)}</span>'
+            for i, c in enumerate(_subtitle_chunks(caption))
+        )
+        dur_attr = f' data-duration="{float(duration):.1f}"' if duration else ""
+        caption_html = f'<div class="sc-subtitle" id="sc-subtitle"{dur_attr}>{spans}</div>'
+    else:
+        caption_html = ""
+    return f'<div class="sc-stage-shell">{body}{caption_html}</div>'
 
 
 def render_header_html(title: str, style_label: str, live: bool) -> str:
+    # One unnamed signature voice — the channel is Small Cuts, not a per-cut director.
+    # style_label is retained in the call signature for future per-owner channels.
+    # Live capture reads "Happening now"; a finished cut shows its auto-generated title.
     state = "live" if live else "standby"
+    headline = '<span class="sc-live-dot"></span>Happening now' if live else html.escape(title)
     return (
         f'<div class="sc-header sc-{state}">'
-        f'<span class="sc-header-title">{html.escape(title)}</span>'
-        f'<span class="sc-header-channel">{html.escape(style_label)} · director\'s cut</span>'
+        f'<span class="sc-header-title">{headline}</span>'
+        '<span class="sc-header-channel">Small Cuts</span>'
         "</div>"
     )
 
 
 def feed_entry(scene: dict[str, Any]) -> dict[str, str]:
-    """One chat line: the director's cut is the chatter, the narration the message."""
+    """One chat line: the narrator is the chatter, the narration the message.
+
+    One signature voice — the author is always "Narrator", never a per-style name.
+    """
     ts = _parse_ts(scene.get("created_at"))
     return {
-        "author": _style_label(scene.get("style_key", "")),
+        "author": "Narrator",
         "text": scene.get("narration", ""),
         "time": ts.strftime("%H:%M") if ts else "",
     }
@@ -326,7 +427,13 @@ def poll_engine(
     on_air = channel_live and current.get("scene_id") == newest.get("scene_id")
 
     header = render_header_html(payload["title"], payload["style_label"], live=channel_live)
-    stage = render_stage_html(payload["frame_src"], payload["caption"], live=on_air)
+    stage = render_stage_html(
+        payload["frame_src"],
+        payload["caption"],
+        live=on_air,
+        clip_src=payload["clip_src"],
+        duration=payload["duration"],
+    )
     feed = render_feed_html([feed_entry(scene) for scene in scenes[-FEED_LIMIT:]])
 
     prev_ids = [scene.get("scene_id") for scene in scenes_prev]
@@ -395,13 +502,31 @@ def _go_live_handler(
         empty_caption = EMPTY_VIDEO_CAPTION
     card, narration = _narrate_core(frame, style_key, scene_hint or "", empty_caption)
     scene = make_local_scene(frame, card, narration, style_key)
+    # Voice-over is on by default — narrate, then voice. A TTS hiccup must not crash the
+    # stage, and the decoded audio is stashed on the scene so shelf replay isn't silent.
+    try:
+        speech = speak(narration)
+        audio_value = (speech.sample_rate, speech.audio)
+        scene["duration"] = len(speech.audio) / speech.sample_rate if speech.sample_rate else None
+    except Exception:
+        audio_value = None
+    scene["audio_value"] = audio_value
     scenes = [*(scenes or []), scene][-SHELF_LIMIT:]
     payload = format_stage(scene)
     return (
-        render_header_html(payload["title"], payload["style_label"], live=True),
-        render_stage_html(payload["frame_src"], payload["caption"], live=True),
+        # An upload is a finished, processed cut — show its auto-title, not "Happening now"
+        # (that headline is reserved for live engine-mode capture).
+        render_header_html(payload["title"], payload["style_label"], live=False),
+        render_stage_html(
+            payload["frame_src"],
+            payload["caption"],
+            live=False,
+            clip_src=payload["clip_src"],
+            duration=payload["duration"],
+        ),
         render_feed_html([feed_entry(s) for s in scenes[-FEED_LIMIT:]]),
         local_shelf_items(scenes),
+        audio_value,
         scenes,
         None,  # a fresh scene un-pins the stage: back to live
     )
@@ -422,6 +547,37 @@ def _voice_handler(scenes: list[dict[str, Any]], pinned_id: str | None):
     return _speak_handler(scene["narration"])
 
 
+def _seed_scenes() -> list[dict[str, Any]]:
+    """Curated 'hero' library — upload mode boots with these so the Space isn't empty.
+
+    Dated into the past so they read as finished cuts (STANDBY), not a live moment.
+    """
+    gr.set_static_paths([demo_seed.SEED_DIR])
+    base = datetime.now(timezone.utc) - timedelta(hours=6)
+    scenes: list[dict[str, Any]] = []
+    for offset, (clip, poster, title, narration, visibility) in enumerate(demo_seed.SEED):
+        poster_img = demo_seed.load_poster(poster)
+        thumb = poster_img.copy()
+        thumb.thumbnail((400, 540))
+        voice = demo_seed.clip_path(clip[:-4] + ".mp3")
+        scenes.append(
+            {
+                "scene_id": f"seed-{offset}",
+                "title": title,
+                "narration": narration,
+                "style_key": demo_seed.STYLE_KEY,
+                "created_at": (base + timedelta(minutes=offset * 7)).isoformat(),
+                "clip_src": f"/gradio_api/file={demo_seed.clip_path(clip)}",
+                "audio_src": voice,
+                "duration": _audio_duration(voice),
+                "frame_src": _data_uri(poster_img),
+                "card_thumb": thumb,
+                "visibility": visibility,
+            }
+        )
+    return scenes
+
+
 # -- the page --------------------------------------------------------------------------
 
 
@@ -430,17 +586,86 @@ def _clamp_index(evt_index: Any, length: int) -> int:
     return max(0, min(int(index), length - 1))
 
 
+def _load_audio(path: str | None) -> tuple[int, Any] | None:
+    """Decode a bundled voice-over into a (sample_rate, samples) value for gr.Audio.
+
+    gr.Audio won't serve an arbitrary absolute file path, but it reliably serves a
+    decoded (sr, ndarray) — Gradio writes its own temp file for that.
+    """
+    if not path:
+        return None
+    try:
+        samples, sample_rate = sf.read(path)
+    except Exception:
+        return None
+    return int(sample_rate), samples
+
+
+def _audio_duration(path: str | None) -> float | None:
+    """Voice-over length in seconds — the exact clock the captions advance against."""
+    if not path:
+        return None
+    try:
+        return float(sf.info(path).duration)
+    except Exception:
+        return None
+
+
+SUBTITLE_SYNC_JS = """
+() => {
+  if (window.__scSub) return;
+  // the caption clock starts at the first interaction (≈ when the voice can first play),
+  // not at page load — otherwise the boot caption would jump straight to its last line.
+  document.addEventListener('click', () => {
+    if (!window.__scStarted) window.__scT0 = Date.now();
+    window.__scStarted = true;
+  }, true);
+  let key = null;
+  window.__scT0 = 0;
+  window.__scSub = setInterval(() => {
+    const sub = document.querySelector('#sc-subtitle');
+    const fill = document.querySelector('#sc-progress-fill');
+    if (!sub) { if (fill) fill.style.width = '0%'; return; }
+    const lines = sub.querySelectorAll('.sc-sub-line');
+    if (!lines.length) return;
+    const k = sub.textContent;
+    if (k !== key) { key = k; window.__scT0 = Date.now(); }   // new cut → restart the clock
+    let idx = 0, p = 0;
+    if (window.__scStarted) {
+      // exact voice length when we know it; else ~16 chars/sec (measured Kokoro rate)
+      const raw = parseFloat(sub.dataset.duration);
+      const dur = (Number.isFinite(raw) && raw > 0) ? raw : Math.max(4, k.length / 16);
+      p = Math.max(0, Math.min(1, (Date.now() - window.__scT0) / 1000 / dur));
+      idx = Math.min(lines.length - 1, Math.floor(p * lines.length));
+    }
+    lines.forEach((l, i) => { l.hidden = (i !== idx); });
+    if (fill) fill.style.width = (p * 100).toFixed(1) + '%';
+  }, 120);
+}
+"""
+
+
 def build_viewer_app() -> gr.Blocks:
     """The P1 viewer page. Mode is decided once, at build time, from the env."""
     engine_url = os.environ.get(ENGINE_URL_ENV, "").strip()
     client = EngineClient(engine_url) if engine_url else None
+    seed = _seed_scenes() if client is None else []
 
     if client:
         boot_header = render_header_html("Tuning the antenna…", "standby", live=False)
         boot_stage = render_stage_html(None, "Waiting for the engine's first scene.", live=False)
+        boot_audio = None
     else:
-        boot_header = render_header_html("Your channel is ready", "standby", live=False)
-        boot_stage = render_stage_html(None, "Drop a moment under the chat to go live.", live=False)
+        boot = format_stage(seed[-1] if seed else None)
+        boot_header = render_header_html(boot["title"], boot["style_label"], live=False)
+        boot_stage = render_stage_html(
+            boot["frame_src"],
+            boot["caption"],
+            live=False,
+            clip_src=boot["clip_src"],
+            duration=boot["duration"],
+        )
+        boot_audio = _load_audio(boot["audio_src"])
 
     with warnings.catch_warnings():
         # Gradio 6 moved `css` to launch(), but the constructor value is kept
@@ -450,61 +675,87 @@ def build_viewer_app() -> gr.Blocks:
         blocks = gr.Blocks(title=TITLE, css=VIEWER_CSS)
 
     with blocks as demo:
-        scenes_state = gr.State([])
+        scenes_state = gr.State(seed)
         pinned_state = gr.State(None)  # scene_id pinned from the shelf, None = follow live
         current_state = gr.State(None)  # scene_id currently on stage (visibility target)
         playing_state = gr.State(None)  # scene_id loaded in the audio player
 
-        gr.HTML('<div class="sc-brand">🎬 Small Cuts · always rolling</div>', padding=False)
+        with gr.Row(elem_classes="sc-topbar"):
+            gr.HTML(
+                '<div class="sc-brand">🎬 Small Cuts · always rolling'
+                '<span class="sc-soul">Born on the glasses — what the narrator says in your '
+                "ear lands here as a cut you can keep.</span></div>",
+                padding=False,
+            )
+            if client is None:
+                upload_btn = gr.Button("", elem_classes=["sc-icbtn", "sc-upload", "sc-ico-upload"])
         header = gr.HTML(boot_header, elem_classes="sc-plain", padding=False)
-        with gr.Row():
-            with gr.Column(scale=7):
-                stage = gr.HTML(boot_stage, elem_classes="sc-plain", padding=False)
-                with gr.Row(elem_classes="sc-actionbar"):
-                    audio = gr.Audio(
-                        label="voice-over",
-                        show_label=False,
-                        interactive=False,
-                        autoplay=True,
-                        elem_classes="sc-audio",
-                    )
-                    if client is None:
-                        voice_btn = gr.Button("🔊 Voice-over", size="sm", variant="secondary")
-                        style = gr.Dropdown(
-                            choices=style_choices(),
-                            value=DEFAULT_STYLE_KEY,
-                            show_label=False,
-                            container=False,
-                            elem_classes="sc-channel-hop",
-                        )
-                    else:
-                        visibility = gr.Radio(
-                            choices=list(VISIBILITIES),
-                            value="private",
-                            label="share",
-                            show_label=False,
-                        )
-                    live_btn = gr.Button("⟲ Back to live", size="sm", variant="secondary")
-            with gr.Column(scale=4):
-                feed = gr.HTML(render_feed_html([]), elem_classes="sc-plain", padding=False)
-                if client is None:
-                    with gr.Column(elem_classes="sc-dropzone"):
-                        gr.HTML(
-                            '<div class="sc-dropzone-label">⦿ go live — drop a moment</div>',
-                            padding=False,
-                        )
-                        drop_image = gr.Image(
-                            type="pil", sources=["upload", "webcam"], show_label=False, height=140
-                        )
-                        drop_video = gr.Video(sources=["upload"], show_label=False, height=140)
-                        hint = gr.Textbox(
-                            show_label=False,
-                            container=False,
-                            placeholder="whisper context to the narrator (optional)",
-                        )
-                        go = gr.Button("⦿ Go live", variant="primary", size="sm")
+        stage = gr.HTML(boot_stage, elem_classes="sc-plain", padding=False)
+        gr.HTML(
+            '<div class="sc-progress">'
+            '<div class="sc-progress-fill" id="sc-progress-fill"></div></div>',
+            elem_classes="sc-plain",
+            padding=False,
+        )
+        with gr.Row(elem_classes="sc-controls"):
+            rewind_btn = gr.Button("", elem_classes=["sc-icbtn", "sc-ico-rewind"])
+            audio = gr.Audio(
+                label="voice-over",
+                show_label=False,
+                interactive=False,
+                autoplay=True,
+                value=boot_audio,
+                elem_classes="sc-audio",
+            )
+            forward_btn = gr.Button("", elem_classes=["sc-icbtn", "sc-ico-forward"])
+        with gr.Row(elem_classes="sc-meta"):
+            if client is None:
+                # one signature voice — no director menu; voice-over is on by default
+                style = gr.State(DEFAULT_STYLE_KEY)
+                like_btn = gr.Button("", elem_classes=["sc-icbtn", "sc-ico-like", "sc-like-btn"])
+                report_btn = gr.Button("", elem_classes=["sc-icbtn", "sc-ico-flag"])
+            else:
+                visibility = gr.Radio(
+                    choices=list(VISIBILITIES),
+                    value="private",
+                    label="share",
+                    show_label=False,
+                )
+            live_btn = gr.Button("⟲ Back to live", size="sm", variant="secondary")
+        feed = gr.HTML(
+            render_feed_html([feed_entry(s) for s in seed[-FEED_LIMIT:]]),
+            elem_classes="sc-plain",
+            padding=False,
+            visible=SHOW_FEED,
+        )
+        if client is None:
+            # The upload sandbox opens on demand from the top-right icon — off the main view,
+            # video-only (the product narrates video, not stills).
+            image_none = gr.State(None)
+            with gr.Accordion(
+                "▸ Try it — narrate your own video",
+                open=False,
+                visible=False,
+                elem_classes="sc-tryit",
+            ) as tryit_panel:
+                drop_video = gr.Video(sources=["upload"], show_label=False, height=140)
+                hint = gr.Textbox(
+                    show_label=False,
+                    container=False,
+                    placeholder="whisper context to the narrator (optional)",
+                )
+                go = gr.Button("🎬 Narrate this video", variant="primary", size="sm")
+            upload_btn.click(lambda: gr.update(open=True, visible=True), outputs=[tryit_panel])
+            like_btn.click(
+                lambda: gr.Info("Liked — thanks; likes help surface good cuts."),
+                js=(
+                    "() => { const b = document.querySelector('.sc-like-btn'); if (b) {"
+                    " b.classList.toggle('sc-ico-like');"
+                    " b.classList.toggle('sc-ico-like-filled'); } }"
+                ),
+            )
         shelf = gr.Gallery(
-            value=[],
+            value=(local_shelf_items(seed) if seed else []),
             show_label=False,
             columns=12,
             rows=1,
@@ -544,7 +795,13 @@ def build_viewer_app() -> gr.Blocks:
                 payload = format_stage(scene, engine.base_url)
                 return (
                     render_header_html(payload["title"], payload["style_label"], payload["live"]),
-                    render_stage_html(payload["frame_src"], payload["caption"], payload["live"]),
+                    render_stage_html(
+                        payload["frame_src"],
+                        payload["caption"],
+                        payload["live"],
+                        clip_src=payload["clip_src"],
+                        duration=payload["duration"],
+                    ),
                     payload["audio_src"] or gr.skip(),
                     payload["scene_id"],
                     payload["scene_id"],
@@ -566,6 +823,52 @@ def build_viewer_app() -> gr.Blocks:
                 ],
             )
 
+            def _step_engine(delta, scenes, pinned_id):
+                # rewind/forward step clip-to-clip over the library (never intra-clip)
+                scenes = scenes or []
+                if not scenes:
+                    return (gr.skip(),) * 7
+                ids = [s.get("scene_id") for s in scenes]
+                idx = ids.index(pinned_id) if pinned_id in ids else len(scenes) - 1
+                idx = max(0, min(idx + delta, len(scenes) - 1))
+                scene = scenes[idx]
+                payload = format_stage(scene, engine.base_url)
+                return (
+                    render_header_html(payload["title"], payload["style_label"], payload["live"]),
+                    render_stage_html(
+                        payload["frame_src"],
+                        payload["caption"],
+                        payload["live"],
+                        clip_src=payload["clip_src"],
+                        duration=payload["duration"],
+                    ),
+                    payload["audio_src"] or gr.skip(),
+                    payload["scene_id"],
+                    payload["scene_id"],
+                    payload["scene_id"],
+                    gr.update(value=payload["visibility"]) if payload["visibility"] else gr.skip(),
+                )
+
+            step_outputs_e = [
+                header,
+                stage,
+                audio,
+                pinned_state,
+                current_state,
+                playing_state,
+                visibility,
+            ]
+            rewind_btn.click(
+                lambda s, p: _step_engine(-1, s, p),
+                inputs=[scenes_state, pinned_state],
+                outputs=step_outputs_e,
+            )
+            forward_btn.click(
+                lambda s, p: _step_engine(1, s, p),
+                inputs=[scenes_state, pinned_state],
+                outputs=step_outputs_e,
+            )
+
             def _on_visibility(value, current_id):
                 if not current_id or value not in VISIBILITIES:
                     return
@@ -581,36 +884,92 @@ def build_viewer_app() -> gr.Blocks:
             def _on_local_select(evt: gr.SelectData, scenes):
                 scenes = scenes or []
                 if not scenes:
-                    return gr.skip(), gr.skip(), gr.skip()
+                    return gr.skip(), gr.skip(), gr.skip(), gr.skip()
                 scene = scenes[_clamp_index(evt.index, len(scenes))]
                 payload = format_stage(scene)
                 return (
                     render_header_html(payload["title"], payload["style_label"], payload["live"]),
-                    render_stage_html(payload["frame_src"], payload["caption"], payload["live"]),
+                    render_stage_html(
+                        payload["frame_src"],
+                        payload["caption"],
+                        payload["live"],
+                        clip_src=payload["clip_src"],
+                        duration=payload["duration"],
+                    ),
+                    scene.get("audio_value") or _load_audio(payload["audio_src"]),
                     payload["scene_id"],
                 )
 
             def _back_to_live(scenes):
                 scenes = scenes or []
-                payload = format_stage(scenes[-1] if scenes else None)
+                scene = scenes[-1] if scenes else None
+                payload = format_stage(scene)
+                replay = (scene.get("audio_value") if scene else None) or _load_audio(
+                    payload["audio_src"]
+                )
                 return (
                     render_header_html(payload["title"], payload["style_label"], payload["live"]),
-                    render_stage_html(payload["frame_src"], payload["caption"], payload["live"]),
+                    render_stage_html(
+                        payload["frame_src"],
+                        payload["caption"],
+                        payload["live"],
+                        clip_src=payload["clip_src"],
+                        duration=payload["duration"],
+                    ),
+                    replay,
                     None,
                 )
 
-            go_inputs = [drop_image, drop_video, style, hint, scenes_state]
-            go_outputs = [header, stage, feed, shelf, scenes_state, pinned_state]
+            def _step_local(delta, scenes, pinned_id):
+                # rewind/forward step clip-to-clip over the session library (never intra-clip)
+                scenes = scenes or []
+                if not scenes:
+                    return gr.skip(), gr.skip(), gr.skip(), gr.skip()
+                ids = [s.get("scene_id") for s in scenes]
+                idx = ids.index(pinned_id) if pinned_id in ids else len(scenes) - 1
+                idx = max(0, min(idx + delta, len(scenes) - 1))
+                scene = scenes[idx]
+                payload = format_stage(scene)
+                return (
+                    render_header_html(payload["title"], payload["style_label"], payload["live"]),
+                    render_stage_html(
+                        payload["frame_src"],
+                        payload["caption"],
+                        payload["live"],
+                        clip_src=payload["clip_src"],
+                        duration=payload["duration"],
+                    ),
+                    scene.get("audio_value") or _load_audio(payload["audio_src"]),
+                    scene["scene_id"],
+                )
+
+            go_inputs = [image_none, drop_video, style, hint, scenes_state]
+            go_outputs = [header, stage, feed, shelf, audio, scenes_state, pinned_state]
+            # Narration fires only on the explicit button — binding drop_video.change too
+            # would double-narrate (and double the TTS work) the moment a file lands.
             go.click(_go_live_handler, inputs=go_inputs, outputs=go_outputs)
-            drop_image.change(_go_live_handler, inputs=go_inputs, outputs=go_outputs)
-            drop_video.change(_go_live_handler, inputs=go_inputs, outputs=go_outputs)
-            voice_btn.click(_voice_handler, inputs=[scenes_state, pinned_state], outputs=[audio])
+            report_btn.click(lambda: gr.Info("Reported — thanks; we'll review this clip."))
             shelf.select(
                 _on_local_select,
                 inputs=[scenes_state],
-                outputs=[header, stage, pinned_state],
+                outputs=[header, stage, audio, pinned_state],
             )
             live_btn.click(
-                _back_to_live, inputs=[scenes_state], outputs=[header, stage, pinned_state]
+                _back_to_live,
+                inputs=[scenes_state],
+                outputs=[header, stage, audio, pinned_state],
             )
+            step_outputs = [header, stage, audio, pinned_state]
+            rewind_btn.click(
+                lambda s, p: _step_local(-1, s, p),
+                inputs=[scenes_state, pinned_state],
+                outputs=step_outputs,
+            )
+            forward_btn.click(
+                lambda s, p: _step_local(1, s, p),
+                inputs=[scenes_state, pinned_state],
+                outputs=step_outputs,
+            )
+
+        demo.load(js=SUBTITLE_SYNC_JS)
     return demo

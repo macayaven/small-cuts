@@ -58,7 +58,7 @@ final class CaptureCoordinator: ObservableObject {
     private var frameTask: Task<Void, Never>?
     private var eventTask: Task<Void, Never>?
     private var lastFrame: CapturedFrame?
-    private var clipBuffer = FrameClipBuffer(window: 4.0, maxStoredFrames: 160, maxClipFrames: 12)
+    private var clipBuffer = FrameClipBuffer(window: 4.0, maxStoredFrames: 32, maxClipFrames: 12)
 
     private let makeClient: () -> EngineSessionClient
     private let deviceContext: @MainActor () -> DeviceContext
@@ -201,7 +201,7 @@ final class CaptureCoordinator: ObservableObject {
         let encodedFrames = await Task.detached(priority: .userInitiated) {
             let selected = MomentBuilder.encodeFrame(selectedImage, tsOffsetMs: 0)
             let supplemental = supplementalInputs.compactMap { item in
-                MomentBuilder.encodeFrame(item.image, tsOffsetMs: item.offsetMs)
+                MomentBuilder.encodeSupplementalFrame(item.image, tsOffsetMs: item.offsetMs)
             }
             return (selected, supplemental)
         }.value

@@ -208,7 +208,7 @@ class SceneLibrary:
         visibility: str | None = None,
         limit: int = 100,
     ) -> list[dict[str, Any]]:
-        """Scenes ordered by `captured_at` — chronology, not arrival (D8 reorders)."""
+        """Newest bounded window, returned in scene chronology for the viewer."""
         clauses, params = [], []
         if session_id is not None:
             clauses.append("session_id = ?")
@@ -217,7 +217,11 @@ class SceneLibrary:
             clauses.append("visibility = ?")
             params.append(visibility)
         where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
-        query = f"SELECT * FROM scenes{where} ORDER BY captured_at, seq LIMIT ?"
+        query = (
+            "SELECT * FROM ("
+            f"SELECT * FROM scenes{where} ORDER BY seq DESC LIMIT ?"
+            ") ORDER BY captured_at, seq"
+        )
         with self._lock:
             rows = self._db.execute(query, (*params, limit)).fetchall()
         return [self.to_narrated_scene(row) for row in rows]

@@ -485,8 +485,9 @@ final class GlassesSessionController: ObservableObject {
     }
 
     private func attachStream(to session: DeviceSession) throws {
-        // 720p-ish @ 24fps: .high = 720x1280; valid frame rates are 2/7/15/24/30.
-        let config = StreamConfiguration(videoCodec: .raw, resolution: .high, frameRate: 24)
+        // High-resolution POV, but at 7 fps: enough samples for a 4 s clip
+        // while reducing Bluetooth load and retained-frame memory pressure.
+        let config = StreamConfiguration(videoCodec: .raw, resolution: .high, frameRate: 7)
         guard let stream = try session.addStream(config: config) else {
             throw GlassesSessionError.streamUnavailable
         }

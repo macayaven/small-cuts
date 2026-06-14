@@ -194,7 +194,7 @@ class SessionRunner:
         queue_ms = _ms(started - item.queued_at)
         stage = "narration"
         try:
-            image, narration, clip_frames = await asyncio.to_thread(
+            image, narration = await asyncio.to_thread(
                 _decode_and_narrate,
                 envelope,
                 style_key,
@@ -235,6 +235,9 @@ class SessionRunner:
             await self._send_error(moment_id, stage, exc, code=code, retryable=retryable)
             return
 
+        clip_frames = await asyncio.to_thread(
+            _decode_clip_frames_for_storage, envelope, image, payload["scene_id"]
+        )
         await self._hand_to_sink(
             self._state.sink,
             {
@@ -328,10 +331,11 @@ class SessionRunner:
 
 def _decode_and_narrate(
     envelope: dict[str, Any], style_key: str, scene_hint: str
-) -> tuple[Image.Image, narrator.Narration, list[Image.Image]]:
-    """Decode + narrate in one worker-thread hop; decode is CPU-bound too."""
+) -> tuple[Image.Image, narrator.Narration]:
+    """Decode the selected frame + narrate it in one worker-thread hop."""
     try:
-        selected, clip_frames = _decode_frames(envelope)
+        selected = _decode_frame(envelope["frames"][0])
+        _validate_frame_size(selected)
     except _ValidationFailure:
         raise
     except Exception as exc:
@@ -339,7 +343,6 @@ def _decode_and_narrate(
     return (
         selected,
         narrator.narrate(selected, style_key=style_key, scene_hint=scene_hint),
-        clip_frames,
     )
 
 
@@ -350,24 +353,40 @@ def _decode_frame(frame: dict[str, Any]) -> Image.Image:
     return image
 
 
-def _decode_frames(envelope: dict[str, Any]) -> tuple[Image.Image, list[Image.Image]]:
-    decoded: list[tuple[int, int, Image.Image]] = []
-    selected: Image.Image | None = None
-    for index, frame in enumerate(envelope["frames"]):
+def _validate_frame_size(image: Image.Image) -> None:
+    longest = max(image.size)
+    if longest > MAX_FRAME_SIDE:
+        raise _ValidationFailure(
+            "frame_exceeds_cap",
+            f"decoded longest side {longest} px exceeds the {MAX_FRAME_SIDE} px contract cap",
+        )
+
+
+def _decode_clip_frames(envelope: dict[str, Any], selected: Image.Image) -> list[Image.Image]:
+    decoded: list[tuple[int, int, Image.Image]] = [
+        (int(envelope["frames"][0].get("ts_offset_ms", 0)), 0, selected)
+    ]
+    for index, frame in enumerate(envelope["frames"][1:], start=1):
         image = _decode_frame(frame)
-        longest = max(image.size)
-        if longest > MAX_FRAME_SIDE:
-            raise _ValidationFailure(
-                "frame_exceeds_cap",
-                f"decoded longest side {longest} px exceeds the {MAX_FRAME_SIDE} px contract cap",
-            )
-        if index == 0:
-            selected = image
+        _validate_frame_size(image)
         decoded.append((int(frame.get("ts_offset_ms", index)), index, image))
-    if selected is None:
-        raise ValueError("MomentEnvelope has no frames")
-    clip_frames = [image for _, _, image in sorted(decoded, key=lambda item: (item[0], item[1]))]
-    return selected, clip_frames
+    return [image for _, _, image in sorted(decoded, key=lambda item: (item[0], item[1]))]
+
+
+def _decode_clip_frames_for_storage(
+    envelope: dict[str, Any], selected: Image.Image, scene_id: str
+) -> list[Image.Image]:
+    """Decode viewer-only supplemental frames after SceneAudio is already sent."""
+    if len(envelope["frames"]) < 2:
+        return [selected]
+    try:
+        return _decode_clip_frames(envelope, selected)
+    except Exception as exc:
+        print(
+            f"small_cuts.engine: clip frame decode failed for scene {scene_id}: {exc!r}",
+            file=sys.stderr,
+        )
+        return [selected]
 
 
 def _wav_bytes(audio: np.ndarray, sample_rate: int) -> bytes:

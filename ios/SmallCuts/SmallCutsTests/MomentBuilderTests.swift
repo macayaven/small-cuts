@@ -132,6 +132,18 @@ final class MomentBuilderTests: XCTestCase {
         XCTAssertEqual(frames[11]["ts_offset_ms"] as? Int, -11_000)
     }
 
+    func test_supplementalFramesUseLowerPayloadCap() throws {
+        let encoded = try XCTUnwrap(
+            MomentBuilder.encodeSupplementalFrame(
+                image(width: 2048, height: 1536),
+                tsOffsetMs: -1_000
+            )
+        )
+
+        XCTAssertEqual(max(encoded.width, encoded.height), 640)
+        XCTAssertEqual(encoded.tsOffsetMs, -1_000)
+    }
+
     func test_datesAreParseableISO8601WithFractionalSeconds() throws {
         var builder = MomentBuilder(sessionId: "s", styleKey: "deadpan")
         let capturedAt = Date(timeIntervalSince1970: 1_765_432_100.125)

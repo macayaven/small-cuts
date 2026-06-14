@@ -86,6 +86,8 @@ struct MomentBuilder {
     static let contractVersion = "1.1.0"
     static let maxFrameSide: CGFloat = 1024
     static let jpegQuality: CGFloat = 0.9
+    static let supplementalMaxFrameSide: CGFloat = 640
+    static let supplementalJpegQuality: CGFloat = 0.72
     static let maxFramesPerMoment = 12
 
     let sessionId: String
@@ -182,9 +184,13 @@ struct MomentBuilder {
         }
     }
 
-    /// Downscale so the longest side ≤ 1024 px (contract cap, in *pixels* —
-    /// renders at scale 1), then JPEG at 0.9.
-    static func encodeFrame(_ image: UIImage, tsOffsetMs: Int? = nil) -> EncodedFrame? {
+    /// Downscale so the longest side respects the contract cap, then JPEG encode.
+    static func encodeFrame(
+        _ image: UIImage,
+        tsOffsetMs: Int? = nil,
+        maxFrameSide: CGFloat = Self.maxFrameSide,
+        jpegQuality: CGFloat = Self.jpegQuality
+    ) -> EncodedFrame? {
         let pixelWidth = image.size.width * image.scale
         let pixelHeight = image.size.height * image.scale
         guard pixelWidth > 0, pixelHeight > 0 else { return nil }
@@ -208,6 +214,18 @@ struct MomentBuilder {
             width: Int(target.width),
             height: Int(target.height),
             tsOffsetMs: tsOffsetMs
+        )
+    }
+
+    /// Supplemental frames only feed the public POV clip. Keep the selected
+    /// narration frame high quality; make these lighter to protect upload
+    /// latency and memory during the glasses demo.
+    static func encodeSupplementalFrame(_ image: UIImage, tsOffsetMs: Int) -> EncodedFrame? {
+        encodeFrame(
+            image,
+            tsOffsetMs: tsOffsetMs,
+            maxFrameSide: supplementalMaxFrameSide,
+            jpegQuality: supplementalJpegQuality
         )
     }
 }

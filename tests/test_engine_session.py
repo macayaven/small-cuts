@@ -424,6 +424,35 @@ def test_sink_receives_clip_frames_sorted_by_timestamp_offset():
     ]
 
 
+def test_bad_supplemental_clip_frame_does_not_block_scene_audio(capsys):
+    scenes: list[dict] = []
+    envelope = make_envelope()
+    selected = envelope["frames"][0]
+    selected["ts_offset_ms"] = 0
+    envelope["frames"] = [
+        selected,
+        {
+            "jpeg_b64": base64.b64encode(b"not a jpeg").decode(),
+            "width": 8,
+            "height": 8,
+            "ts_offset_ms": -1000,
+        },
+    ]
+    with (
+        TestClient(build_engine_app(scene_sink=scenes.append)) as client,
+        client.websocket_connect("/v1/session") as ws,
+    ):
+        reader = Reader(ws)
+        ws.send_text(json.dumps(envelope))
+        audio_frame = reader.next_scene_audio()
+        reader.next(lambda f: f.get("kind") == "status" and f["status"]["busy"] is False)
+
+    assert audio_frame["moment_id"] == envelope["moment_id"]
+    assert len(scenes) == 1
+    assert scenes[0]["clip_frames"] == [scenes[0]["image"]]
+    assert "clip frame decode failed" in capsys.readouterr().err
+
+
 def test_style_and_hint_wiring(monkeypatch):
     captured: list[dict] = []
 

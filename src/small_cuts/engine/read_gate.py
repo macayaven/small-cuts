@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
 import httpx
 from fastapi import FastAPI, Request
@@ -50,7 +51,16 @@ def _origin_url(origin_url: str, request: Request) -> str:
 
 def build_read_gate_app(origin_url: str | None = None) -> FastAPI:
     origin = (origin_url or os.environ.get(ORIGIN_ENV) or DEFAULT_ORIGIN).rstrip("/")
-    app = FastAPI(title="small-cuts public read gate")
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        app.state.client = httpx.AsyncClient(timeout=None)
+        try:
+            yield
+        finally:
+            await app.state.client.aclose()
+
+    app = FastAPI(title="small-cuts public read gate", lifespan=lifespan)
 
     @app.api_route(
         "/{path:path}",
@@ -61,7 +71,7 @@ def build_read_gate_app(origin_url: str | None = None) -> FastAPI:
         if not is_public_read_allowed(request.method, request.url.path):
             return PlainTextResponse(BLOCKED_TEXT, status_code=403)
 
-        client = httpx.AsyncClient(timeout=None)
+        client: httpx.AsyncClient = request.app.state.client
         upstream = await client.send(
             client.build_request(
                 "GET",
@@ -77,7 +87,6 @@ def build_read_gate_app(origin_url: str | None = None) -> FastAPI:
 
         async def close() -> None:
             await upstream.aclose()
-            await client.aclose()
 
         return StreamingResponse(
             body(),

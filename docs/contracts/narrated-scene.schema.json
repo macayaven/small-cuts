@@ -81,7 +81,7 @@
         "clip_url": {
           "type": "string",
           "format": "uri-reference",
-          "description": "Source video segment when the capture app uploaded one (library revisit/share)."
+          "description": "Short viewer clip for library revisit/share, either uploaded or assembled by the engine from timestamped capture frames."
         }
       }
     },

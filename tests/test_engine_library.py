@@ -211,9 +211,27 @@ def test_list_scenes_filters_and_order(tmp_path):
         assert [s["scene_id"] for s in public] == [lunch["scene_id"]]
 
         limited = client.get("/v1/scenes", params={"limit": 2}).json()["scenes"]
-        assert [s["captured_at"] for s in limited] == [at(0), at(1)]
+        assert [s["captured_at"] for s in limited] == [at(1), at(9)]
 
         assert client.get("/v1/scenes", params={"visibility": "secret"}).status_code == 422
+
+
+def test_list_scenes_limit_keeps_new_live_scenes_visible(tmp_path):
+    lib = SceneLibrary(tmp_path / "lib")
+    base = datetime(2026, 6, 12, 9, 0, tzinfo=timezone.utc)
+    for index in range(65):
+        lib.store(
+            make_sink_scene(
+                session_id="demo",
+                captured_at=(base + timedelta(seconds=index)).isoformat(),
+            )
+        )
+
+    with TestClient(build_engine_app(library=lib)) as client:
+        scenes = client.get("/v1/scenes", params={"limit": 60}).json()["scenes"]
+
+    assert len(scenes) == 60
+    assert [scene["seq"] for scene in scenes] == list(range(5, 65))
 
 
 # -- visibility mutations -----------------------------------------------------------

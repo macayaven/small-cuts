@@ -58,6 +58,7 @@ final class CaptureCoordinator: ObservableObject {
     private var frameTask: Task<Void, Never>?
     private var eventTask: Task<Void, Never>?
     private var lastFrame: CapturedFrame?
+    private var clipBuffer = FrameClipBuffer(window: 4.0, maxStoredFrames: 160, maxClipFrames: 12)
 
     private let makeClient: () -> EngineSessionClient
     private let deviceContext: @MainActor () -> DeviceContext
@@ -106,6 +107,7 @@ final class CaptureCoordinator: ObservableObject {
         caption = nil
         frameCount = 0
         gate.suppressed = false
+        clipBuffer.reset()
 
         builder = MomentBuilder(sessionId: MomentBuilder.makeSessionId(), styleKey: styleKey)
         let client = makeClient()
@@ -146,6 +148,7 @@ final class CaptureCoordinator: ObservableObject {
         }
         voicePlayer.stopAll()
         lastFrame = nil
+        clipBuffer.reset()
         running = false
         engineLink = .idle
     }
@@ -153,8 +156,9 @@ final class CaptureCoordinator: ObservableObject {
     /// User-triggered capture of whatever is currently in view.
     func fireManual() {
         guard running, let frame = lastFrame else { return }
+        let clipFrames = clipBuffer.framesForClip(endingAt: frame)
         if case .fire(let scores) = gate.fireManually(frame) {
-            Task { await sendMoment(frame: frame, scores: scores) }
+            Task { await sendMoment(frame: frame, scores: scores, clipFrames: clipFrames) }
         }
     }
 
@@ -166,27 +170,53 @@ final class CaptureCoordinator: ObservableObject {
         preview = frame.image
         frameCount += 1
         lastFrame = frame
+        clipBuffer.record(frame)
         if case .fire(let scores) = gate.evaluate(frame) {
-            await sendMoment(frame: frame, scores: scores)
+            await sendMoment(
+                frame: frame,
+                scores: scores,
+                clipFrames: clipBuffer.framesForClip(endingAt: frame)
+            )
         }
     }
 
-    private func sendMoment(frame: CapturedFrame, scores: GateScores) async {
+    private func sendMoment(
+        frame: CapturedFrame,
+        scores: GateScores,
+        clipFrames: [CapturedFrame]
+    ) async {
         guard let client, builder != nil else { return }
         // JPEG downscale + encode is the expensive part — keep it off the
         // main actor so the UI never stalls on a fired frame.
-        let image = frame.image
-        let encoded = await Task.detached(priority: .userInitiated) {
-            MomentBuilder.encodeFrame(image)
+        let selectedImage = frame.image
+        let capturedAt = frame.capturedAt
+        let supplementalInputs = clipFrames
+            .filter { $0.capturedAt != capturedAt }
+            .map { clipFrame in
+                (
+                    image: clipFrame.image,
+                    offsetMs: Int((clipFrame.capturedAt.timeIntervalSince(capturedAt) * 1000).rounded())
+                )
+            }
+        let encodedFrames = await Task.detached(priority: .userInitiated) {
+            let selected = MomentBuilder.encodeFrame(selectedImage, tsOffsetMs: 0)
+            let supplemental = supplementalInputs.compactMap { item in
+                MomentBuilder.encodeFrame(item.image, tsOffsetMs: item.offsetMs)
+            }
+            return (selected, supplemental)
         }.value
-        guard let encoded else {
+        guard let encoded = encodedFrames.0 else {
             lastError = "frame JPEG encoding failed"
             return
         }
         // stop()/start() may have raced the encode — drop, don't cross wires.
         guard self.client === client,
               let built = builder?.build(
-                  frame: frame, scores: scores, device: deviceContext(), encoded: encoded
+                  frame: frame,
+                  scores: scores,
+                  device: deviceContext(),
+                  encoded: encoded,
+                  supplementalFrames: encodedFrames.1
               )
         else { return }
         stats.sent += 1

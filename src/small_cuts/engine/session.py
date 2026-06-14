@@ -194,7 +194,7 @@ class SessionRunner:
         queue_ms = _ms(started - item.queued_at)
         stage = "narration"
         try:
-            image, narration = await asyncio.to_thread(
+            image, narration, clip_frames = await asyncio.to_thread(
                 _decode_and_narrate,
                 envelope,
                 style_key,
@@ -246,6 +246,7 @@ class SessionRunner:
                 "style_key": style_key,
                 "narration": narration.text,
                 "image": image,
+                "clip_frames": clip_frames,
                 "audio": speech.audio,
                 "sample_rate": speech.sample_rate,
                 "latency_ms": {
@@ -327,26 +328,46 @@ class SessionRunner:
 
 def _decode_and_narrate(
     envelope: dict[str, Any], style_key: str, scene_hint: str
-) -> tuple[Image.Image, narrator.Narration]:
+) -> tuple[Image.Image, narrator.Narration, list[Image.Image]]:
     """Decode + narrate in one worker-thread hop; decode is CPU-bound too."""
     try:
-        image = _decode_first_frame(envelope)
+        selected, clip_frames = _decode_frames(envelope)
+    except _ValidationFailure:
+        raise
     except Exception as exc:
         raise _ValidationFailure("frame_decode_failed", f"undecodable frame: {exc}") from exc
-    longest = max(image.size)
-    if longest > MAX_FRAME_SIDE:  # the declared width/height passed schema; trust pixels, not JSON
-        raise _ValidationFailure(
-            "frame_exceeds_cap",
-            f"decoded longest side {longest} px exceeds the {MAX_FRAME_SIDE} px contract cap",
-        )
-    return image, narrator.narrate(image, style_key=style_key, scene_hint=scene_hint)
+    return (
+        selected,
+        narrator.narrate(selected, style_key=style_key, scene_hint=scene_hint),
+        clip_frames,
+    )
 
 
-def _decode_first_frame(envelope: dict[str, Any]) -> Image.Image:
-    data = base64.b64decode(envelope["frames"][0]["jpeg_b64"])
+def _decode_frame(frame: dict[str, Any]) -> Image.Image:
+    data = base64.b64decode(frame["jpeg_b64"])
     image = Image.open(io.BytesIO(data))
     image.load()
     return image
+
+
+def _decode_frames(envelope: dict[str, Any]) -> tuple[Image.Image, list[Image.Image]]:
+    decoded: list[tuple[int, int, Image.Image]] = []
+    selected: Image.Image | None = None
+    for index, frame in enumerate(envelope["frames"]):
+        image = _decode_frame(frame)
+        longest = max(image.size)
+        if longest > MAX_FRAME_SIDE:
+            raise _ValidationFailure(
+                "frame_exceeds_cap",
+                f"decoded longest side {longest} px exceeds the {MAX_FRAME_SIDE} px contract cap",
+            )
+        if index == 0:
+            selected = image
+        decoded.append((int(frame.get("ts_offset_ms", index)), index, image))
+    if selected is None:
+        raise ValueError("MomentEnvelope has no frames")
+    clip_frames = [image for _, _, image in sorted(decoded, key=lambda item: (item[0], item[1]))]
+    return selected, clip_frames
 
 
 def _wav_bytes(audio: np.ndarray, sample_rate: int) -> bytes:

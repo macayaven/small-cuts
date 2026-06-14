@@ -20,6 +20,8 @@ import threading
 from pathlib import Path
 from typing import Any
 
+from PIL import Image
+
 from small_cuts import narrator, tts
 from small_cuts.title_card import derive_title, render_title_card
 
@@ -28,7 +30,7 @@ from .session import CONTRACT_VERSION, _wav_bytes
 DEFAULT_ROOT = "~/.small-cuts/library"
 OWNER = "carlos"  # v1 engines are single-user; the field is reserved for multi-user
 VISIBILITIES = ("private", "shared", "public")
-MEDIA_FILES = ("frame.jpg", "card.webp", "voice.wav")
+MEDIA_FILES = ("frame.jpg", "card.webp", "voice.wav", "clip.mp4")
 
 _SCHEMA = """\
 CREATE TABLE IF NOT EXISTS scenes (
@@ -127,6 +129,15 @@ class SceneLibrary:
         scene_dir = self.media_dir / scene_id
         scene_dir.mkdir(parents=True, exist_ok=True)
         scene["image"].convert("RGB").save(scene_dir / "frame.jpg", "JPEG", quality=90)
+        clip_frames = scene.get("clip_frames") or []
+        if len(clip_frames) >= 2:
+            try:
+                _write_clip_mp4(scene_dir / "clip.mp4", clip_frames)
+            except Exception as exc:
+                print(
+                    f"small_cuts.engine: clip write failed for scene {scene_id}: {exc!r}",
+                    file=sys.stderr,
+                )
         render_title_card(title, style_key).save(scene_dir / "card.webp", "WEBP")
         (scene_dir / "voice.wav").write_bytes(_wav_bytes(scene["audio"], scene["sample_rate"]))
 
@@ -167,6 +178,13 @@ class SceneLibrary:
     def to_narrated_scene(self, row: sqlite3.Row) -> dict[str, Any]:
         """Contract-valid NarratedScene (1.1.0) for one stored row."""
         scene_id = row["scene_id"]
+        media = {
+            "frame_url": f"/media/{scene_id}/frame.jpg",
+            "card_url": f"/media/{scene_id}/card.webp",
+            "audio_url": f"/media/{scene_id}/voice.wav",
+        }
+        if (self.media_dir / scene_id / "clip.mp4").is_file():
+            media["clip_url"] = f"/media/{scene_id}/clip.mp4"
         return {
             "contract_version": CONTRACT_VERSION,
             "scene_id": scene_id,
@@ -180,11 +198,7 @@ class SceneLibrary:
             "visibility": row["visibility"],
             "seq": row["seq"],
             "owner": row["owner"],
-            "media": {
-                "frame_url": f"/media/{scene_id}/frame.jpg",
-                "card_url": f"/media/{scene_id}/card.webp",
-                "audio_url": f"/media/{scene_id}/voice.wav",
-            },
+            "media": media,
             "engine": json.loads(row["engine"]),
         }
 
@@ -257,3 +271,36 @@ class SceneLibrary:
     def close(self) -> None:
         with self._lock:
             self._db.close()
+
+
+def _write_clip_mp4(path: Path, frames: list[Image.Image], fps: int = 3) -> None:
+    """Render a small browser-playable MP4 from sampled POV frames."""
+    import av
+
+    rgb_frames = [frame.convert("RGB") for frame in frames]
+    width, height = rgb_frames[0].size
+    # H.264/yuv420p expects even dimensions. Preserve portrait aspect and only
+    # shave one pixel if needed; capture frames are already downscaled upstream.
+    width = max(2, width - (width % 2))
+    height = max(2, height - (height % 2))
+
+    container = av.open(str(path), "w")
+    try:
+        stream = container.add_stream("libx264", rate=fps)
+    except Exception:
+        stream = container.add_stream("h264", rate=fps)
+    stream.width = width
+    stream.height = height
+    stream.pix_fmt = "yuv420p"
+
+    try:
+        for image in rgb_frames:
+            if image.size != (width, height):
+                image = image.resize((width, height), Image.Resampling.LANCZOS)
+            frame = av.VideoFrame.from_image(image)
+            for packet in stream.encode(frame):
+                container.mux(packet)
+        for packet in stream.encode():
+            container.mux(packet)
+    finally:
+        container.close()

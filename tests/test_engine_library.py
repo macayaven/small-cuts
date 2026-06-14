@@ -119,6 +119,35 @@ def test_ws_flow_persists_contract_valid_scene(tmp_path):
             assert wav.getnframes() > 0
 
 
+def test_store_writes_clip_url_and_title_for_multiframe_scene(tmp_path):
+    av = pytest.importorskip("av")
+    lib = SceneLibrary(tmp_path / "lib")
+    stored = lib.store(
+        make_sink_scene(
+            narration="The crossing sign blinked, and the afternoon took credit.",
+            clip_frames=[
+                Image.new("RGB", (32, 56), (255, 0, 0)),
+                Image.new("RGB", (32, 56), (0, 255, 0)),
+                Image.new("RGB", (32, 56), (0, 0, 255)),
+            ],
+        )
+    )
+
+    assert stored["title"] == derive_title(stored["narration"])
+    assert stored["media"]["clip_url"] == f"/media/{stored['scene_id']}/clip.mp4"
+
+    clip_path = tmp_path / "lib" / "media" / stored["scene_id"] / "clip.mp4"
+    assert clip_path.is_file()
+    with av.open(str(clip_path)) as container:
+        frames = list(container.decode(video=0))
+    assert len(frames) >= 3
+
+    with TestClient(build_engine_app(library=lib)) as client:
+        clip = client.get(stored["media"]["clip_url"])
+        assert clip.status_code == 200
+        assert clip.content == clip_path.read_bytes()
+
+
 # -- library storage ------------------------------------------------------------
 
 

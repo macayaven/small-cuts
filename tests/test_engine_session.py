@@ -389,6 +389,41 @@ def test_sink_receives_scene_dict():
     assert all(isinstance(v, int) and v >= 0 for v in latency.values())
 
 
+def test_sink_receives_clip_frames_sorted_by_timestamp_offset():
+    def jpeg_b64(color):
+        buffer = io.BytesIO()
+        Image.new("RGB", (8, 8), color).save(buffer, "JPEG")
+        return base64.b64encode(buffer.getvalue()).decode()
+
+    scenes: list[dict] = []
+    envelope = make_envelope()
+    selected = envelope["frames"][0]
+    selected["ts_offset_ms"] = 0
+    selected["jpeg_b64"] = jpeg_b64((255, 0, 0))
+    envelope["frames"] = [
+        selected,
+        {"jpeg_b64": jpeg_b64((0, 0, 255)), "width": 8, "height": 8, "ts_offset_ms": -2000},
+        {"jpeg_b64": jpeg_b64((0, 255, 0)), "width": 8, "height": 8, "ts_offset_ms": -1000},
+    ]
+    with (
+        TestClient(build_engine_app(scene_sink=scenes.append)) as client,
+        client.websocket_connect("/v1/session") as ws,
+    ):
+        reader = Reader(ws)
+        ws.send_text(json.dumps(envelope))
+        reader.next_scene_audio()
+        reader.next(lambda f: f.get("kind") == "status" and f["status"]["busy"] is False)
+
+    assert len(scenes) == 1
+    clip_frames = scenes[0]["clip_frames"]
+    assert len(clip_frames) == 3
+    assert [frame.getpixel((0, 0)) for frame in clip_frames] == [
+        pytest.approx((0, 0, 255), abs=10),
+        pytest.approx((0, 255, 0), abs=10),
+        pytest.approx((255, 0, 0), abs=10),
+    ]
+
+
 def test_style_and_hint_wiring(monkeypatch):
     captured: list[dict] = []
 

@@ -1,6 +1,6 @@
 # Demo-Readiness Checklist
 
-Last updated: 2026-06-14 18:47 CEST.
+Last updated: 2026-06-14 18:50 CEST.
 
 ## Judged Space
 
@@ -34,8 +34,10 @@ Last updated: 2026-06-14 18:47 CEST.
 - [x] Real seed POV clip (`rayuela.mp4`) returns `ack accepted`, `SceneAudio`, idle status,
   and public `clip.mp4`/`voice.wav` through the read gate.
 - [x] Latest local engine restart is on the retained-storage-task fix, then warmed with
-  `rayuela.mp4` scene `aeffab3c-e651-48dd-bd1a-4261a2035298`.
+  `rayuela.mp4` scene `0330bfcc-e5d1-4615-bcf6-95e57e164c6a`.
 - [x] iOS simulator suite passes: 63 tests, 1 live-engine smoke skipped, 0 failures.
+- [x] Opt-in Swift live-engine smoke passes against `ws://127.0.0.1:8077/v1/session`
+  with real `SceneAudio` in 4.4 s.
 - [ ] Physical iPhone simulated-source smoke after reinstalling the latest app.
 - [ ] Physical Ray-Ban Meta glasses smoke: in-ear narration returns while the Space receives the same cut.
 

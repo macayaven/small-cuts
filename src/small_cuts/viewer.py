@@ -852,6 +852,36 @@ PLAYBACK_SYNC_JS = """
     }
   }, true);
 
+  // play/pause must be bound directly to the trusted DOM click. A gr.Button.click(js=...)
+  // callback runs through Gradio's event layer, which can lose browser user activation and
+  // make audio.play() fail with NotAllowedError even though the user tapped the button.
+  document.addEventListener('click', (e) => {
+    const playBtn = e.target.closest && e.target.closest('.sc-play-btn');
+    if (!playBtn) return;
+    const audio = document.querySelector('#sc-voice');
+    const video = document.querySelector('.sc-stage-shell video');
+
+    if (!audio || !audio.getAttribute('src')) {
+      if (!video) return;
+      if (video.paused) video.play().catch(() => {});
+      else video.pause();
+      return;
+    }
+
+    if (audio.paused) {
+      if (video && isFinite(video.duration) && video.duration > 0) {
+        try { video.currentTime = audio.currentTime % video.duration; } catch (err) {}
+      }
+      audio.play().catch((err) => {
+        console.warn('small_cuts.viewer: audio play blocked', err);
+      });
+      if (video) video.play().catch(() => {});
+    } else {
+      audio.pause();
+      if (video) video.pause();
+    }
+  }, true);
+
   window.__scClock = setInterval(() => {
     const audio = document.querySelector('#sc-voice');   // our own master clock <audio>
     const video = document.querySelector('.sc-stage-shell video');
@@ -957,9 +987,7 @@ def build_viewer_app() -> gr.Blocks:
                     # scene), driven by these controls + PLAYBACK_SYNC_JS. Boots PAUSED; the play
                     # tap is the one user gesture that starts audio+video+captions as a unit.
                     rewind_btn = gr.Button("", elem_classes=["sc-icbtn", "sc-ico-rewind"])
-                    play_btn = gr.Button(
-                        "", elem_classes=["sc-icbtn", "sc-ico-play", "sc-play-btn"]
-                    )
+                    gr.Button("", elem_classes=["sc-icbtn", "sc-ico-play", "sc-play-btn"])
                     gr.HTML(
                         '<span class="sc-vol-ctl">'
                         '<input type="range" class="sc-vol" min="0" max="1" step="0.05" '
@@ -979,12 +1007,8 @@ def build_viewer_app() -> gr.Blocks:
                         )
                     # hidden master-clock <audio> host (re-rendered on each scene change)
                     audio = gr.HTML(boot_audio, elem_classes="sc-audio-host", padding=False)
-                # the play tap toggles the voice clock — a real user gesture, so sound is allowed
-                play_btn.click(
-                    fn=None,
-                    js="() => { const a = document.querySelector('#sc-voice');"
-                    " if (a) { a.paused ? a.play() : a.pause(); } }",
-                )
+                # The play tap is handled by PLAYBACK_SYNC_JS as a delegated DOM click so the
+                # browser keeps user activation for audio.play().
                 if client is None:
                     # one signature voice — no director menu; voice-over is on by default
                     style = gr.State(DEFAULT_STYLE_KEY)

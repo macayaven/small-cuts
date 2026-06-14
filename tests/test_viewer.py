@@ -84,6 +84,14 @@ def test_stage_html_escapes_caption_and_has_no_rec_chip():
     assert "REC" not in out
 
 
+def test_playback_js_uses_trusted_dom_click_for_audio():
+    # Browser audio user activation is tied to the real click call stack. Routing play through
+    # gr.Button.click(js=...) can run too late and trigger NotAllowedError on the Space.
+    assert "closest('.sc-play-btn')" in viewer.PLAYBACK_SYNC_JS
+    assert "audio.play()" in viewer.PLAYBACK_SYNC_JS
+    assert "audio play blocked" in viewer.PLAYBACK_SYNC_JS
+
+
 def test_header_live_reads_happening_now_else_title():
     live = viewer.render_header_html("The Bicycle Is Mustard Yellow", "noir", live=True)
     assert "Happening now" in live

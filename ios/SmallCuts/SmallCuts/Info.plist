@@ -42,6 +42,28 @@
 		<key>MetaAppID</key>
 		<string>0</string>
 	</dict>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+		<key>NSExceptionDomains</key>
+		<dict>
+			<key>mac-studio</key>
+			<dict>
+				<key>NSExceptionAllowsInsecureHTTPLoads</key>
+				<true/>
+				<key>NSIncludesSubdomains</key>
+				<false/>
+			</dict>
+			<key>mac-studio.tail48bab7.ts.net</key>
+			<dict>
+				<key>NSExceptionAllowsInsecureHTTPLoads</key>
+				<true/>
+				<key>NSIncludesSubdomains</key>
+				<false/>
+			</dict>
+		</dict>
+	</dict>
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>Small Cuts uses Bluetooth to discover and stream video from your Meta Ray-Ban glasses.</string>
 	<key>NSBluetoothPeripheralUsageDescription</key>

@@ -31,6 +31,18 @@ targets:
         NSBluetoothPeripheralUsageDescription: "Small Cuts uses Bluetooth to discover and stream video from your Meta Ray-Ban glasses."
         NSCameraUsageDescription: "Small Cuts streams the camera on your Meta Ray-Ban glasses to capture moments."
         NSLocalNetworkUsageDescription: "Small Cuts uses the local network to establish a high-bandwidth transport with your Meta Ray-Ban glasses."
+        # Demo transport: the capture/write path is a private Tailnet WebSocket
+        # to the Mac Studio engine. Keep ATS open only for local networking and
+        # the Mac Studio MagicDNS host; the public viewer path remains HTTPS.
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+          NSExceptionDomains:
+            mac-studio.tail48bab7.ts.net:
+              NSExceptionAllowsInsecureHTTPLoads: true
+              NSIncludesSubdomains: false
+            mac-studio:
+              NSExceptionAllowsInsecureHTTPLoads: true
+              NSIncludesSubdomains: false
         NSBonjourServices:
           - "_meta-wearables._tcp"
           - "_meta-wearables._udp"

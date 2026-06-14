@@ -852,10 +852,12 @@ PLAYBACK_SYNC_JS = """
     }
   }, true);
 
-  // play/pause must be bound directly to the trusted DOM click. A gr.Button.click(js=...)
+  // play/pause must be bound directly to the trusted DOM gesture. A gr.Button.click(js=...)
   // callback runs through Gradio's event layer, which can lose browser user activation and
-  // make audio.play() fail with NotAllowedError even though the user tapped the button.
-  document.addEventListener('click', (e) => {
+  // make audio.play() fail with NotAllowedError even though the user tapped the button. Touch
+  // devices get pointerdown; mouse/keyboard use click. The guard prevents touch pointerdown's
+  // follow-up click from immediately pausing the scene.
+  const togglePlayback = (e) => {
     const playBtn = e.target.closest && e.target.closest('.sc-play-btn');
     if (!playBtn) return;
     const audio = document.querySelector('#sc-voice');
@@ -880,6 +882,17 @@ PLAYBACK_SYNC_JS = """
       audio.pause();
       if (video) video.pause();
     }
+  };
+  document.addEventListener('pointerdown', (e) => {
+    if (e.pointerType === 'mouse') return;
+    if (!(e.target.closest && e.target.closest('.sc-play-btn'))) return;
+    window.__scLastTouchPlayAt = Date.now();
+    togglePlayback(e);
+  }, true);
+  document.addEventListener('click', (e) => {
+    if (!(e.target.closest && e.target.closest('.sc-play-btn'))) return;
+    if (Date.now() - (window.__scLastTouchPlayAt || 0) < 500) return;
+    togglePlayback(e);
   }, true);
 
   window.__scClock = setInterval(() => {

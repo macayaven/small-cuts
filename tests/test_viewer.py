@@ -88,6 +88,7 @@ def test_playback_js_uses_trusted_dom_click_for_audio():
     # Browser audio user activation is tied to the real click call stack. Routing play through
     # gr.Button.click(js=...) can run too late and trigger NotAllowedError on the Space.
     assert "closest('.sc-play-btn')" in viewer.PLAYBACK_SYNC_JS
+    assert "pointerdown" in viewer.PLAYBACK_SYNC_JS
     assert "audio.play()" in viewer.PLAYBACK_SYNC_JS
     assert "audio play blocked" in viewer.PLAYBACK_SYNC_JS
 

@@ -43,6 +43,9 @@ def mock_backends(monkeypatch, tmp_path):
     monkeypatch.setenv("SMALL_CUTS_TTS_BACKEND", "mock")
     # build_engine_app() now persists scenes to a SceneLibrary; keep it off $HOME.
     monkeypatch.setenv("SMALL_CUTS_LIBRARY_DIR", str(tmp_path / "library"))
+    engine_session._BACKGROUND_STORAGE_TASKS.clear()
+    yield
+    engine_session._BACKGROUND_STORAGE_TASKS.clear()
 
 
 def make_envelope(**overrides) -> dict:
@@ -114,9 +117,12 @@ def test_valid_envelope_acked_and_narrated():
 
 def test_disconnect_after_scene_audio_still_publishes_scene(monkeypatch):
     original_decode = engine_session._decode_clip_frames_for_storage
+    entered_storage = threading.Event()
+    release_storage = threading.Event()
 
     def slow_decode(*args, **kwargs):
-        time.sleep(0.2)
+        entered_storage.set()
+        assert release_storage.wait(2)
         return original_decode(*args, **kwargs)
 
     monkeypatch.setattr(engine_session, "_decode_clip_frames_for_storage", slow_decode)
@@ -126,15 +132,20 @@ def test_disconnect_after_scene_audio_still_publishes_scene(monkeypatch):
             reader = Reader(ws)
             ws.send_text(json.dumps(envelope))
             audio = reader.next_scene_audio()
+            assert entered_storage.wait(2)
+            assert engine_session._BACKGROUND_STORAGE_TASKS
 
+        assert engine_session._BACKGROUND_STORAGE_TASKS
+        release_storage.set()
         for _ in range(20):
             scenes = client.get("/v1/scenes").json()["scenes"]
-            if scenes:
+            if scenes and not engine_session._BACKGROUND_STORAGE_TASKS:
                 break
             time.sleep(0.05)
         assert len(scenes) == 1
         assert scenes[0]["scene_id"] == audio["scene_id"]
         assert scenes[0]["moment_id"] == envelope["moment_id"]
+        assert not engine_session._BACKGROUND_STORAGE_TASKS
 
 
 def test_invalid_envelope_rejected_with_detail():

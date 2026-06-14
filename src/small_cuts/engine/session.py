@@ -49,6 +49,7 @@ def _validator(name: str) -> jsonschema.Draft202012Validator:
 
 _MOMENT = _validator("moment.schema.json")
 _SCENE_AUDIO = _validator("scene-audio.schema.json")
+_BACKGROUND_STORAGE_TASKS: set[asyncio.Task[None]] = set()
 
 
 def _noop_sink(scene: dict[str, Any]) -> None:
@@ -105,6 +106,12 @@ def _log_worker_failure(task: asyncio.Task) -> None:
     exc = task.exception()
     if exc is not None:
         print(f"small_cuts.engine: session worker task crashed: {exc!r}", file=sys.stderr)
+
+
+def _retain_background_storage(task: asyncio.Task[None]) -> None:
+    """Keep shielded scene storage alive after the client WebSocket is gone."""
+    _BACKGROUND_STORAGE_TASKS.add(task)
+    task.add_done_callback(_BACKGROUND_STORAGE_TASKS.discard)
 
 
 class SessionRunner:
@@ -248,6 +255,7 @@ class SessionRunner:
                 tts_ms=tts_ms,
             )
         )
+        _retain_background_storage(storage_task)
         try:
             await asyncio.shield(storage_task)
         except asyncio.CancelledError:

@@ -242,6 +242,17 @@ footer { display: none !important; }
 /* Hide the login pill on sign-in via this wrapper Column (gr.LoginButton ignores visible). */
 .sc-upload-signin-box { flex: 0 0 auto !important; width: auto !important; min-width: 0 !important;
   padding: 0 !important; display: inline-flex !important; }
+.sc-iframe-warn {
+  font-family: 'IBM Plex Mono', monospace !important;
+  font-size: .68rem !important;
+  color: #D4AF37 !important;
+  text-decoration: underline !important;
+  margin-right: 8px;
+  white-space: nowrap;
+}
+.sc-iframe-warn:hover {
+  color: #fff5d5 !important;
+}
 .sc-upload-signin button, .sc-upload-signin a, .sc-upload-signin .lg {
   width: auto !important; min-width: 0 !important; max-width: max-content !important;
   height: 30px !important; padding: 0 12px !important; border: 1px solid #2A292F !important;
@@ -389,7 +400,11 @@ footer { display: none !important; }
 #sc-upload-popover .progress-bar, #sc-upload-popover .eta-bar,
 .sc-stage-block .progress-text, .sc-stage-block .wrap.default,
 .sc-stage-block .meta-text, .sc-stage-block .progress-bar,
-.sc-stage-block .eta-bar {
+.sc-stage-block .eta-bar,
+#sc-upload-popover .generating, #sc-upload-popover .loading,
+#sc-upload-popover .loading-overlay, #sc-upload-popover .loading-spinner,
+.sc-stage-block .generating, .sc-stage-block .loading,
+.sc-stage-block .loading-overlay, .sc-stage-block .loading-spinner {
   display: none !important; }
 /* hide Gradio's spinner/loader overlay (svelte .wrap) scoped to these blocks only */
 #sc-upload-popover .wrap.generating, .sc-stage-block .wrap.generating,
@@ -400,7 +415,10 @@ footer { display: none !important; }
    (header, feed, shelf, audio), not just the stage/popover. */
 body.sc-generating .progress-text, body.sc-generating .meta-text,
 body.sc-generating .meta-text-center, body.sc-generating .progress-bar,
-body.sc-generating .eta-bar, body.sc-generating .wrap.default { display: none !important; }
+body.sc-generating .eta-bar, body.sc-generating .wrap.default,
+body.sc-generating .generating, body.sc-generating .loading,
+body.sc-generating .loading-overlay, body.sc-generating .loading-spinner,
+body.sc-generating .spinner, body.sc-generating .show-progress { display: none !important; }
 body.sc-generating .wrap.generating, body.sc-generating .wrap.translucent {
   opacity: 0 !important; background: transparent !important; }
 /* custom file-backed player (Review-3): the master clock is a hidden <audio id="sc-voice"> in
@@ -1639,6 +1657,26 @@ PLAYBACK_SYNC_JS = """
     });
     window.__scStageObs.observe(stageObserverHost, { childList: true, subtree: true });
   }
+
+  // OAuth iframe helper: if we are in an iframe, modern browsers block third-party cookies,
+  // which makes OAuth sign-in flaky. Show a "Direct link" help text/button next to sign-in.
+  if (window.self !== window.top) {
+    const checkIframeAuth = () => {
+      const authContainer = document.querySelector('.sc-upload-auth');
+      if (authContainer && !authContainer.querySelector('.sc-iframe-warn')) {
+        const directUrl = window.location.href;
+        const tip = 'Sign-in might fail in iframe due to browser cookie limits. '
+          + 'Click to open directly in a new tab.';
+        const warnHtml = '<a class="sc-iframe-warn" href="' + directUrl
+          + '" target="_blank" title="' + tip + '">🔗 Open Direct Link</a>';
+        authContainer.insertAdjacentHTML('afterbegin', warnHtml);
+      }
+    };
+    checkIframeAuth();
+    // Re-check periodically or on DOM changes to ensure it is added when the top bar renders
+    const topbarObs = new MutationObserver(checkIframeAuth);
+    topbarObs.observe(document.body, { childList: true, subtree: true });
+  }
 }
 """
 
@@ -1665,6 +1703,16 @@ RELAY_EVENT_BRIDGE_JS = """
 def build_viewer_app() -> gr.Blocks:
     """The P1 viewer page. Mode is decided once, at build time, from the env."""
     engine_url = os.environ.get(ENGINE_URL_ENV, "").strip()
+    if not engine_url and not os.environ.get("SPACE_ID"):
+        # Auto-detect local engine running on port 8077 (for dev/tailnet live loops)
+        try:
+            with httpx.Client(timeout=0.25) as c:
+                resp = c.get("http://127.0.0.1:8077/v1/scenes")
+                if resp.status_code == 200:
+                    engine_url = "http://127.0.0.1:8077"
+        except Exception:
+            pass
+
     relay_bucket = os.environ.get(RELAY_BUCKET_ENV, "").strip()
     relay_prefix = os.environ.get(RELAY_PREFIX_ENV, DEFAULT_RELAY_PREFIX).strip()
     if engine_url:
@@ -1943,6 +1991,7 @@ def build_viewer_app() -> gr.Blocks:
                     _upload_pending_ui,
                     outputs=[upload_status, go],
                     queue=False,
+                    show_progress="hidden",
                 ).then(
                     _go_modal_upload_ui,
                     inputs=[drop_video, style, hint, scenes_state, upload_auth_state],
@@ -1962,6 +2011,7 @@ def build_viewer_app() -> gr.Blocks:
                     ],
                     concurrency_limit=1,
                     concurrency_id=UPLOAD_CONCURRENCY_ID,
+                    show_progress="hidden",
                 ).then(
                     # Deterministic "generation done" signal (success or soft-fail): now that the
                     # server has responded, collapse the clapperboard hang-backstop to a short grace
@@ -2325,10 +2375,12 @@ def build_viewer_app() -> gr.Blocks:
                 _upload_pending_ui,
                 outputs=[upload_status, go],
                 queue=False,
+                show_progress="hidden",
             ).then(
                 _go_live_ui,
                 inputs=go_inputs,
                 outputs=[*go_outputs, upload_status, go, drop_video, hint],
+                show_progress="hidden",
             )
             like_btn.click(
                 _like_current,

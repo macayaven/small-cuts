@@ -1,6 +1,6 @@
 # Demo-Readiness Checklist
 
-Last updated: 2026-06-14 18:50 CEST.
+Last updated: 2026-06-15 08:18 CEST.
 
 ## Judged Space
 
@@ -14,12 +14,15 @@ Last updated: 2026-06-14 18:50 CEST.
 - [x] Space fetches `frame.jpg`, `card.webp`, `voice.wav`, and `clip.mp4` through `/media/*`.
 - [x] Custom player uses file-backed `<audio id="sc-voice">` as the master clock.
 - [x] Play/pause is bound to trusted DOM gestures instead of a Gradio callback.
-- [x] Latest Space source deploy includes retained scene-storage tasks:
-  `91353f3e803a8712141008f7adc2b50aba83eb22`.
+- [x] Latest Space source deploy includes final thumbnail/title polish:
+  `3654f4e89f44a994f64332bdea980290f7c2039f`.
 - [x] Browser automation verifies the active Space renders the real POV `rayuela` scene with
   ready `clip.mp4` and `voice.wav` on desktop.
+- [x] Browser automation verifies the active Space library uses real POV `frame.jpg` thumbnails
+  after the final deploy.
 - [ ] Human browser smoke: click play on the Space and confirm video, sound, captions, and progress advance together.
-- [x] Mobile viewport smoke verifies no document overflow and ready `clip.mp4`/`voice.wav`.
+- [x] Mobile viewport smoke verifies no document overflow, ready `clip.mp4`/`voice.wav`, captions,
+  and POV library thumbnails.
 - [ ] Physical mobile smoke on iPhone Safari.
 
 ## Private Live Path

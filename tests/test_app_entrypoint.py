@@ -106,7 +106,7 @@ def test_app_installs_relay_hook_routes(monkeypatch):
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
 
-    route_paths = {route.path for route in module.demo.app.routes}
+    route_paths = {route.path for route in module.demo.app.routes if hasattr(route, "path")}
     assert "/small-cuts/hooks/relay-scene" in route_paths
     assert "/small-cuts/events" in route_paths
 

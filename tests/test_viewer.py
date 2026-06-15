@@ -12,6 +12,7 @@ from types import SimpleNamespace
 from urllib.parse import unquote
 
 import gradio as gr
+import gradio.oauth
 import httpx
 import numpy as np
 import pytest
@@ -23,6 +24,35 @@ from test_contracts import GOLDEN
 GOLDEN_SCENE = GOLDEN["narrated-scene.schema.json"]
 ENGINE_URL = "http://engine.test:8077"
 CREATED_AT = datetime(2026, 6, 12, 9, 30, 8, tzinfo=timezone.utc)  # the golden created_at
+
+
+def mock_gradio_oauth(monkeypatch):
+    monkeypatch.setattr(
+        gradio.oauth,
+        "_get_mocked_oauth_info",
+        lambda: {
+            "access_token": "mock-oauth-token-for-ci",
+            "token_type": "bearer",
+            "expires_in": 3600,
+            "id_token": "AAAAAAAAAAAAAAAAAAAAAAAAAA",
+            "scope": "openid profile",
+            "expires_at": 9999999999,
+            "userinfo": {
+                "sub": "11111111111111111111111",
+                "name": "CI User",
+                "preferred_username": "ci-user",
+                "profile": "https://huggingface.co/ci-user",
+                "picture": "",
+                "website": "",
+                "aud": "00000000-0000-0000-0000-000000000000",
+                "auth_time": 1691672844,
+                "nonce": "aaaaaaaaaaaaaaaaaaa",
+                "iat": 1691672844,
+                "exp": 1691676444,
+                "iss": "https://huggingface.co",
+            },
+        },
+    )
 
 
 def make_image(width=64, height=48, color=(200, 200, 200)):
@@ -346,6 +376,7 @@ def test_upload_sandbox_bounds_queue_and_upload_concurrency(monkeypatch):
     monkeypatch.setenv(viewer.ENGINE_URL_ENV, "http://127.0.0.1:9")
     monkeypatch.setenv(viewer.UPLOAD_SANDBOX_ENV, "1")
     monkeypatch.setenv(viewer.MODAL_API_URL_ENV, "https://example.modal.run")
+    mock_gradio_oauth(monkeypatch)
 
     app = viewer.build_viewer_app()
     upload_deps = [

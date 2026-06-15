@@ -1,6 +1,6 @@
 # Demo-Readiness Checklist
 
-Last updated: 2026-06-15 16:45 CEST.
+Last updated: 2026-06-15 17:31 CEST.
 
 ## HF Deployment Safety Override - 2026-06-15
 
@@ -20,6 +20,10 @@ testing, or the final run.
 - Do not use `build-small-hackathon/small-cuts-live` as an active target. It was flagged by the HF
   abuse handler after a deployment containing stale Cloudflare/Tailnet material; treat it as
   unavailable and do not try to recover it during development.
+- HF account-safety stop rule: if a personal Space is `PAUSED` and restart/rebuild returns `503`,
+  stop all HF Space actions immediately. Do not keep retrying restarts, polls, logs, uploads,
+  replacement Space creation, or variable/secrets mutations. Continue with local-only checks and
+  direct Modal checks until Carlos explicitly approves one specific next HF Space action.
 - Current personal relay settings for local/staging runs:
   - `SMALL_CUTS_RELAY_BUCKET=macayaven/small-cuts-scenes-dev`
   - `SMALL_CUTS_RELAY_PREFIX=relay`

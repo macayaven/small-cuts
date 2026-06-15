@@ -78,6 +78,11 @@ gh pr merge --auto --squash
   `build-small-hackathon/small-cuts-buffer-poc`; it is private/paused by Carlos, reserved for final
   submission, and should only be renamed/made public after the personal-profile solution is fully
   proven. Treat `build-small-hackathon/small-cuts-live` and org relay buckets as non-test targets.
+- **HF Space account-safety stop rule:** if any personal Space is `PAUSED` and restart/rebuild
+  returns `503`, stop all HF Space API actions immediately. Do not retry restarts, logs, status
+  polling, uploads, repo creation, variable/secrets changes, or smoke requests in a loop. Switch to
+  local-only and direct Modal verification, then wait for explicit human approval for one specific
+  next HF Space action.
 - **Gradio 6**: `theme=` is a `launch()` kwarg, **not** `gr.Blocks()`.
 - **ruff isort gotcha**: not-yet-existing first-party modules classify as third-party (I001) in
   pre-implementation test files — write imports in post-implementation order, ignore the early fail.

@@ -61,6 +61,10 @@ the canonical command list, and the architecture live in the **root `CLAUDE.md`*
   `macayaven/*` Spaces and buckets until the product is fully proven. The reserved org submission
   Space is `build-small-hackathon/small-cuts-buffer-poc`, currently private/paused by Carlos, to be
   renamed and made public only at final submission.
+- If a personal Space is paused and restart/rebuild returns `503`, stop all HF Space operations
+  immediately. Do not keep polling, restarting, uploading, changing variables/secrets, creating
+  replacement Spaces, or fetching logs. Verify locally or directly against Modal until Carlos
+  approves one explicit next HF Space action.
 - In relay or engine viewer-only mode, the Space must not warm Qwen/Kokoro and should stay on
   `cpu-basic`; ZeroGPU is only a fallback if Modal is ruled out and the Space itself performs
   narration/TTS.

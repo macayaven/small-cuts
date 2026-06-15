@@ -503,6 +503,8 @@ def test_upload_sandbox_signin_is_compact_and_upload_gated(monkeypatch):
     assert len(login) == 1
     assert login[0]["props"]["value"] == "🤗 Sign in to upload"
 
+    # R1: the cloud icon is the affordance and is ALWAYS rendered — signed-out it is DISABLED
+    # (not hidden) so it reads as the gated entry point next to the compact sign-in pill.
     upload_buttons = [
         component
         for component in components
@@ -510,30 +512,49 @@ def test_upload_sandbox_signin_is_compact_and_upload_gated(monkeypatch):
         and "sc-upload" in component["props"].get("elem_classes", [])
     ]
     assert len(upload_buttons) == 1
-    assert upload_buttons[0]["props"]["visible"] is False
+    assert upload_buttons[0]["props"]["visible"] is not False
+    assert upload_buttons[0]["props"]["interactive"] is False
+    assert "disabled" in upload_buttons[0]["props"].get("elem_classes", [])
 
 
 def test_upload_auth_ui_swaps_signin_for_upload_icon():
-    assert viewer._upload_auth_ui(None) == (
-        {},
-        gr.update(visible=True),
-        gr.update(visible=False),
+    # R1: signed OUT — sign-in pill stays (no full-width bar) and the icon is gated DISABLED.
+    state_out, signin_out, upload_out = viewer._upload_auth_ui(None)
+    assert state_out == {}
+    assert signin_out == gr.update(elem_classes=["sc-upload-signin"])
+    assert upload_out == gr.update(
+        interactive=False, elem_classes=["sc-icbtn", "sc-upload", "sc-ico-upload", "disabled"]
     )
 
+    # signed IN — the icon flips to ENABLED; the pill reads as a "Signed in" confirmation.
     state, signin_update, upload_update = viewer._upload_auth_ui(
         SimpleNamespace(name="Alice Example", username="alice")
     )
 
     assert state == {"username": "alice"}
-    assert signin_update == gr.update(visible=False)
-    assert upload_update == gr.update(visible=True)
+    assert signin_update == gr.update(elem_classes=["sc-upload-signin", "sc-signed-in"])
+    assert upload_update == gr.update(
+        interactive=True, elem_classes=["sc-icbtn", "sc-upload", "sc-ico-upload"]
+    )
 
 
-def test_upload_status_html_has_pending_spinner():
+def test_upload_status_html_has_pending_clapperboard():
+    # R5: one loader — the clapperboard — replaces the old border-spinner in the running state.
     html = viewer.render_upload_status_html("running")
 
-    assert "sc-upload-spinner" in html
+    assert "sc-clap" in html
+    assert "sc-upload-spinner" not in html
     assert "Generating your cut" in html
+
+
+def test_clapperboard_loader_has_hinged_arm_and_reduced_motion_fallback():
+    # R5: the loader is an inline SVG whose hinged clapper arm animates; the reveal JS embeds it.
+    overlay = viewer.render_clapperboard_html()
+    assert "sc-clap-loader" in overlay
+    assert "sc-clap-arm" in overlay
+    assert "sc-clap-caption" in overlay
+    assert "sc-clap-swing" in viewer.VIEWER_CSS
+    assert "prefers-reduced-motion" in viewer.VIEWER_CSS
 
 
 def test_relay_event_bridge_listens_for_hook_events():

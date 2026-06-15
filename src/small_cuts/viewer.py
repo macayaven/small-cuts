@@ -234,13 +234,33 @@ footer { display: none !important; }
   display: inline-flex !important; align-items: center !important;
   justify-content: flex-end !important;
   gap: 8px !important; align-self: flex-start !important; margin-left: auto !important; }
-.sc-upload-signin { flex: 0 0 auto !important; width: auto !important; min-width: 0 !important; }
+/* R1: the sign-in affordance is the compact pill ONLY — the gr.LoginButton must never render as
+   a full-width blue bar. We restyle it (button + any <a>/.lg wrappers) into the same charcoal
+   pill the rest of the chrome uses; the OAuth mechanism underneath is untouched. */
+.sc-upload-signin { flex: 0 0 auto !important; width: auto !important; min-width: 0 !important;
+  display: inline-flex !important; }
 .sc-upload-signin button, .sc-upload-signin a, .sc-upload-signin .lg {
   width: auto !important; min-width: 0 !important; max-width: max-content !important;
-  height: 30px !important; padding: 0 10px !important; border: 1px solid #2A292F !important;
+  height: 30px !important; padding: 0 12px !important; border: 1px solid #2A292F !important;
   border-radius: 999px !important; background: transparent !important; color: #E8E4D8 !important;
+  background-image: none !important;
   box-shadow: none !important; font-size: .72rem !important; letter-spacing: 0 !important;
-  white-space: nowrap !important; }
+  font-family: 'IBM Plex Mono', monospace !important; white-space: nowrap !important; }
+.sc-upload-signin button:hover, .sc-upload-signin a:hover {
+  border-color: #D4AF37 !important; color: #fff5d5 !important; }
+/* "Signed in (user)" reads as a subtle gold confirmation rather than an action. */
+.sc-upload-signin.sc-signed-in button, .sc-upload-signin.sc-signed-in a {
+  color: #D4AF37 !important; cursor: default !important; }
+/* R1: signed-OUT upload icon is visibly DISABLED (dimmed + not-allowed), not hidden — it is the
+   primary affordance, so it always shows. Gradio marks a non-interactive Button with
+   .disabled / [disabled]; we also dim the whole top-right cluster's icon when gated. */
+.sc-upload.sc-icbtn:disabled, .sc-upload.sc-icbtn.disabled,
+.sc-upload.sc-icbtn[disabled] {
+  opacity: .45 !important; cursor: not-allowed !important;
+  background-color: #6c6a74 !important; }
+.sc-upload.sc-icbtn:disabled:hover, .sc-upload.sc-icbtn.disabled:hover,
+.sc-upload.sc-icbtn[disabled]:hover { background-color: #6c6a74 !important; }
+.sc-upload.sc-icbtn:not(:disabled):not(.disabled) { cursor: pointer !important; }
 .sc-header { justify-content: center; text-align: center; }
 .sc-progress { max-width: 560px; height: 4px; margin: 12px auto 2px; border-radius: 3px;
   background: #2A292F; overflow: hidden; }
@@ -284,16 +304,94 @@ footer { display: none !important; }
   line-height: 1.2; margin-bottom: 5px; }
 .sc-upload-help-meta { color: #8a8894; font-family: 'IBM Plex Mono', monospace;
   font-size: .68rem; line-height: 1.5; text-transform: uppercase; letter-spacing: .08em; }
-.sc-upload-video { margin: 10px 0 8px !important; }
+/* R2: a generous, centered "Drop Video Here" zone — dashed border that brightens on hover/drag,
+   full popover width, theme-dark. Gradio's gr.Video upload renders a .upload-container with a
+   dashed drop target; we own its look and center its contents. */
+.sc-upload-video { margin: 10px 0 10px !important; width: 100% !important; }
+.sc-upload-video > .block, .sc-upload-video .image-frame,
+.sc-upload-video .upload-container { width: 100% !important; }
+.sc-upload-video .wrap, .sc-upload-video .upload-container,
+.sc-upload-video [data-testid="video"] > div:first-child {
+  min-height: 132px !important; display: flex !important; flex-direction: column !important;
+  align-items: center !important; justify-content: center !important; gap: 6px !important;
+  width: 100% !important; padding: 18px 14px !important; border-radius: 10px !important;
+  border: 1.5px dashed #3a3942 !important; background: #0f0f14 !important;
+  color: #8a8894 !important; text-align: center !important;
+  transition: border-color .15s ease, background .15s ease, color .15s ease; }
+.sc-upload-video .wrap:hover, .sc-upload-video .upload-container:hover,
+.sc-upload-video .wrap.drag, .sc-upload-video .drag {
+  border-color: #D4AF37 !important; background: #15151b !important; color: #E8E4D8 !important; }
+/* dropzone label: replace Gradio's terse copy with the cinematic two-line affordance */
+.sc-upload-video .wrap .or, .sc-upload-video .upload-container .or {
+  color: #6f6e78 !important; font-family: 'IBM Plex Mono', monospace !important;
+  font-size: .68rem !important; letter-spacing: .12em !important; text-transform: uppercase; }
+.sc-upload-video svg { color: #D4AF37 !important; opacity: .85; }
+/* once a clip is in, let the preview/player fill the zone without the dashed frame */
+.sc-upload-video video { width: 100% !important; border-radius: 10px !important;
+  background: #000 !important; }
+/* the optional scene-hint sits below the zone; the Narrate button is full-width below that. */
+.sc-upload-hint textarea, .sc-upload-hint input { background: #0f0f14 !important;
+  border: 1px solid #2A292F !important; border-radius: 8px !important; color: #E8E4D8 !important;
+  font-size: .82rem !important; }
+.sc-upload-hint label span, .sc-upload-hint .sc-upload-help-meta {
+  color: #8a8894 !important; }
+#sc-upload-popover .sc-narrate-btn button, #sc-upload-popover .sc-narrate-btn {
+  width: 100% !important; min-height: 38px !important; }
 #sc-upload-popover button { width: 100% !important; min-height: 26px !important; }
 .sc-upload-status { min-height: 22px; display: flex; align-items: center; gap: 8px;
   color: #8a8894; font-size: .78rem; line-height: 1.3; }
 .sc-upload-status.running { color: #E8E4D8; }
 .sc-upload-status.complete { color: #D4AF37; }
-.sc-upload-spinner { display: inline-block; width: 14px; height: 14px; border-radius: 50%;
-  border: 2px solid rgba(212,175,55,.28); border-top-color: #D4AF37;
-  animation: sc-spin .75s linear infinite; }
-@keyframes sc-spin { to { transform: rotate(360deg); } }
+/* R5: ONE loader — a director's clapperboard. The top clapper arm is hinged at its LEFT end and
+   swings open ~30deg then snaps shut on a ~1.1s loop (ease-out open, fast snap closed, tiny
+   settle). Only transform:rotate is animated; transform-origin is pinned at the hinge (8,30 in
+   the 0..120 x 0..96 viewBox). */
+.sc-clap-arm { transform-origin: 8px 30px; animation: sc-clap-swing 1.1s ease-in-out infinite; }
+@keyframes sc-clap-swing {
+  0%   { transform: rotate(0deg); }      /* shut */
+  10%  { transform: rotate(0deg); }      /* hold shut */
+  55%  { transform: rotate(-30deg); }    /* ease open */
+  70%  { transform: rotate(-2deg); }     /* fast snap toward shut */
+  80%  { transform: rotate(-6deg); }     /* tiny rebound */
+  90%  { transform: rotate(0deg); }      /* settle */
+  100% { transform: rotate(0deg); }
+}
+/* the full result-box overlay: clapperboard centered over the (not-yet-revealed) result video */
+.sc-clap-loader { position: absolute; inset: 0; z-index: 6; display: flex;
+  flex-direction: column; align-items: center; justify-content: center; gap: 12px;
+  background: radial-gradient(circle at 50% 42%, #16161c 0%, #0a0a0d 100%); }
+.sc-clap-loader .sc-clap { filter: drop-shadow(0 6px 16px rgba(0,0,0,.45)); }
+.sc-clap-caption { font-family: 'IBM Plex Mono', monospace; font-size: .74rem;
+  letter-spacing: .18em; text-transform: uppercase; color: #D4AF37; min-height: 1em; }
+/* cycle the caption text without JS: 3 phases over the same 1.1s feel (3.3s full cycle) */
+.sc-clap-loader .sc-clap-caption { animation: sc-clap-cap 3.3s steps(1) infinite; }
+@keyframes sc-clap-cap {
+  0%, 33%   { content: "Rolling..."; }
+  34%, 66%  { content: "Action..."; }
+  67%, 100% { content: "Cutting..."; }
+}
+/* the inline (status-line) clapperboard is tiny and shares the same swing animation */
+.sc-clap-mini { display: inline-flex; width: 18px; height: 15px; }
+.sc-clap-mini .sc-clap { width: 18px; height: 15px; }
+@media (prefers-reduced-motion: reduce) {
+  .sc-clap-arm { animation: none; }
+  .sc-clap { animation: sc-clap-pulse 1.4s ease-in-out infinite; }
+  .sc-clap-loader .sc-clap-caption { animation: none; }
+  @keyframes sc-clap-pulse { 0%,100% { opacity: 1; } 50% { opacity: .5; } }
+}
+/* R5: suppress Gradio's own progress/spinner overlays inside the upload popover AND the result
+   stage, so the clapperboard is the only motion during generation. */
+#sc-upload-popover .progress-text, #sc-upload-popover .wrap.default,
+#sc-upload-popover .meta-text, #sc-upload-popover .meta-text-center,
+#sc-upload-popover .progress-bar, #sc-upload-popover .eta-bar,
+.sc-stage-block .progress-text, .sc-stage-block .wrap.default,
+.sc-stage-block .meta-text, .sc-stage-block .progress-bar,
+.sc-stage-block .eta-bar {
+  display: none !important; }
+/* hide Gradio's spinner/loader overlay (svelte .wrap) scoped to these blocks only */
+#sc-upload-popover .wrap.generating, .sc-stage-block .wrap.generating,
+#sc-upload-popover .wrap.translucent, .sc-stage-block .wrap.translucent {
+  opacity: 0 !important; background: transparent !important; }
 /* custom file-backed player (Review-3): the master clock is a hidden <audio id="sc-voice"> in
    .sc-audio-host. gr.Audio can't serve as the clock — it plays via wavesurfer, leaving its own
    <audio> element empty/unreadable. The pill's play/pause + volume drive #sc-voice via JS. */
@@ -419,9 +517,58 @@ def render_upload_panel_help_html(max_seconds: float | None = None) -> str:
     )
 
 
+def render_clapperboard_svg() -> str:
+    """A director's clapperboard (claqueta) loader.
+
+    The top *clapper bar* (``.sc-clap-arm``) is hinged at its LEFT end: CSS rotates it open ~30°
+    and snaps it shut on a ~1.1s loop (animation lives in VIEWER_CSS). Only ``transform:rotate``
+    is animated (``transform-origin`` pinned at the hinge), so it stays cheap and jank-free; a
+    ``prefers-reduced-motion`` fallback in the CSS swaps the swing for an opacity pulse. The
+    diagonal black/white stripes are baked into the static markup. viewBox 0 0 120 96; the arm is
+    drawn flush along the slate's top edge and pivots about (8, 30)."""
+    stripes = "".join(
+        # alternating slate teeth along the clapper edges (parallelograms => the classic stripes)
+        f'<path d="M{x} 0 l12 0 -10 16 -12 0 z" fill="{"#f3efe4" if i % 2 else "#16161c"}"/>'
+        for i, x in enumerate(range(8, 116, 11))
+    )
+    return (
+        '<svg class="sc-clap" viewBox="0 0 120 96" width="96" height="78" '
+        'role="img" aria-label="Generating your cut" xmlns="http://www.w3.org/2000/svg">'
+        # slate body (the board itself)
+        '<rect x="6" y="30" width="108" height="58" rx="6" fill="#0d0e11" '
+        'stroke="#2A292F" stroke-width="2"/>'
+        '<g stroke="#2A292F" stroke-width="1.4" opacity=".55">'
+        '<line x1="18" y1="46" x2="102" y2="46"/><line x1="18" y1="62" x2="102" y2="62"/>'
+        '<line x1="18" y1="78" x2="102" y2="78"/></g>'
+        # hinged clapper arm: a stripe-edged bar pivoting about its left end (8,30)
+        '<g class="sc-clap-arm">'
+        '<rect x="6" y="14" width="108" height="18" rx="3" fill="#16161c" '
+        'stroke="#2A292F" stroke-width="2"/>'
+        f'<g class="sc-clap-teeth" transform="translate(0 14)">{stripes}</g>'
+        "</g></svg>"
+    )
+
+
+def render_clapperboard_html(caption: str = "Rolling...") -> str:
+    """Full result-box overlay: the animating clapperboard + a cycling caption.
+
+    Used as the single generation loader (R5). The caption (``Rolling.../Action.../Cutting...``)
+    cycles via CSS ``::before`` content steps so no JS timer is needed."""
+    return (
+        '<div class="sc-clap-loader" role="status" aria-live="polite">'
+        f"{render_clapperboard_svg()}"
+        f'<div class="sc-clap-caption">{html.escape(caption)}</div>'
+        "</div>"
+    )
+
+
 def render_upload_status_html(state: str = "idle") -> str:
     if state == "running":
-        body = '<span class="sc-upload-spinner" aria-hidden="true"></span>Generating your cut...'
+        # one loader, the clapperboard (R5) — replaces the old border-spinner.
+        body = (
+            '<span class="sc-clap-mini" aria-hidden="true">'
+            f"{render_clapperboard_svg()}</span>Generating your cut..."
+        )
     elif state == "complete":
         body = "Cut ready."
     else:
@@ -458,13 +605,32 @@ def _upload_auth_state(profile: gr.OAuthProfile | None) -> dict[str, str]:
 
 
 def _upload_auth_ui(profile: gr.OAuthProfile | None):
+    """R1: the cloud icon is the upload affordance, gated by auth.
+
+    Signed OUT — the compact sign-in pill stays visible (the only sign-in control; no full-width
+    bar) and the upload icon is rendered DISABLED (non-interactive, dimmed, "Sign in to upload").
+    Signed IN — the icon flips to ENABLED with no layout jump and the pill reads as a subtle
+    "Signed in (user)" confirmation. Returns updates for (auth_state, sign-in pill, upload icon)."""
     auth_state = _upload_auth_state(profile)
     signed_in = bool(auth_state)
+    signin_classes = ["sc-upload-signin"] + (["sc-signed-in"] if signed_in else [])
     return (
         auth_state,
-        gr.update(visible=not signed_in),
-        gr.update(visible=signed_in),
+        gr.update(elem_classes=signin_classes),
+        gr.update(
+            interactive=signed_in,
+            elem_classes=_upload_icon_classes(signed_in),
+        ),
     )
+
+
+def _upload_icon_classes(enabled: bool) -> list[str]:
+    """Base classes for the upload cloud-icon button; ``disabled`` is appended when gated so the
+    CSS can dim it even before Gradio toggles its own [disabled] attribute on first render."""
+    classes = ["sc-icbtn", "sc-upload", "sc-ico-upload"]
+    if not enabled:
+        classes.append("disabled")
+    return classes
 
 
 def _require_upload_profile(profile: gr.OAuthProfile | None) -> str:
@@ -1368,8 +1534,82 @@ PLAYBACK_SYNC_JS = """
     lines.forEach((l, i) => { l.hidden = (i !== idx); });
     if (fill) fill.style.width = (p * 100).toFixed(1) + '%';
   }, 120);
+
+  // R4 + R5: between "Narrate this video" and the buffered reveal the user sees ONLY the
+  // clapperboard loader. We mount the loader over the stage when the Narrate button is tapped,
+  // keep it (re-mounting it when Gradio swaps in the result stage) until the result <video> is
+  // fully buffered (canplaythrough / readyState>=3) or a timeout fires, then reveal + remove it.
+  const SC_CLAP_HTML = __SC_CLAP_LOADER_HTML__;
+  const SC_REVEAL_TIMEOUT_MS = 12000;
+
+  const scStageHost = () => document.querySelector('.sc-stage-block .sc-stage-shell');
+  const scMountLoader = () => {
+    const shell = scStageHost();
+    if (!shell) return;
+    let loader = shell.querySelector('.sc-clap-loader');
+    if (!loader) {
+      shell.insertAdjacentHTML('beforeend', SC_CLAP_HTML);
+      loader = shell.querySelector('.sc-clap-loader');
+    }
+    // hold the (possibly half-buffered) result hidden behind the loader; never autoplay it
+    const video = shell.querySelector('video');
+    if (video) { video.style.visibility = 'hidden'; try { video.pause(); } catch (e) {} }
+  };
+  const scRevealResult = () => {
+    const shell = scStageHost();
+    if (shell) {
+      const video = shell.querySelector('video');
+      if (video) video.style.visibility = '';
+      const loader = shell.querySelector('.sc-clap-loader');
+      if (loader) loader.remove();
+    }
+    window.__scGenerating = false;
+    if (window.__scRevealTimer) {
+      clearTimeout(window.__scRevealTimer);
+      window.__scRevealTimer = 0;
+    }
+  };
+  const scArmReveal = (video) => {
+    if (!video || video.__scArmed) return;
+    video.__scArmed = true;
+    if (video.readyState >= 3) { scRevealResult(); return; }
+    const onReady = () => scRevealResult();
+    video.addEventListener('canplaythrough', onReady, { once: true });
+    video.addEventListener('loadeddata', () => {
+      if (video.readyState >= 3) scRevealResult();
+    }, { once: true });
+    try { video.load(); } catch (e) {}
+  };
+
+  // tapping Narrate starts generation: mount the loader and hold any result until buffered
+  document.addEventListener('click', (e) => {
+    if (!(e.target.closest && e.target.closest('.sc-narrate-btn'))) return;
+    window.__scGenerating = true;
+    scMountLoader();
+    if (window.__scRevealTimer) clearTimeout(window.__scRevealTimer);
+    window.__scRevealTimer = setTimeout(scRevealResult, SC_REVEAL_TIMEOUT_MS);
+  }, true);
+
+  // when Gradio swaps the finished cut into the stage, re-mount the loader over the new <video>
+  // and arm the buffered-reveal; the loader stays until canplaythrough/readyState>=3 or timeout.
+  const stageObserverHost = document.querySelector('.sc-stage-block') || document.body;
+  if (stageObserverHost && !window.__scStageObs) {
+    window.__scStageObs = new MutationObserver(() => {
+      if (!window.__scGenerating) return;
+      const shell = scStageHost();
+      if (!shell) return;
+      const video = shell.querySelector('video');
+      if (video && !shell.querySelector('.sc-clap-loader')) scMountLoader();
+      if (video) scArmReveal(video);
+    });
+    window.__scStageObs.observe(stageObserverHost, { childList: true, subtree: true });
+  }
 }
 """
+
+PLAYBACK_SYNC_JS = PLAYBACK_SYNC_JS.replace(
+    "__SC_CLAP_LOADER_HTML__", "`" + render_clapperboard_html() + "`"
+)
 
 RELAY_EVENT_BRIDGE_JS = """
   if (window.__scRelayPush) return;
@@ -1444,6 +1684,10 @@ def build_viewer_app() -> gr.Blocks:
                 padding=False,
             )
             if upload_sandbox:
+                # R1: the cloud icon is the affordance and is ALWAYS shown. It boots DISABLED
+                # (dimmed, not-allowed) and the compact pill is the only sign-in control — never a
+                # full-width LoginButton bar. `_upload_auth_ui` flips the icon to enabled on load
+                # if the visitor already has a Hugging Face session (no layout jump either way).
                 with gr.Row(elem_classes="sc-upload-auth"):
                     upload_login = gr.LoginButton(
                         "🤗 Sign in to upload",
@@ -1453,8 +1697,8 @@ def build_viewer_app() -> gr.Blocks:
                     )
                     upload_btn = gr.Button(
                         "",
-                        visible=False,
-                        elem_classes=["sc-icbtn", "sc-upload", "sc-ico-upload"],
+                        interactive=False,
+                        elem_classes=_upload_icon_classes(enabled=False),
                     )
             elif upload_enabled:
                 upload_btn = gr.Button("", elem_classes=["sc-icbtn", "sc-upload", "sc-ico-upload"])
@@ -1528,25 +1772,40 @@ def build_viewer_app() -> gr.Blocks:
                     # The upload sandbox opens on demand from the top-right icon as a compact
                     # overlay, video-only (the product narrates video, not stills).
                     image_none = gr.State(None)
-                    hint = gr.State("")
                     with gr.Group(visible=False, elem_id="sc-upload-popover") as upload_panel:
                         gr.HTML(
                             render_upload_panel_help_html(),
                             elem_classes="sc-plain",
                             padding=False,
                         )
+                        # R2: a generous, centered "Drop Video Here / — or — / Click to Upload"
+                        # zone (styled in VIEWER_CSS via .sc-upload-video).
                         drop_video = gr.Video(
                             sources=["upload"],
                             show_label=False,
-                            height=128,
+                            height=132,
                             elem_classes="sc-upload-video",
+                        )
+                        # R2/R3: the optional scene-hint sits below the zone; cleared on success.
+                        hint = gr.Textbox(
+                            show_label=False,
+                            placeholder="Whisper context to the narrator (optional)",
+                            lines=1,
+                            max_lines=2,
+                            elem_classes="sc-upload-hint",
                         )
                         upload_status = gr.HTML(
                             render_upload_status_html(),
                             elem_classes="sc-plain",
                             padding=False,
                         )
-                        go = gr.Button("Narrate", variant="primary", size="sm")
+                        # R2: full-width "Narrate this video" button below the hint.
+                        go = gr.Button(
+                            "Narrate this video",
+                            variant="primary",
+                            size="sm",
+                            elem_classes="sc-narrate-btn",
+                        )
             with gr.Column(elem_classes="sc-rail-col"):
                 gr.HTML(
                     f'<div class="sc-rail-head">{RAIL_MARK_SVG}<span>Library</span></div>',
@@ -1607,6 +1866,9 @@ def build_viewer_app() -> gr.Blocks:
                     auth_state,
                     profile: gr.OAuthProfile | None,
                 ):
+                    # _submit_modal_upload keeps its 7-tuple contract; the success/soft-fail
+                    # branch (and the R3 reset) is decided here, in the click wrapper, so the
+                    # data-flow function is untouched.
                     result = _submit_modal_upload(
                         video_path,
                         style_key,
@@ -1616,12 +1878,23 @@ def build_viewer_app() -> gr.Blocks:
                         engine,
                         upload_auth_state=auth_state,
                     )
+                    succeeded = not _is_gradio_update(result[0])
                     status = (
                         render_upload_status_html("complete")
-                        if not _is_gradio_update(result[0])
+                        if succeeded
                         else render_upload_status_html()
                     )
-                    return (*result, status, gr.update(interactive=True))
+                    # R3: on SUCCESS clear the video + hint so a second upload works immediately;
+                    # on soft-fail keep the user's file and what they typed.
+                    video_reset = gr.update(value=None) if succeeded else gr.skip()
+                    hint_reset = gr.update(value="") if succeeded else gr.skip()
+                    return (
+                        *result,
+                        status,
+                        gr.update(interactive=True),
+                        video_reset,
+                        hint_reset,
+                    )
 
                 go.click(
                     _upload_pending_ui,
@@ -1640,6 +1913,8 @@ def build_viewer_app() -> gr.Blocks:
                         visibility,
                         upload_status,
                         go,
+                        drop_video,
+                        hint,
                     ],
                     concurrency_limit=1,
                     concurrency_id=UPLOAD_CONCURRENCY_ID,
@@ -1926,12 +2201,16 @@ def build_viewer_app() -> gr.Blocks:
                 like_update, report_update = _scene_action_updates(
                     scene_id, liked_ids, reported_ids
                 )
+                # R3: the local pipeline always produces a finished cut, so clear the drop zone +
+                # hint once it's staged — the popover is empty/ready for the next upload.
                 return (
                     *outputs,
                     like_update,
                     report_update,
                     render_upload_status_html("complete"),
                     gr.update(interactive=True),
+                    gr.update(value=None),
+                    gr.update(value=""),
                 )
 
             def _like_current(scenes, pinned_id, liked_ids, reported_ids):
@@ -1987,7 +2266,7 @@ def build_viewer_app() -> gr.Blocks:
             ).then(
                 _go_live_ui,
                 inputs=go_inputs,
-                outputs=[*go_outputs, upload_status, go],
+                outputs=[*go_outputs, upload_status, go, drop_video, hint],
             )
             like_btn.click(
                 _like_current,

@@ -50,6 +50,9 @@ Last updated: 2026-06-15 09:03 CEST.
 - [x] Model-generated library audit populated a clean five-scene run from the preselected glasses
   clips before the hero-library switch. Quality was mixed: car-door, night-drive, and rayuela were
   usable; the desk-laptop opener was too literal because the selected frame emphasized an overlay.
+- [x] Hidden warm-up moment against the hero-root engine returned `SceneAudio` in 15.4 s on
+  2026-06-15 09:09 CEST; the warm-up row/media were pruned, leaving exactly the five hero cuts
+  visible through Cloudflare.
 - [x] iOS simulator suite passes: 63 tests, 1 live-engine smoke skipped, 0 failures.
 - [x] Opt-in Swift live-engine smoke passes against `ws://127.0.0.1:8077/v1/session`
   with real `SceneAudio` in 4.4 s.

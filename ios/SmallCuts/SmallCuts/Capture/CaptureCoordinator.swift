@@ -58,7 +58,11 @@ final class CaptureCoordinator: ObservableObject {
     private var frameTask: Task<Void, Never>?
     private var eventTask: Task<Void, Never>?
     private var lastFrame: CapturedFrame?
-    private var clipBuffer = FrameClipBuffer(window: 4.0, maxStoredFrames: 32, maxClipFrames: 12)
+    private var clipBuffer = FrameClipBuffer(
+        window: 4.0,
+        maxStoredFrames: FrameClipBuffer.liveDemoMaxStoredFrames,
+        maxClipFrames: FrameClipBuffer.liveDemoMaxClipFrames
+    )
 
     private let makeClient: () -> EngineSessionClient
     private let deviceContext: @MainActor () -> DeviceContext

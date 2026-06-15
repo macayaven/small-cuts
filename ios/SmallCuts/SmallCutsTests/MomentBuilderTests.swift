@@ -104,7 +104,7 @@ final class MomentBuilderTests: XCTestCase {
         let encoded = try XCTUnwrap(
             MomentBuilder.encodeFrame(current.image, tsOffsetMs: 0)
         )
-        let supplemental = try (1...13).map { i in
+        let supplemental = try (1...25).map { i in
             try XCTUnwrap(
                 MomentBuilder.encodeFrame(
                     image(width: CGFloat(100 + i), height: CGFloat(200 + i)),
@@ -124,12 +124,14 @@ final class MomentBuilderTests: XCTestCase {
         )
         let frames = try XCTUnwrap(built.envelope["frames"] as? [[String: Any]])
 
-        XCTAssertEqual(frames.count, 12, "MomentEnvelope contract allows at most twelve frames")
+        XCTAssertEqual(frames.count, 24, "MomentEnvelope contract allows at most twenty-four frames")
         XCTAssertEqual(frames[0]["ts_offset_ms"] as? Int, 0)
         XCTAssertEqual(frames[1]["ts_offset_ms"] as? Int, -1_000)
         XCTAssertEqual(frames[2]["ts_offset_ms"] as? Int, -2_000)
         XCTAssertEqual(frames[3]["ts_offset_ms"] as? Int, -3_000)
-        XCTAssertEqual(frames[11]["ts_offset_ms"] as? Int, -11_000)
+        if frames.indices.contains(23) {
+            XCTAssertEqual(frames[23]["ts_offset_ms"] as? Int, -23_000)
+        }
     }
 
     func test_supplementalFramesUseLowerPayloadCap() throws {

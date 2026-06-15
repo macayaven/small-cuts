@@ -32,6 +32,7 @@ DEFAULT_ROOT = "~/.small-cuts/library"
 OWNER = "carlos"  # v1 engines are single-user; the field is reserved for multi-user
 VISIBILITIES = ("private", "shared", "public")
 MEDIA_FILES = ("frame.jpg", "card.webp", "voice.wav", "clip.mp4")
+CLIP_MP4_FPS = 6
 
 _SCHEMA = """\
 CREATE TABLE IF NOT EXISTS scenes (
@@ -279,7 +280,7 @@ class SceneLibrary:
             self._db.close()
 
 
-def _write_clip_mp4(path: Path, frames: list[Image.Image], fps: int = 3) -> None:
+def _write_clip_mp4(path: Path, frames: list[Image.Image], fps: int = CLIP_MP4_FPS) -> None:
     """Render a small browser-playable MP4 from sampled POV frames."""
     import av
 

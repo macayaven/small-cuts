@@ -88,7 +88,7 @@ struct MomentBuilder {
     static let jpegQuality: CGFloat = 0.9
     static let supplementalMaxFrameSide: CGFloat = 640
     static let supplementalJpegQuality: CGFloat = 0.72
-    static let maxFramesPerMoment = 12
+    static let maxFramesPerMoment = 24
 
     let sessionId: String
     var styleKey: String

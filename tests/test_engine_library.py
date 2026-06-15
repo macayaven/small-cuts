@@ -139,6 +139,7 @@ def test_store_writes_clip_url_and_title_for_multiframe_scene(tmp_path):
     clip_path = tmp_path / "lib" / "media" / stored["scene_id"] / "clip.mp4"
     assert clip_path.is_file()
     with av.open(str(clip_path)) as container:
+        assert float(container.streams.video[0].average_rate) == pytest.approx(6.0)
         frames = list(container.decode(video=0))
     assert len(frames) >= 3
 

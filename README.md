@@ -10,8 +10,11 @@ hf_oauth: true
 pinned: true
 license: mit
 short_description: A deadpan narrator for your life, from small open models.
+models:
+  - Qwen/Qwen3-VL-8B-Instruct
 tags:
   - track:wood
+  - sponsor:modal
   - achievement:offgrid
   - achievement:offbrand
   - achievement:llama
@@ -25,129 +28,124 @@ tags:
 **Small Cuts** turns first-person moments into grounded, cinematic, **spoken** narration —
 an omniscient, slightly-too-honest narrator in the spirit of *The Invention of Lying* —
 using only **small (≤32B) open models**. No script, no cloud LLM: a small vision-language
-model watches your moment and a small TTS speaks the line, the way a film narrator would
-if your life were the film.
+model watches your moment and a small text-to-speech voice speaks the line, the way a film
+narrator would if your life were the film.
 
-There is exactly **one narrator** — a single deadpan, unnamed voice. No menus, no
-director to pick. You point at what's happening; it tells you what it means.
+There is exactly **one narrator**: a single deadpan, unnamed voice. No menus, no director to
+pick. You point at what's happening; it tells you what it means.
 
-This is the **challenger submission** for the
-[Build Small Hackathon](https://huggingface.co/build-small-hackathon)
-("Small Models, Big Adventures" — Gradio × Hugging Face, submissions close
-**June 15, 2026, 23:59 UTC**), the strategic successor to the original
-*Director's Cut* project.
+This is a submission to the **Build Small Hackathon** ("Small Models, Big Adventures" —
+Gradio × Hugging Face).
 
-## The soul of it — the Action-to-Cut loop
+---
 
-Small Cuts was born wearing glasses. The intended experience is a **live loop**:
+## Two paths, one finished cut
+
+Small Cuts is a deliberate comparison of two techniques that both land as the **same** finished
+artifact in this Space — a clip with a generated title, narration, Kokoro voice, synced
+captions, a library tile, and a source badge.
+
+| Path | Who | Channel | What it proves | Badge |
+|---|---|---|---|---|
+| **Whole video, one pass** | A judge, in this Space | Past events, any recording | It is **real and running** — verify it yourself, no access to the maker's hardware needed | `source="upload"` |
+| **Pieces + hints** | The wearer (Ray-Ban Meta glasses / iOS) | Clips from ~3s ago | The **soul** — embodied, off-grid, narrated in-ear *while the moment is still recent past* | `source="glasses"` |
+
+The public Space never reaches the maker's local hardware; the private home engine never exposes
+inference hardware to the public. Same output shape, two very different journeys.
+
+---
+
+## How judges can try it
+
+The Space is the **view platform + library** half of the loop:
+
+- **A live stage** with the current moment and movie-style subtitles over a constant dark bar,
+  advancing with the voice-over.
+- **Voice-over replay** in a compact custom player whose video, sound, captions, and progress all
+  share one audio clock.
+- **A public library** of real Ray-Ban Meta glasses moments, generated through the same local
+  engine path so the channel is never empty. Source clips and mark points are curated; the visible
+  titles, narration, voice, thumbnails, and clips are **produced by Small Cuts**.
+- **"Try it"** — a tucked-away, HF-login upload drawer. Sign in, drop a short video, and a private
+  **Modal** GPU service runs the real Qwen + Kokoro pipeline and replays your generated cut in the
+  same theater. This is the judge-verifiable path: no glasses or iOS required.
+
+---
+
+## Architecture in one glance
 
 ```
-Ray-Ban Meta glasses  ──image frames──▶  home engine (small VLM + TTS)  ──▶  narration in your ear
+Ray-Ban Meta glasses ──image frames──▶  home engine (small VLM + TTS)  ──▶  narration in your ear
                                               │
                                               └──── finished cuts ────▶  the Space (watch · library)
+
+judge's browser ──short video──▶  Modal GPU (Qwen3-VL-8B + Kokoro)  ──▶  finished cut in the Space
 ```
 
-You walk through a moment, tap **Action!**, then tap **Cut!** when the scene has a readable
-beat. The narrator watches a selected first-person frame and speaks one grounded, deadpan line
-back in your ear while the moment is still *recent past*. The finished cut then lands in the
-Space as a short POV clip with synced captions, title, voice, and library thumbnail.
+You walk through a moment, tap **Action!**, then tap **Cut!** when the scene has a readable beat.
+The narrator watches a selected first-person frame and speaks one grounded, deadpan line back in
+your ear while the moment is still recent past. The finished cut lands in the Space as a short POV
+clip with synced captions, title, voice, and library thumbnail.
 
-**One completed-cut experience, multiple inputs:** from the Space's point of view, glasses cuts
-and authenticated browser uploads resolve to the same artifact shape: a finished video, generated
-title, generated narration, Kokoro voice, synced captions, and a library tile. Glasses remain the
-private wearer path; browser uploads are a judge-verifiable path with no glasses or iOS required.
-
-## What's in this Space
-
-The Space is the **view platform + library** half of the loop — a small streaming-channel UI:
-
-- **A live stage** with the current moment and **movie-style subtitles** (short
-  phrase-sized lines over a constant dark bar, advancing with the voice-over).
-- **Voice-over replay**, with a compact custom player whose video, sound, captions, and progress
-  share the same audio clock.
-- **A public library** of real Ray-Ban Meta glasses moments, generated through the same local
-  engine path so the channel is never empty. The source clips and mark points are curated; the
-  visible titles, narration, voice, thumbnails, and clips are produced by Small Cuts.
-- **"Try it"** — a tucked-away, HF-login upload drawer that sends your short video to a private
-  Modal post-cut service, then replays the generated cut in the same theater.
+---
 
 ## How it was built
 
 | Piece | Choice | Why |
 |---|---|---|
-| Narrator (VLM) | `Qwen/Qwen3-VL-8B-Instruct` | Strong grounded captioning at 8B — well under 32B |
+| Narrator (VLM) | `Qwen/Qwen3-VL-8B-Instruct` | Strong grounded captioning at **8B — well under 32B** |
 | Voice (TTS) | **Kokoro** (24 kHz) | Tiny, expressive, open; one signature deadpan delivery |
 | Space runtime | Gradio 6 on CPU | Public theater + library; uploads call Modal instead of warming models |
-| Judge upload service | Modal GPU app (`small-cuts-postcut`) | Finished-video verification path with real Qwen + Kokoro output |
+| Judge upload service | **Modal** GPU app (`small-cuts-postcut`) | Finished-video verification path with real Qwen + Kokoro output |
 | Local live engine | FastAPI WS home node, **llama.cpp** | The in-ear loop + demo video; no cloud LLM/TTS API |
 | Capture | iOS app for Ray-Ban Meta glasses (`ios/SmallCuts/`) | First-person moments, the way it's meant to be lived |
 
 Built by **Carlos Crespo Macaya** as architect and lead. Development was accelerated with an
-AI toolchain: Claude (Opus) for design critique, Codex (GPT-5.x) for paired implementation,
-GLM for review, and Gemini for eval, all directed by Carlos.
+AI toolchain — Claude (Opus) for design critique, Codex (GPT-5.x) for paired implementation,
+GLM for review, and Gemini for eval — all directed by Carlos.
+
+---
+
+## ≤32B compliance
+
+Every model is small and open-weight:
+
+- **Narrator:** `Qwen/Qwen3-VL-8B-Instruct` — **8B parameters**, comfortably under the 32B cap.
+- **Voice:** **Kokoro** — a tiny open TTS model.
+
+There is no cloud LLM anywhere in the loop. The live, in-ear path runs entirely on local hardware
+through **llama.cpp**; the judge upload path runs the same small models on a Modal GPU so reviewers
+can verify real output without touching the maker's machine.
+
+---
 
 ## Hackathon compliance
 
 | Rule | How Small Cuts complies |
 |---|---|
-| Gradio app hosted as a Space under the org | Final submission is reserved for `build-small-hackathon/small-cuts-buffer-poc` after personal-profile staging passes |
+| Gradio app hosted as a Space under the org | Final submission promotes to `build-small-hackathon/small-cuts` after personal-profile staging passes |
 | Every model < 32B | 8B VLM narrator + small Kokoro TTS, all open weights |
-| Demo video | Filmed POV with Ray-Ban Meta glasses → narrated by the app *(pending final link below)* |
-| Social post | Linked from this README *(pending final link below)* |
+| Demo video | Filmed POV with Ray-Ban Meta glasses → narrated by the app *(link below)* |
+| Social post | Linked from this README *(link below)* |
 | Track 2 — **Thousand Token Wood** (`track:wood`) | Whimsical, delightful, AI-load-bearing, original |
-| Off the Grid (`achievement:offgrid`) | Live inference/TTS runs on local hardware; public Space reads finished cuts only |
+| Best Use of Modal (`sponsor:modal`) | The judge upload path runs Qwen + Kokoro on a Modal GPU |
+| Off the Grid (`achievement:offgrid`) | Live inference/TTS run on local hardware; the public Space reads finished cuts only |
+| Off-Brand (`achievement:offbrand`) | Custom cinematic frontend past the stock Gradio look |
 | Llama (`achievement:llama`) | The live engine runs through `llama.cpp` |
+| Field Notes (`achievement:fieldnotes`) | Public write-up — [field notes on the HF blog](https://huggingface.co/blog/build-small-hackathon/small-cuts-field-notes) |
 
-- 📹 **Demo video:** _TODO — add public link before submission_
-- 📣 **Social post:** _TODO — add link before submission_
-- 📝 **Field notes:** [hf.co/blog/macayaven/small-cuts-field-notes](https://huggingface.co/blog/macayaven/small-cuts-field-notes)
+### Submission links
 
-**Bonus quests claimed:** Off-Brand (`offbrand`, custom cinematic frontend) · Off the Grid
-(`offgrid`, local small-model engine for the live loop) · Llama (`llama`, llama.cpp) · Field
-Notes (`fieldnotes`, the write-up above).
+- 📹 **Demo video (YouTube):** _TODO — add public link before submission_
+- 📣 **Social post (Reddit):** _TODO — add link before submission_
+- 📣 **Social post (LinkedIn):** _TODO — add link before submission_
+- 📝 **Field notes / write-up:** [hf.co/blog/build-small-hackathon/small-cuts-field-notes](https://huggingface.co/blog/build-small-hackathon/small-cuts-field-notes)
 
-## Quick start
+> **Integrity note:** every preselected/hero clip in this Space is narrated by the **actual
+> Small Cuts pipeline** (real Qwen3-VL-8B + Kokoro output) — never hand-written narration.
 
-```bash
-# install (CI-equivalent minimal)
-uv sync --extra dev
+---
 
-# run the Space/viewer locally with the deterministic mock backend (no model download)
-SMALL_CUTS_BACKEND=mock uv run --no-sync python app.py
+## License
 
-# run with the real local VLM (downloads weights)
-SMALL_CUTS_BACKEND=transformers uv run --no-sync python app.py
-
-# run the real-time engine (needs `brew install llama.cpp`)
-SMALL_CUTS_BACKEND=llama_cpp SMALL_CUTS_TTS_BACKEND=kokoro uv run python -m small_cuts.engine
-
-# run the hybrid relay + Modal upload Space locally (token comes from your local secret env)
-SMALL_CUTS_RELAY_BUCKET=macayaven/small-cuts-scenes-dev \
-SMALL_CUTS_RELAY_PREFIX=relay \
-SMALL_CUTS_ENABLE_UPLOAD_SANDBOX=1 \
-SMALL_CUTS_MODAL_API_URL=https://macayaven--small-cuts-postcut-api.modal.run \
-uv run --no-sync python app.py
-
-# the gate (mirrors CI exactly)
-uv run ruff check . && uv run ruff format --check . && uv run pytest
-```
-
-## Repository map
-
-- `app.py` — Hugging Face Space entrypoint (Gradio CPU viewer/library)
-- `src/small_cuts/` — the product: `viewer.py` (streaming viewer), `narrator.py` (VLM backends),
-  `tts.py` (Kokoro), `styles.py` (grounded prompt), `engine/` (real-time home node), `seed_media/`
-- `ios/SmallCuts/` — the Ray-Ban Meta glasses capture app
-- `docs/` — [hackathon rules](docs/hackathon-rules.md) · [architecture](docs/product/architecture.md) ·
-  [contracts](docs/contracts/) · [progress](docs/progress.md)
-- `CLAUDE.md` — operational conventions (the canonical command list lives here)
-
-## Engineering discipline
-
-- `main` is protected (PR-based workflow); CI runs ruff lint + format check, pytest, and a
-  gitleaks secret scan on every push/PR.
-- Development and smoke testing use only Carlos's personal HF profile (`macayaven/*`) for Spaces and
-  buckets. Do not deploy to `build-small-hackathon/*` until the final submission promotion step; the
-  reserved org Space is `build-small-hackathon/small-cuts-buffer-poc`.
-- **No secrets in the repo, ever.** Secrets live in 1Password Connect (local dev) and HF Space
-  secrets (deployment). Client-facing endpoints use Tailnet MagicDNS HTTPS, never raw IPs.
+Released under the **MIT License** — see [`LICENSE`](LICENSE) in the repository.

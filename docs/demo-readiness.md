@@ -16,6 +16,8 @@ Last updated: 2026-06-15 09:03 CEST.
 - [x] Play/pause is bound to trusted DOM gestures instead of a Gradio callback.
 - [x] Latest Space source deploy includes final thumbnail/title polish:
   `3654f4e89f44a994f64332bdea980290f7c2039f`.
+- [x] Space README-only copy update deployed as `8dfd628308a0849d4e9fc0baa646af94c33b949d`;
+  runtime returned to `RUNNING` and post-rebuild browser smoke still loaded the five hero cuts.
 - [x] Browser automation verifies the active Space renders the real POV `rayuela` scene with
   ready `clip.mp4` and `voice.wav` on desktop.
 - [x] Browser automation verifies the active Space library uses real POV `frame.jpg` thumbnails

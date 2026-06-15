@@ -6,6 +6,7 @@ colorTo: purple
 sdk: gradio
 sdk_version: 6.18.0
 app_file: app.py
+hf_oauth: true
 pinned: true
 license: mit
 short_description: A deadpan narrator for your life, from small open models.

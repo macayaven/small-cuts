@@ -71,7 +71,10 @@ def write_manifest_safely(fs: HfFileSystem, manifest: dict) -> bool:
             file=sys.stderr,
         )
         return False
-    print(f"OK: wrote manifest.json ({len(manifest.get('scenes', []))} scenes); uploads/ intact ({after}).")
+    print(
+        f"OK: wrote manifest.json ({len(manifest.get('scenes', []))} scenes); "
+        f"uploads/ intact ({after})."
+    )
     return True
 
 
@@ -87,9 +90,17 @@ def self_test(fs: HfFileSystem) -> bool:
         fs.rm(scratch)
         print("self-test: scratch removed.")
     except Exception as exc:
-        print(f"self-test: could not remove scratch ({exc}); delete relay/_promote_safety_check.json by hand.")
+        print(
+            f"self-test: could not remove scratch ({exc}); "
+            "delete relay/_promote_safety_check.json by hand."
+        )
     ok = after == before
-    print("SELF-TEST:", "PASS — single-file write is safe (uploads untouched)" if ok else "FAIL — uploads count changed!")
+    verdict = (
+        "PASS — single-file write is safe (uploads untouched)"
+        if ok
+        else "FAIL — uploads count changed!"
+    )
+    print("SELF-TEST:", verdict)
     return ok
 
 
@@ -99,8 +110,12 @@ def main() -> int:
     ap.add_argument("--self-test", action="store_true", help="verify single-file write is safe")
     ap.add_argument("--scene-ids", nargs="*", default=None, help="upload scene_ids to publish")
     ap.add_argument("--latest", type=int, default=0, help="publish the N most recent uploads")
-    ap.add_argument("--keep-seed", action="store_true", help="keep existing manifest scenes (default: replace)")
-    ap.add_argument("--dry-run", action="store_true", help="build + print the manifest, do not write")
+    ap.add_argument(
+        "--keep-seed", action="store_true", help="keep existing manifest scenes (default: replace)"
+    )
+    ap.add_argument(
+        "--dry-run", action="store_true", help="build + print the manifest, do not write"
+    )
     args = ap.parse_args()
 
     fs = HfFileSystem()
@@ -115,8 +130,9 @@ def main() -> int:
         for s in manifest.get("scenes", []):
             print(f"   [lib] {s.get('scene_id')} | {s.get('title')!r} | source={s.get('source')}")
         print(f"relay/uploads/: {len(uploads)} clip(s)")
-        for sid, sc in sorted(uploads.items(), key=lambda kv: (kv[1] or {}).get("created_at", "")):
-            print(f"   [upl] {sid} | {(sc or {}).get('title', '?')!r} | {(sc or {}).get('created_at', '?')}")
+        for sid, raw in sorted(uploads.items(), key=lambda kv: (kv[1] or {}).get("created_at", "")):
+            sc = raw or {}
+            print(f"   [upl] {sid} | {sc.get('title', '?')!r} | {sc.get('created_at', '?')}")
         return 0
 
     chosen: list[dict] = []
@@ -127,10 +143,16 @@ def main() -> int:
             else:
                 print(f"WARN: {sid} not found / unreadable", file=sys.stderr)
     elif args.latest:
-        ordered = sorted(((sid, sc) for sid, sc in uploads.items() if sc), key=lambda kv: kv[1].get("created_at", ""))
+        ordered = sorted(
+            ((sid, sc) for sid, sc in uploads.items() if sc),
+            key=lambda kv: kv[1].get("created_at", ""),
+        )
         chosen = [sc for _, sc in ordered[-args.latest :]]
     else:
-        print("Nothing to do. Use --list / --self-test / --scene-ids ... / --latest N.", file=sys.stderr)
+        print(
+            "Nothing to do. Use --list / --self-test / --scene-ids ... / --latest N.",
+            file=sys.stderr,
+        )
         return 2
 
     kept = manifest.get("scenes", []) if args.keep_seed else []

@@ -518,21 +518,23 @@ def test_upload_sandbox_signin_is_compact_and_upload_gated(monkeypatch):
 
 
 def test_upload_auth_ui_swaps_signin_for_upload_icon():
-    # R1: signed OUT — sign-in pill stays (no full-width bar) and the icon is gated DISABLED.
+    # R1: signed OUT — sign-in container is VISIBLE (the only sign-in control) and the icon is
+    # gated DISABLED.
     state_out, signin_out, upload_out = viewer._upload_auth_ui(None)
     assert state_out == {}
-    assert signin_out == gr.update(elem_classes=["sc-upload-signin"])
+    assert signin_out == gr.update(visible=True)
     assert upload_out == gr.update(
         interactive=False, elem_classes=["sc-icbtn", "sc-upload", "sc-ico-upload", "disabled"]
     )
 
-    # signed IN — the icon flips to ENABLED; the pill reads as a "Signed in" confirmation.
+    # signed IN — the sign-in container is HIDDEN (no logout affordance, so no sign-in/sign-out
+    # loop) and the icon flips to ENABLED.
     state, signin_update, upload_update = viewer._upload_auth_ui(
         SimpleNamespace(name="Alice Example", username="alice")
     )
 
     assert state == {"username": "alice"}
-    assert signin_update == gr.update(elem_classes=["sc-upload-signin", "sc-signed-in"])
+    assert signin_update == gr.update(visible=False)
     assert upload_update == gr.update(
         interactive=True, elem_classes=["sc-icbtn", "sc-upload", "sc-ico-upload"]
     )

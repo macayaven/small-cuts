@@ -239,6 +239,9 @@ footer { display: none !important; }
    pill the rest of the chrome uses; the OAuth mechanism underneath is untouched. */
 .sc-upload-signin { flex: 0 0 auto !important; width: auto !important; min-width: 0 !important;
   display: inline-flex !important; }
+/* Hide the login pill on sign-in via this wrapper Column (gr.LoginButton ignores visible). */
+.sc-upload-signin-box { flex: 0 0 auto !important; width: auto !important; min-width: 0 !important;
+  padding: 0 !important; display: inline-flex !important; }
 .sc-upload-signin button, .sc-upload-signin a, .sc-upload-signin .lg {
   width: auto !important; min-width: 0 !important; max-width: max-content !important;
   height: 30px !important; padding: 0 12px !important; border: 1px solid #2A292F !important;
@@ -618,16 +621,16 @@ def _upload_auth_state(profile: gr.OAuthProfile | None) -> dict[str, str]:
 def _upload_auth_ui(profile: gr.OAuthProfile | None):
     """R1: the cloud icon is the upload affordance, gated by auth.
 
-    Signed OUT — the compact sign-in pill stays visible (the only sign-in control; no full-width
-    bar) and the upload icon is rendered DISABLED (non-interactive, dimmed, "Sign in to upload").
-    Signed IN — the icon flips to ENABLED with no layout jump and the pill reads as a subtle
-    "Signed in (user)" confirmation. Returns updates for (auth_state, sign-in pill, upload icon)."""
+    Signed OUT — the compact sign-in pill is shown (the only sign-in control; no full-width bar)
+    and the upload icon is DISABLED (dimmed, "Sign in to upload"). Signed IN — the sign-in control
+    is HIDDEN entirely (so it can't be clicked to log out, which previously caused an infinite
+    sign-in/sign-out loop) and the upload icon flips to ENABLED. Returns updates for
+    (auth_state, sign-in container, upload icon)."""
     auth_state = _upload_auth_state(profile)
     signed_in = bool(auth_state)
-    signin_classes = ["sc-upload-signin"] + (["sc-signed-in"] if signed_in else [])
     return (
         auth_state,
-        gr.update(elem_classes=signin_classes),
+        gr.update(visible=not signed_in),
         gr.update(
             interactive=signed_in,
             elem_classes=_upload_icon_classes(signed_in),
@@ -1702,12 +1705,17 @@ def build_viewer_app() -> gr.Blocks:
                 # full-width LoginButton bar. `_upload_auth_ui` flips the icon to enabled on load
                 # if the visitor already has a Hugging Face session (no layout jump either way).
                 with gr.Row(elem_classes="sc-upload-auth"):
-                    upload_login = gr.LoginButton(
-                        "🤗 Sign in to upload",
-                        logout_value="Signed in ({})",
-                        size="sm",
-                        elem_classes=["sc-upload-signin"],
-                    )
+                    # The LoginButton sits in a Column we can reliably hide on sign-in; hiding it
+                    # when signed in removes the logout affordance that caused the sign-in loop.
+                    with gr.Column(
+                        visible=True, min_width=0, elem_classes="sc-upload-signin-box"
+                    ) as upload_login_box:
+                        gr.LoginButton(
+                            "🤗 Sign in to upload",
+                            logout_value="Signed in ({})",
+                            size="sm",
+                            elem_classes=["sc-upload-signin"],
+                        )
                     upload_btn = gr.Button(
                         "",
                         interactive=False,
@@ -2322,7 +2330,7 @@ def build_viewer_app() -> gr.Blocks:
             )
 
         if upload_sandbox:
-            demo.load(_upload_auth_ui, outputs=[upload_auth_state, upload_login, upload_btn])
+            demo.load(_upload_auth_ui, outputs=[upload_auth_state, upload_login_box, upload_btn])
         demo.load(js=PLAYBACK_SYNC_JS)
     demo.queue(max_size=UPLOAD_QUEUE_MAX_SIZE, default_concurrency_limit=1)
     return demo

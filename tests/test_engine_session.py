@@ -56,6 +56,27 @@ def make_envelope(**overrides) -> dict:
     return envelope
 
 
+def test_contract_loader_uses_configured_contract_dir(tmp_path, monkeypatch):
+    contracts = tmp_path / "contracts"
+    contracts.mkdir()
+    (contracts / "moment.schema.json").write_text('{"type":"object"}')
+    monkeypatch.setenv(engine_session.CONTRACTS_DIR_ENV, str(contracts))
+
+    assert engine_session._contract_text("moment.schema.json") == '{"type":"object"}'
+
+
+def test_contract_loader_falls_back_to_packaged_resources(tmp_path, monkeypatch):
+    package_root = tmp_path / "small_cuts"
+    contracts = package_root / "contracts"
+    contracts.mkdir(parents=True)
+    (contracts / "moment.schema.json").write_text('{"title":"packaged"}')
+    monkeypatch.delenv(engine_session.CONTRACTS_DIR_ENV, raising=False)
+    monkeypatch.setattr(engine_session, "_SOURCE_CONTRACTS", tmp_path / "missing")
+    monkeypatch.setattr(engine_session.resources, "files", lambda package: package_root)
+
+    assert engine_session._contract_text("moment.schema.json") == '{"title":"packaged"}'
+
+
 class Reader:
     """Receives frames, validates every ControlFrame, and keeps the history."""
 
@@ -188,6 +209,23 @@ def test_duplicate_moment_id_acked_duplicate():
         ack = reader.next_ack()
         assert ack["ack"]["result"] == "duplicate"
         assert ack["moment_id"] == envelope["moment_id"]
+
+
+def test_duplicate_moment_id_is_scoped_per_capture_session():
+    moment_id = str(uuid.uuid4())
+    first = make_envelope(moment_id=moment_id, session_id="walk")
+    second = make_envelope(moment_id=moment_id, session_id="lunch")
+    with (
+        TestClient(build_engine_app()) as client,
+        client.websocket_connect("/v1/session") as ws,
+    ):
+        reader = Reader(ws)
+        ws.send_text(json.dumps(first))
+        assert reader.next_ack()["ack"]["result"] == "accepted"
+        reader.next_scene_audio()
+
+        ws.send_text(json.dumps(second))
+        assert reader.next_ack()["ack"]["result"] == "accepted"
 
 
 def test_coalescing_drops_queued_moment(monkeypatch):

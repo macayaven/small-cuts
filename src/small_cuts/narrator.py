@@ -29,8 +29,8 @@ from typing import Protocol
 import httpx
 from PIL import Image
 
-from .styles import DEFAULT_STYLE_KEY, STYLES, build_messages
-from .title_card import derive_title
+from .styles import DEFAULT_STYLE_KEY, STYLES, build_messages, clean_scene_hint
+from .title_card import TITLE_MAX_LEN, derive_title
 
 # M1 final pick (docs/eval/run-006-scored.md): beats Qwen2.5-VL-7B head-to-head
 # for BOTH judges (Codex 7/10 vs 0/10, Gemini 9/10 vs 0/10 images passing).
@@ -76,7 +76,8 @@ class MockBackend:
         brightness = (r + g + b) / 3
         light = "well-lit" if brightness > 127 else "dimly lit"
         shape = "wide" if image.width >= image.height else "tall"
-        hint = f" {scene_hint.strip()}" if scene_hint.strip() else ""
+        clean_hint = clean_scene_hint(scene_hint)
+        hint = f" {clean_hint}" if clean_hint else ""
         narration = (
             f"[{style.label}] The frame is {shape} and {light}, and the narrator has "
             f"seen it all before.{hint} What happens next was, frankly, inevitable."
@@ -96,28 +97,31 @@ class TransformersBackend:
     def __init__(self, model_id: str | None = None) -> None:
         self.model_id = model_id or os.environ.get("SMALL_CUTS_MODEL_ID", DEFAULT_MODEL_ID)
         self._pipe = None
+        self._load_lock = threading.Lock()
 
     def _load(self):
-        if self._pipe is None:
-            import torch
-            from transformers import AutoModelForImageTextToText, AutoProcessor
+        with self._load_lock:
+            if self._pipe is None:
+                import torch
+                from transformers import AutoModelForImageTextToText, AutoProcessor
 
-            self._processor = AutoProcessor.from_pretrained(self.model_id)
-            if torch.cuda.is_available():
-                # Explicit .to("cuda") — ZeroGPU packs weights on this call;
-                # accelerate's device_map dispatch would fight it.
-                self._model = AutoModelForImageTextToText.from_pretrained(
-                    self.model_id, torch_dtype=torch.bfloat16
-                ).to("cuda")
-            else:
-                self._model = AutoModelForImageTextToText.from_pretrained(
-                    self.model_id, torch_dtype=torch.float32, device_map="auto"
-                )
-            self._pipe = True
+                self._processor = AutoProcessor.from_pretrained(self.model_id)
+                if torch.cuda.is_available():
+                    # Explicit .to("cuda") — ZeroGPU packs weights on this call;
+                    # accelerate's device_map dispatch would fight it.
+                    self._model = AutoModelForImageTextToText.from_pretrained(
+                        self.model_id, torch_dtype=torch.bfloat16
+                    ).to("cuda")
+                else:
+                    self._model = AutoModelForImageTextToText.from_pretrained(
+                        self.model_id, torch_dtype=torch.float32, device_map="auto"
+                    )
+                self._pipe = True
         return self._processor, self._model
 
     def generate(self, image: Image.Image, style_key: str, scene_hint: str) -> str:
         processor, model = self._load()
+        image = _downscale(image)
         messages = build_messages(style_key, scene_hint)
         # Attach the image to the user turn in the chat-template format.
         chat = [
@@ -139,7 +143,7 @@ class TransformersBackend:
         ).to(model.device)
         # Low temperature: judged eval showed small VLMs confabulate; sampling
         # heat feeds it. Overridable per-run for eval sweeps.
-        temperature = float(os.environ.get("SMALL_CUTS_TEMPERATURE", "0.3"))
+        temperature = _temperature()
         output = model.generate(
             **inputs,
             max_new_tokens=_max_output_tokens(),
@@ -154,9 +158,10 @@ class TransformersBackend:
 
 def _downscale(image: Image.Image, max_side: int = 1024) -> Image.Image:
     """Return a copy whose longest side is at most max_side."""
+    if max(image.size) <= max_side:
+        return image
     resized = image.copy()
-    if max(resized.size) > max_side:
-        resized.thumbnail((max_side, max_side), Image.Resampling.LANCZOS)
+    resized.thumbnail((max_side, max_side), Image.Resampling.LANCZOS)
     return resized
 
 
@@ -172,6 +177,7 @@ class LlamaCppBackend:
         self.model_id = Path(self._gguf_path).name if self._gguf_path else LLAMA_REPO_ID
         self._server_url = ""
         self._process: subprocess.Popen | None = None
+        self._stderr_fh = None
         self._cleanup_registered = False
         self._spawn_lock = threading.Lock()
 
@@ -212,9 +218,7 @@ class LlamaCppBackend:
 
     def close(self) -> None:
         process = self._process
-        if process is None:
-            return
-        if process.poll() is None:
+        if process is not None and process.poll() is None:
             process.terminate()
             try:
                 process.wait(timeout=10)
@@ -223,6 +227,8 @@ class LlamaCppBackend:
                 process.wait(timeout=10)
         self._process = None
         self._server_url = ""
+        if self._stderr_fh is not None and not self._stderr_fh.closed:
+            self._stderr_fh.close()
 
     def _build_request(self, image: Image.Image, style_key: str, scene_hint: str) -> dict:
         messages = build_messages(style_key, scene_hint)
@@ -312,8 +318,11 @@ class LlamaCppBackend:
     def _stderr_file(self):
         import tempfile
 
+        if self._stderr_fh is not None and not self._stderr_fh.closed:
+            self._stderr_fh.close()
         self._stderr_path = Path(tempfile.gettempdir()) / f"llama-server-{os.getpid()}.err"
-        return open(self._stderr_path, "w")
+        self._stderr_fh = self._stderr_path.open("w")
+        return self._stderr_fh
 
     def _stderr_tail(self, lines: int = 5) -> str:
         path = getattr(self, "_stderr_path", None)
@@ -479,4 +488,4 @@ def _clean_title(title: str, fallback: str) -> str:
     title = " ".join(title.replace("\n", " ").split())
     if not title:
         return derive_title(fallback)
-    return derive_title(title, max_len=80)
+    return derive_title(title, max_len=TITLE_MAX_LEN)

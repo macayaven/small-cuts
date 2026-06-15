@@ -1,3 +1,8 @@
+import sys
+import threading
+import time
+import types
+
 import numpy as np
 import pytest
 
@@ -81,3 +86,29 @@ def test_build_app_constructs():
 def test_get_tts_backend_caches_instances(monkeypatch):
     monkeypatch.setenv("SMALL_CUTS_TTS_BACKEND", "mock")
     assert get_tts_backend() is get_tts_backend()  # pipeline must load once per process
+
+
+def test_kokoro_backend_load_is_single_flight(monkeypatch):
+    calls = {"pipeline": 0}
+
+    class FakePipeline:
+        def __init__(self, lang_code, device):
+            calls["pipeline"] += 1
+            time.sleep(0.05)
+
+    fake_kokoro = types.ModuleType("kokoro")
+    fake_kokoro.KPipeline = FakePipeline
+    fake_torch = types.ModuleType("torch")
+    fake_torch.load = lambda *args, **kwargs: None
+    monkeypatch.setitem(sys.modules, "kokoro", fake_kokoro)
+    monkeypatch.setitem(sys.modules, "torch", fake_torch)
+
+    backend = KokoroBackend()
+    threads = [threading.Thread(target=backend._load) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert calls == {"pipeline": 1}
+    assert fake_torch.load is not None

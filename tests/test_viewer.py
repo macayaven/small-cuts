@@ -547,6 +547,16 @@ def test_shelf_items_marks_source_tiles():
     assert items[1] == ("/media/upload.jpg", f"{viewer.UPLOAD_SHELF_PREFIX}An Upload Scene")
 
 
+def test_write_voice_evicts_old_generated_audio(tmp_path, monkeypatch):
+    monkeypatch.setattr(viewer, "GENERATED_AUDIO_DIR", tmp_path)
+    monkeypatch.setattr(viewer, "SHELF_LIMIT", 2)
+
+    for scene_id in ("one", "two", "three"):
+        assert viewer._write_voice(np.zeros(24, dtype=np.float32), 24_000, scene_id)
+
+    assert sorted(path.name for path in tmp_path.glob("*.wav")) == ["three.wav", "two.wav"]
+
+
 def test_shelf_items_unwraps_gradio_file_routes_for_gallery(tmp_path):
     cached = tmp_path / "relay" / "media" / "frame.jpg"
     cached.parent.mkdir(parents=True)

@@ -35,6 +35,13 @@ def test_build_messages_includes_scene_hint():
     assert "third coffee today" in messages[1]["content"]
 
 
+def test_build_messages_caps_scene_hint():
+    messages = build_messages("deadpan", scene_hint="x" * 400)
+
+    assert "x" * 280 in messages[1]["content"]
+    assert "x" * 281 not in messages[1]["content"]
+
+
 def test_build_messages_omits_empty_hint():
     messages = build_messages("deadpan", scene_hint="   ")
     assert "Context offered" not in messages[1]["content"]

@@ -52,6 +52,12 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/small_cuts"]
 
+[tool.hatch.build.targets.wheel.force-include]
+"docs/contracts/control.schema.json" = "small_cuts/contracts/control.schema.json"
+"docs/contracts/moment.schema.json" = "small_cuts/contracts/moment.schema.json"
+"docs/contracts/narrated-scene.schema.json" = "small_cuts/contracts/narrated-scene.schema.json"
+"docs/contracts/scene-audio.schema.json" = "small_cuts/contracts/scene-audio.schema.json"
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"

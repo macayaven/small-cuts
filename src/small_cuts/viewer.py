@@ -51,7 +51,7 @@ from .hf_relay import (
 )
 from .modal_upload import ModalUploadClient, ModalUploadError
 from .observability import capture_exception
-from .styles import DEFAULT_STYLE_KEY, STYLES
+from .styles import DEFAULT_STYLE_KEY, MAX_SCENE_HINT_CHARS, STYLES
 from .title_card import derive_title
 from .tts import speak
 from .ui import THEME as THEME  # re-export: app.py launches the viewer with the Off-Brand theme
@@ -1118,9 +1118,19 @@ def _write_voice(samples: Any, sample_rate: int, scene_id: str) -> str | None:
         GENERATED_AUDIO_DIR.mkdir(parents=True, exist_ok=True)
         path = str(GENERATED_AUDIO_DIR / f"{scene_id}.wav")
         sf.write(path, samples, sample_rate, subtype="PCM_16")
+        _evict_generated_audio()
         return path
     except Exception:
         return None
+
+
+def _evict_generated_audio() -> None:
+    files = sorted(
+        GENERATED_AUDIO_DIR.glob("*.wav"),
+        key=lambda path: (path.stat().st_mtime, path.name),
+    )
+    for old in files[:-SHELF_LIMIT]:
+        old.unlink(missing_ok=True)
 
 
 def _audio_duration(path: str | None) -> float | None:
@@ -1420,6 +1430,7 @@ def build_viewer_app() -> gr.Blocks:
                         hint = gr.Textbox(
                             show_label=False,
                             container=False,
+                            max_length=MAX_SCENE_HINT_CHARS,
                             placeholder="whisper context to the narrator (optional)",
                         )
                         go = gr.Button("🎬 Narrate this video", variant="primary", size="sm")

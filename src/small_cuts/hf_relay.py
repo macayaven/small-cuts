@@ -32,6 +32,7 @@ MEDIA_KEYS = ("frame_url", "card_url", "audio_url", "clip_url")
 PUBLISH_VISIBILITIES = frozenset({"shared", "public"})
 HTTP_TIMEOUT_S = 20.0
 MANIFEST_CACHE_TTL_S = 5.0
+RELAY_CACHE_MAX_BYTES = 512 * 1024 * 1024
 
 
 class BucketFileSystem(Protocol):
@@ -76,6 +77,7 @@ class BucketSceneClient:
         cache_dir: str | Path | None = None,
         register_static_paths: Any | None = None,
         manifest_cache_ttl_s: float = MANIFEST_CACHE_TTL_S,
+        cache_max_bytes: int = RELAY_CACHE_MAX_BYTES,
     ) -> None:
         self.bucket_id = bucket_id.strip()
         if not self.bucket_id:
@@ -96,9 +98,11 @@ class BucketSceneClient:
         if register_static_paths is not None:
             register_static_paths([self.cache_dir])
         self.manifest_cache_ttl_s = manifest_cache_ttl_s
+        self.cache_max_bytes = cache_max_bytes
         self._manifest_lock = threading.Lock()
         self._media_lock = threading.Lock()
         self._manifest_cache: tuple[float, list[dict[str, Any]]] | None = None
+        self._prune_cache()
 
     @property
     def fs(self) -> BucketFileSystem:
@@ -155,6 +159,7 @@ class BucketSceneClient:
                     tmp.replace(target)
                 finally:
                     tmp.unlink(missing_ok=True)
+                self._prune_cache(protected=target)
         return gradio_file_url(target)
 
     def _hydrate_scene(self, scene: dict[str, Any]) -> dict[str, Any]:
@@ -175,6 +180,23 @@ class BucketSceneClient:
         if relative.is_absolute() or ".." in relative.parts:
             raise ValueError(f"unsafe bucket media path: {path}")
         return relative
+
+    def _prune_cache(self, protected: Path | None = None) -> None:
+        if self.cache_max_bytes <= 0 or not self.cache_dir.exists():
+            return
+        protected_resolved = protected.resolve() if protected is not None else None
+        files = [path for path in self.cache_dir.rglob("*") if path.is_file()]
+        total = sum(path.stat().st_size for path in files)
+        if total <= self.cache_max_bytes:
+            return
+        for path in sorted(files, key=lambda item: item.stat().st_mtime):
+            if protected_resolved is not None and path.resolve() == protected_resolved:
+                continue
+            size = path.stat().st_size
+            path.unlink(missing_ok=True)
+            total -= size
+            if total <= self.cache_max_bytes:
+                break
 
 
 def prepare_relay_snapshot(

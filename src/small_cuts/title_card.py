@@ -4,6 +4,8 @@ from PIL import Image, ImageDraw, ImageFont
 
 from .styles import STYLES
 
+TITLE_MAX_LEN = 60
+
 STYLE_CARDS = {
     "deadpan": ("#F2EFE6", "#1A1A1A", "rules"),
     "noir": ("#0D0D0F", "#E8E4D8", "hard_frame"),
@@ -14,7 +16,7 @@ STYLE_CARDS = {
 }
 
 
-def derive_title(text: str, max_len: int = 60) -> str:
+def derive_title(text: str, max_len: int = TITLE_MAX_LEN) -> str:
     value = text.strip()
     if value.startswith("["):
         tag_end = value.find("]")

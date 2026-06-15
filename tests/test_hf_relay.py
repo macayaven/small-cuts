@@ -1,4 +1,5 @@
 import json
+import os
 import time
 from concurrent.futures import ThreadPoolExecutor
 
@@ -204,3 +205,28 @@ def test_bucket_scene_client_skips_scene_with_missing_media_instead_of_blanking_
     )
 
     assert [scene["scene_id"] for scene in client.list_scenes()] == ["good"]
+
+
+def test_bucket_scene_client_prunes_old_cache_files_after_media_write(tmp_path):
+    old = tmp_path / "media/old/frame.jpg"
+    old.parent.mkdir(parents=True)
+    old.write_bytes(b"old-old-old")
+    old_mtime = time.time() - 120
+    os.utime(old, (old_mtime, old_mtime))
+
+    class FakeFs:
+        def cat(self, path):
+            return b"fresh"
+
+    client = hf_relay.BucketSceneClient(
+        "macayaven/small-cuts-scenes-dev",
+        prefix="relay",
+        fs=FakeFs(),
+        cache_dir=tmp_path,
+        cache_max_bytes=6,
+    )
+
+    client.media_url("media/new/frame.jpg")
+
+    assert not old.exists()
+    assert (tmp_path / "media/new/frame.jpg").read_bytes() == b"fresh"

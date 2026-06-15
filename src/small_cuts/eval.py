@@ -13,6 +13,7 @@ Smoke test anywhere (no weights):
 from __future__ import annotations
 
 import argparse
+import tempfile
 import time
 from pathlib import Path
 
@@ -43,20 +44,26 @@ RUBRIC = (
 )
 
 
-def _sample_video_frames(video: Path, every_n_seconds: float = 3.0) -> list[Path]:
-    """Extract frames from a video into sibling JPEGs; return their paths."""
-    from small_cuts.frames import sample_frames
+def _sample_video_frames(
+    video: Path,
+    every_n_seconds: float = 3.0,
+    output_dir: Path | None = None,
+) -> list[Path]:
+    """Extract frames from a video into an output directory; return their paths."""
+    from .frames import sample_frames
 
     images = sample_frames(video, every_n_seconds=every_n_seconds)
+    output = output_dir or Path(tempfile.mkdtemp(prefix="small-cuts-eval-frames-"))
+    output.mkdir(parents=True, exist_ok=True)
     out_paths: list[Path] = []
     for i, img in enumerate(images):
-        out = video.with_name(f"{video.stem}_frame{i:06d}.jpg")
+        out = output / f"{video.stem}_frame{i:06d}.jpg"
         img.save(out)
         out_paths.append(out)
     return out_paths
 
 
-def load_images(images_dir: Path) -> list[Path]:
+def load_images(images_dir: Path, frame_dir: Path | None = None) -> list[Path]:
     if not images_dir.exists():
         raise SystemExit(f"Directory does not exist: {images_dir}")
     entries = sorted(p for p in images_dir.iterdir() if p.is_file())
@@ -64,7 +71,7 @@ def load_images(images_dir: Path) -> list[Path]:
     videos = [p for p in entries if p.suffix.lower() in VIDEO_SUFFIXES]
     for video in videos:
         print(f"Sampling frames from {video.name}")
-        paths.extend(_sample_video_frames(video))
+        paths.extend(_sample_video_frames(video, output_dir=frame_dir))
     if not paths:
         listing = "\n".join(f"  {p.name}" for p in entries) or "  (directory is empty)"
         raise SystemExit(
@@ -110,7 +117,10 @@ def render_report(
         lines.append("|---|---|---|---|---|---|---|")
         for model_id, results in all_results.items():
             for style in styles:
-                narration = results[(path.name, style)]
+                narration = results.get((path.name, style))
+                if narration is None:
+                    lines.append(f"| {model_id} | {style} | (failed) | - |  |  |  |")
+                    continue
                 text = narration.text.replace("\n", " ").replace("|", "\\|")
                 lines.append(
                     f"| {model_id} | {style} | {text} | {narration.latency_s:.1f}s |  |  |  |"
@@ -128,22 +138,23 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--backend", choices=["transformers", "mock"], default="transformers")
     args = parser.parse_args(argv)
 
-    image_paths = load_images(args.images)
-    models = args.models if args.backend == "transformers" else ["mock"]
-    all_results = {}
-    failures = []
-    for model_id in models:
-        try:
-            all_results[model_id] = run_model(model_id, image_paths, args.styles, args.backend)
-        except Exception as exc:  # one gated/broken model must not kill the eval
-            failures.append(f"{model_id}: {type(exc).__name__}: {exc}")
-            print(f"  FAILED {model_id}: {exc}")
-    if not all_results:
-        raise SystemExit("All models failed:\n" + "\n".join(failures))
-    report = render_report(all_results, image_paths, args.styles)
-    if failures:
-        report += "\n## Failed models\n\n" + "\n".join(f"- {f}" for f in failures) + "\n"
-    args.out.write_text(report)
+    with tempfile.TemporaryDirectory(prefix="small-cuts-eval-frames-") as frame_dir:
+        image_paths = load_images(args.images, frame_dir=Path(frame_dir))
+        models = args.models if args.backend == "transformers" else ["mock"]
+        all_results = {}
+        failures = []
+        for model_id in models:
+            try:
+                all_results[model_id] = run_model(model_id, image_paths, args.styles, args.backend)
+            except Exception as exc:  # one gated/broken model must not kill the eval
+                failures.append(f"{model_id}: {type(exc).__name__}: {exc}")
+                print(f"  FAILED {model_id}: {exc}")
+        if not all_results:
+            raise SystemExit("All models failed:\n" + "\n".join(failures))
+        report = render_report(all_results, image_paths, args.styles)
+        if failures:
+            report += "\n## Failed models\n\n" + "\n".join(f"- {f}" for f in failures) + "\n"
+        args.out.write_text(report)
     print(f"\nReport written to {args.out}")
 
 

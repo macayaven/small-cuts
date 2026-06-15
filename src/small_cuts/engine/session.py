@@ -14,6 +14,7 @@ import contextlib
 import inspect
 import io
 import json
+import os
 import sys
 import time
 import uuid
@@ -22,6 +23,7 @@ from collections import OrderedDict
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
+from importlib import resources
 from pathlib import Path
 from typing import Any
 
@@ -37,14 +39,25 @@ CONTRACT_VERSION = "1.1.0"
 PLAY_BY_SECONDS = 60
 MAX_FRAME_SIDE = 1024  # contract cap: decoded longest side <= 1024 px (moment.schema.json)
 SEEN_MOMENTS_CAP = 4096  # a day of moments is far less
-_CONTRACTS = Path(__file__).resolve().parents[3] / "docs" / "contracts"
+CONTRACTS_DIR_ENV = "SMALL_CUTS_CONTRACTS_DIR"
+_SOURCE_CONTRACTS = Path(__file__).resolve().parents[3] / "docs" / "contracts"
 
 SceneSink = Callable[[dict[str, Any]], Any]
 """Receives every successful scene; Task 2 plugs the library/SSE fan-out here."""
 
 
+def _contract_text(name: str) -> str:
+    configured = os.environ.get(CONTRACTS_DIR_ENV)
+    if configured:
+        return (Path(configured) / name).read_text()
+    source_contract = _SOURCE_CONTRACTS / name
+    if source_contract.exists():
+        return source_contract.read_text()
+    return (resources.files("small_cuts") / "contracts" / name).read_text()
+
+
 def _validator(name: str) -> jsonschema.Draft202012Validator:
-    return jsonschema.Draft202012Validator(json.loads((_CONTRACTS / name).read_text()))
+    return jsonschema.Draft202012Validator(json.loads(_contract_text(name)))
 
 
 _MOMENT = _validator("moment.schema.json")
@@ -158,10 +171,11 @@ class SessionRunner:
         if error is not None:
             await self._send_ack(moment_id, "rejected", error.message)
             return
-        if moment_id in self._state.seen_moment_ids:
+        dedupe_key = _moment_dedupe_key(envelope)
+        if dedupe_key in self._state.seen_moment_ids:
             await self._send_ack(moment_id, "duplicate")
             return
-        self._state.seen_moment_ids.add(moment_id)
+        self._state.seen_moment_ids.add(dedupe_key)
 
         queued = _Queued(envelope, time.perf_counter())
         if not self._processing:
@@ -231,12 +245,12 @@ class SessionRunner:
             await self._send_json(payload)
         except _ValidationFailure as exc:
             # The resend would fail the same way, but dedupe only what produced a scene.
-            self._state.seen_moment_ids.discard(moment_id)
+            self._state.seen_moment_ids.discard(_moment_dedupe_key(envelope))
             await self._send_error(moment_id, "validation", exc, code=exc.code, retryable=False)
             return
         except Exception as exc:
             # Drop the id so a client resend is genuinely re-processed (honest retryable).
-            self._state.seen_moment_ids.discard(moment_id)
+            self._state.seen_moment_ids.discard(_moment_dedupe_key(envelope))
             retryable = stage in ("narration", "tts")
             code = "scene_audio_schema_drift" if stage == "storage" else None
             await self._send_error(moment_id, stage, exc, code=code, retryable=retryable)
@@ -394,6 +408,10 @@ def _decode_frame(frame: dict[str, Any]) -> Image.Image:
     image = Image.open(io.BytesIO(data))
     image.load()
     return image
+
+
+def _moment_dedupe_key(envelope: dict[str, Any]) -> str:
+    return f"{envelope['session_id']}:{envelope['moment_id']}"
 
 
 def _validate_frame_size(image: Image.Image) -> None:

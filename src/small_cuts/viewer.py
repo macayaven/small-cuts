@@ -1554,7 +1554,14 @@ PLAYBACK_SYNC_JS = """
   // keep it (re-mounting it when Gradio swaps in the result stage) until the result <video> is
   // fully buffered (canplaythrough / readyState>=3) or a timeout fires, then reveal + remove it.
   const SC_CLAP_HTML = __SC_CLAP_LOADER_HTML__;
-  const SC_REVEAL_TIMEOUT_MS = 12000;
+  // Hang-backstop ONLY: a Modal cold cut takes ~40s, far longer than any fixed reveal timer
+  // can safely assume, so an early fixed timer (the old 12s) would strip body.sc-generating
+  // mid-generation and let Gradio's spinners snap back. The real reveal is event-driven by the
+  // result <video> buffering (scArmReveal via the stage observer) and collapsed to a short grace
+  // window by __scFinishGeneration when the server actually responds; this only fires if the
+  // server never responds at all.
+  const SC_REVEAL_TIMEOUT_MS = 120000;
+  const SC_FINISH_GRACE_MS = 8000;
 
   const scStageHost = () => document.querySelector('.sc-stage-block .sc-stage-shell');
   const scMountLoader = () => {
@@ -1594,6 +1601,18 @@ PLAYBACK_SYNC_JS = """
       if (video.readyState >= 3) scRevealResult();
     }, { once: true });
     try { video.load(); } catch (e) {}
+  };
+
+  // Deterministic completion signal: the upload click-chain's final .then(js) calls this when
+  // the server has finished the cut (success OR soft-fail). The buffered-reveal above reveals the
+  // real result the moment it can play; this just collapses the long hang-backstop into a short
+  // grace window so the clapperboard never lingers once the server is genuinely done. It does NOT
+  // inspect which <video> is mounted (that would risk revealing a stale, still-buffered scene
+  // during the DOM swap) — it only shortens the safety net and lets scArmReveal do the real work.
+  window.__scFinishGeneration = () => {
+    if (!window.__scGenerating) return;
+    if (window.__scRevealTimer) clearTimeout(window.__scRevealTimer);
+    window.__scRevealTimer = setTimeout(scRevealResult, SC_FINISH_GRACE_MS);
   };
 
   // tapping Narrate starts generation: mount the loader and hold any result until buffered
@@ -1943,6 +1962,11 @@ def build_viewer_app() -> gr.Blocks:
                     ],
                     concurrency_limit=1,
                     concurrency_id=UPLOAD_CONCURRENCY_ID,
+                ).then(
+                    # Deterministic "generation done" signal (success or soft-fail): now that the
+                    # server has responded, collapse the clapperboard hang-backstop to a short grace
+                    # window. The buffered-reveal still drives the actual reveal on canplaythrough.
+                    js="() => { if (window.__scFinishGeneration) window.__scFinishGeneration(); }",
                 )
 
             def _tick(state):

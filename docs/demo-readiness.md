@@ -55,6 +55,8 @@ Last updated: 2026-06-15 09:03 CEST.
 - [x] Hidden warm-up moment against the hero-root engine returned `SceneAudio` in 15.4 s on
   2026-06-15 09:09 CEST; the warm-up row/media were pruned, leaving exactly the five hero cuts
   visible through Cloudflare.
+- [x] `tmux` session `small-cuts-awake` is running `caffeinate -dimsu` to keep the Mac Studio
+  awake for the live services.
 - [x] iOS simulator suite passes: 63 tests, 1 live-engine smoke skipped, 0 failures.
 - [x] Opt-in Swift live-engine smoke passes against `ws://127.0.0.1:8077/v1/session`
   with real `SceneAudio` in 4.4 s.

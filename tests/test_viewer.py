@@ -201,6 +201,49 @@ def test_submit_modal_upload_rejects_over_duration(monkeypatch):
     assert outputs[5]["scenes"] == []
 
 
+def test_submit_modal_upload_rejects_oversized_file(monkeypatch, tmp_path):
+    clip = tmp_path / "clip.mp4"
+    clip.write_bytes(b"x")
+    monkeypatch.setattr(viewer, "_video_size_bytes", lambda _path: viewer.UPLOAD_MAX_BYTES + 1)
+    warnings = []
+
+    monkeypatch.setattr(viewer.gr, "Warning", lambda message: warnings.append(message))
+    monkeypatch.setattr(viewer, "_modal_upload_client", lambda: pytest.fail("modal called"))
+
+    outputs = viewer._submit_modal_upload(
+        str(clip),
+        "deadpan",
+        "",
+        viewer._pack_engine_ui_state([], None, None, None),
+        SimpleNamespace(name="Alice Example", username="alice"),
+        fake_client(lambda _request: httpx.Response(200, json={"scenes": []})),
+    )
+
+    assert warnings == ["Please upload a clip up to 80 MB."]
+    assert outputs[5]["scenes"] == []
+
+
+def test_submit_modal_upload_rejects_unsupported_extension(monkeypatch, tmp_path):
+    clip = tmp_path / "clip.avi"
+    clip.write_bytes(b"x")
+    warnings = []
+
+    monkeypatch.setattr(viewer.gr, "Warning", lambda message: warnings.append(message))
+    monkeypatch.setattr(viewer, "_modal_upload_client", lambda: pytest.fail("modal called"))
+
+    outputs = viewer._submit_modal_upload(
+        str(clip),
+        "deadpan",
+        "",
+        viewer._pack_engine_ui_state([], None, None, None),
+        SimpleNamespace(name="Alice Example", username="alice"),
+        fake_client(lambda _request: httpx.Response(200, json={"scenes": []})),
+    )
+
+    assert warnings == ["Please upload one of: MP4, MOV, WebM, M4V."]
+    assert outputs[5]["scenes"] == []
+
+
 def test_submit_modal_upload_without_video_warns_instead_of_raising(monkeypatch):
     warnings = []
 
@@ -411,6 +454,111 @@ def test_upload_sandbox_bounds_queue_and_upload_concurrency(monkeypatch):
     assert components_by_id[target_id]["props"]["elem_classes"] == ["sc-relay-events"]
 
 
+def test_upload_sandbox_uses_topbar_popover_not_stage_accordion(monkeypatch):
+    monkeypatch.setenv(viewer.ENGINE_URL_ENV, "http://127.0.0.1:9")
+    monkeypatch.setenv(viewer.UPLOAD_SANDBOX_ENV, "1")
+    monkeypatch.setenv(viewer.MODAL_API_URL_ENV, "https://example.modal.run")
+    mock_gradio_oauth(monkeypatch)
+
+    app = viewer.build_viewer_app()
+    components = app.config["components"]
+
+    assert not [
+        component
+        for component in components
+        if component["type"] == "accordion"
+        and component["props"].get("elem_classes") == ["sc-tryit"]
+    ]
+    assert [
+        component
+        for component in components
+        if component["props"].get("elem_id") == "sc-upload-popover"
+    ]
+    helper = "\n".join(
+        str(component["props"].get("value", ""))
+        for component in components
+        if component["type"] == "html"
+    )
+    assert "Drop or browse your video" in helper
+    assert "Up to 60 seconds" in helper
+    assert "80 MB" in helper
+    assert "MP4, MOV, WebM, M4V" in helper
+
+
+def test_upload_sandbox_signin_is_compact_and_upload_gated(monkeypatch):
+    monkeypatch.setenv(viewer.ENGINE_URL_ENV, "http://127.0.0.1:9")
+    monkeypatch.setenv(viewer.UPLOAD_SANDBOX_ENV, "1")
+    monkeypatch.setenv(viewer.MODAL_API_URL_ENV, "https://example.modal.run")
+    mock_gradio_oauth(monkeypatch)
+
+    app = viewer.build_viewer_app()
+    components = app.config["components"]
+
+    login = [
+        component
+        for component in components
+        if component["type"] == "button"
+        and component["props"].get("elem_classes") == ["sc-upload-signin"]
+    ]
+    assert len(login) == 1
+    assert login[0]["props"]["value"] == "🤗 Sign in to upload"
+
+    # R1: the cloud icon is the affordance and is ALWAYS rendered — signed-out it is DISABLED
+    # (not hidden) so it reads as the gated entry point next to the compact sign-in pill.
+    upload_buttons = [
+        component
+        for component in components
+        if component["type"] == "button"
+        and "sc-upload" in component["props"].get("elem_classes", [])
+    ]
+    assert len(upload_buttons) == 1
+    assert upload_buttons[0]["props"]["visible"] is not False
+    assert upload_buttons[0]["props"]["interactive"] is False
+    assert "disabled" in upload_buttons[0]["props"].get("elem_classes", [])
+
+
+def test_upload_auth_ui_swaps_signin_for_upload_icon():
+    # R1: signed OUT — sign-in container is VISIBLE (the only sign-in control) and the icon is
+    # gated DISABLED.
+    state_out, signin_out, upload_out = viewer._upload_auth_ui(None)
+    assert state_out == {}
+    assert signin_out == gr.update(visible=True)
+    assert upload_out == gr.update(
+        interactive=False, elem_classes=["sc-icbtn", "sc-upload", "sc-ico-upload", "disabled"]
+    )
+
+    # signed IN — the sign-in container is HIDDEN (no logout affordance, so no sign-in/sign-out
+    # loop) and the icon flips to ENABLED.
+    state, signin_update, upload_update = viewer._upload_auth_ui(
+        SimpleNamespace(name="Alice Example", username="alice")
+    )
+
+    assert state == {"username": "alice"}
+    assert signin_update == gr.update(visible=False)
+    assert upload_update == gr.update(
+        interactive=True, elem_classes=["sc-icbtn", "sc-upload", "sc-ico-upload"]
+    )
+
+
+def test_upload_status_html_has_pending_clapperboard():
+    # R5: one loader — the clapperboard — replaces the old border-spinner in the running state.
+    html = viewer.render_upload_status_html("running")
+
+    assert "sc-clap" in html
+    assert "sc-upload-spinner" not in html
+    assert "Generating your cut" in html
+
+
+def test_clapperboard_loader_has_hinged_arm_and_reduced_motion_fallback():
+    # R5: the loader is an inline SVG whose hinged clapper arm animates; the reveal JS embeds it.
+    overlay = viewer.render_clapperboard_html()
+    assert "sc-clap-loader" in overlay
+    assert "sc-clap-arm" in overlay
+    assert "sc-clap-caption" in overlay
+    assert "sc-clap-swing" in viewer.VIEWER_CSS
+    assert "prefers-reduced-motion" in viewer.VIEWER_CSS
+
+
 def test_relay_event_bridge_listens_for_hook_events():
     assert "EventSource('/small-cuts/events')" in viewer.RELAY_EVENT_BRIDGE_JS
     assert "trigger('relay_scene'" in viewer.RELAY_EVENT_BRIDGE_JS
@@ -545,6 +693,16 @@ def test_shelf_items_marks_source_tiles():
 
     assert items[0] == ("/media/frame.jpg", f"{viewer.GLASSES_SHELF_PREFIX}A Glasses Scene")
     assert items[1] == ("/media/upload.jpg", f"{viewer.UPLOAD_SHELF_PREFIX}An Upload Scene")
+
+
+def test_write_voice_evicts_old_generated_audio(tmp_path, monkeypatch):
+    monkeypatch.setattr(viewer, "GENERATED_AUDIO_DIR", tmp_path)
+    monkeypatch.setattr(viewer, "SHELF_LIMIT", 2)
+
+    for scene_id in ("one", "two", "three"):
+        assert viewer._write_voice(np.zeros(24, dtype=np.float32), 24_000, scene_id)
+
+    assert sorted(path.name for path in tmp_path.glob("*.wav")) == ["three.wav", "two.wav"]
 
 
 def test_shelf_items_unwraps_gradio_file_routes_for_gallery(tmp_path):

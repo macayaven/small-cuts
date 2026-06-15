@@ -54,6 +54,28 @@ def test_sample_frames_max_frames_stops_early(tmp_path):
     assert len(frames) == 2
 
 
+def test_sample_frames_closes_container_on_decode_error(monkeypatch):
+    class Container:
+        def __init__(self):
+            self.closed = False
+            stream = type("Stream", (), {"average_rate": 30, "guessed_rate": None})()
+            self.streams = type("Streams", (), {"video": [stream]})()
+
+        def decode(self, stream):
+            raise RuntimeError("decode failed")
+
+        def close(self):
+            self.closed = True
+
+    container = Container()
+    monkeypatch.setattr(av, "open", lambda path: container)
+
+    with pytest.raises(RuntimeError, match="decode failed"):
+        sample_frames("broken.mp4")
+
+    assert container.closed
+
+
 def test_pick_frame_returns_middle():
     frames = [Image.new("RGB", (8, 8), c) for c in ((255, 0, 0), (0, 255, 0), (0, 0, 255))]
     assert pick_frame(frames).getpixel((0, 0)) == (0, 255, 0)
@@ -82,13 +104,16 @@ def test_pick_key_frame_empty_raises():
         pick_key_frame([])
 
 
-def test_eval_wrapper_still_saves_jpegs(tmp_path):
+def test_eval_wrapper_saves_jpegs_to_output_dir(tmp_path):
     from small_cuts.eval import _sample_video_frames
 
     clip = _write_clip(tmp_path / "clip.mp4", n_frames=90)
-    out_paths = _sample_video_frames(clip, every_n_seconds=1.0)
+    out_dir = tmp_path / "sampled"
+    out_paths = _sample_video_frames(clip, every_n_seconds=1.0, output_dir=out_dir)
+
     assert len(out_paths) == 3
-    assert all(p.exists() and p.suffix == ".jpg" for p in out_paths)
+    assert all(p.exists() and p.suffix == ".jpg" and p.parent == out_dir for p in out_paths)
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["clip.mp4", "sampled"]
 
 
 def test_video_handler_narrates_with_mock_backend(tmp_path, monkeypatch):

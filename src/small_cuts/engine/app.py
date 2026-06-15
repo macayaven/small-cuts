@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from typing import Annotated, Any, Literal
 
 from fastapi import FastAPI, HTTPException, Query, Request, WebSocket
@@ -99,7 +100,17 @@ def build_engine_app(
     sink = scene_sink if scene_sink is not None else lib
     # Errors fan out to the viewer stream too (D9): the timeline shows failures.
     state = EngineState(sink=sink, error_sink=lib.publish_event)
-    app = FastAPI(title="small-cuts engine")
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        try:
+            yield
+        finally:
+            close = getattr(app.state.library, "close", None)
+            if close is not None:
+                close()
+
+    app = FastAPI(title="small-cuts engine", lifespan=lifespan)
     app.state.library = lib
 
     @app.websocket("/v1/session")

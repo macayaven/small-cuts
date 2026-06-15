@@ -23,7 +23,7 @@ def main() -> None:
     signal.signal(signal.SIGTERM, shutdown)
     uvicorn.run(
         build_engine_app(),
-        host=os.environ.get("SMALL_CUTS_ENGINE_HOST", "0.0.0.0"),
+        host=os.environ.get("SMALL_CUTS_ENGINE_HOST", "127.0.0.1"),
         port=int(os.environ.get("SMALL_CUTS_ENGINE_PORT", "8077")),
         ws_max_size=int(os.environ.get("SMALL_CUTS_ENGINE_WS_MAX_SIZE", str(64 * 1024 * 1024))),
     )

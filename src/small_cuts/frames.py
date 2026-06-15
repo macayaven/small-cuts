@@ -22,16 +22,18 @@ def sample_frames(
 
     kept: list[Image.Image] = []
     container = av.open(str(path))
-    stream = container.streams.video[0]
-    fps = float(stream.average_rate or stream.guessed_rate or 30)
-    step = max(1, int(fps * every_n_seconds))
-    for i, frame in enumerate(container.decode(stream)):
-        if i % step == 0:
-            img = frame.to_image().convert("RGB")
-            kept.append(img)
-            if max_frames is not None and len(kept) >= max_frames:
-                break
-    container.close()
+    try:
+        stream = container.streams.video[0]
+        fps = float(stream.average_rate or stream.guessed_rate or 30)
+        step = max(1, int(fps * every_n_seconds))
+        for i, frame in enumerate(container.decode(stream)):
+            if i % step == 0:
+                img = frame.to_image().convert("RGB")
+                kept.append(img)
+                if max_frames is not None and len(kept) >= max_frames:
+                    break
+    finally:
+        container.close()
     return kept
 
 

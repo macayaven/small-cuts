@@ -112,6 +112,11 @@ STYLES: dict[str, DirectorStyle] = {
 }
 
 DEFAULT_STYLE_KEY = "deadpan"
+MAX_SCENE_HINT_CHARS = 280
+
+
+def clean_scene_hint(scene_hint: str) -> str:
+    return scene_hint.strip()[:MAX_SCENE_HINT_CHARS]
 
 
 def style_choices() -> list[tuple[str, str]]:
@@ -122,13 +127,14 @@ def style_choices() -> list[tuple[str, str]]:
 def build_messages(style_key: str, scene_hint: str = "") -> list[dict]:
     """Build the chat messages (minus the image, attached by the backend)."""
     style = STYLES[style_key]
+    hint = clean_scene_hint(scene_hint)
     user_text = (
         f"Director's cut: {style.label}.\n"
         f"Style direction: {style.direction}\n"
         f"Example of the voice (different scene): {style.example}\n"
     )
-    if scene_hint.strip():
-        user_text += f"Context offered by the person living this moment: {scene_hint.strip()}\n"
+    if hint:
+        user_text += f"Context offered by the person living this moment: {hint}\n"
     user_text += (
         "Now title and narrate the attached moment as JSON, for example: "
         '{"title":"The Fourth Coffee","narration":"He stirs the coffee again. '

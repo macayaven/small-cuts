@@ -6,6 +6,8 @@ Runs entirely on the mock narrator/TTS backends — deterministic, no weights.
 import asyncio
 import io
 import json
+import sys
+import time
 import uuid
 import wave
 from datetime import datetime, timedelta, timezone
@@ -92,7 +94,12 @@ def test_ws_flow_persists_contract_valid_scene(tmp_path):
         assert scene["scene_id"] == audio_frame["scene_id"]
         assert scene["moment_id"] == envelope["moment_id"]
         assert scene["session_id"] == envelope["session_id"]
-        assert scene["captured_at"] == envelope["captured_at"]
+        assert (
+            scene["captured_at"]
+            == datetime.fromisoformat(envelope["captured_at"].replace("Z", "+00:00"))
+            .astimezone(timezone.utc)
+            .isoformat()
+        )
         assert scene["created_at"] == audio_frame["created_at"]
         assert scene["style_key"] == envelope["context"]["style_key"]
         assert scene["narration"] == audio_frame["narration"]
@@ -181,6 +188,33 @@ def test_store_prefers_generated_title_when_present(tmp_path):
     assert stored["title"] == "The Door Waits Politely"
 
 
+def test_store_uses_owner_from_env(tmp_path, monkeypatch):
+    monkeypatch.setenv("SMALL_CUTS_ENGINE_OWNER", "maya")
+    stored = SceneLibrary(tmp_path / "lib").store(make_sink_scene())
+
+    assert stored["owner"] == "maya"
+
+
+def test_store_normalizes_timestamps_to_utc(tmp_path):
+    stored = SceneLibrary(tmp_path / "lib").store(
+        make_sink_scene(
+            captured_at="2026-06-15T12:30:00+02:00",
+            created_at="2026-06-15T10:30:03Z",
+        )
+    )
+
+    assert stored["captured_at"] == "2026-06-15T10:30:00+00:00"
+    assert stored["created_at"] == "2026-06-15T10:30:03+00:00"
+
+
+def test_store_raises_runtime_error_if_inserted_scene_cannot_be_read(tmp_path, monkeypatch):
+    lib = SceneLibrary(tmp_path / "lib")
+    monkeypatch.setattr(lib, "get", lambda scene_id: None)
+
+    with pytest.raises(RuntimeError, match="missing immediately after insert"):
+        lib.store(make_sink_scene())
+
+
 def test_store_uses_key_frame_for_scene_poster(tmp_path):
     lib = SceneLibrary(tmp_path / "lib")
     flat = Image.new("RGB", (32, 56), (12, 12, 12))
@@ -257,6 +291,72 @@ def test_clip_smoothing_inserts_single_micro_dissolve_between_frames():
     assert frames[0].getpixel(sample_pixel) == red
     assert frames[-1].getpixel(sample_pixel) == blue
     assert frames[1].getpixel(sample_pixel) == midpoint
+
+
+def test_write_clip_mp4_closes_container_when_stream_setup_fails(monkeypatch, tmp_path):
+    class Container:
+        def __init__(self):
+            self.closed = False
+
+        def add_stream(self, codec, rate):
+            raise RuntimeError(f"{codec} unavailable")
+
+        def close(self):
+            self.closed = True
+
+    container = Container()
+
+    class FakeAv:
+        @staticmethod
+        def open(path, mode):
+            return container
+
+    monkeypatch.setitem(sys.modules, "av", FakeAv)
+
+    with pytest.raises(RuntimeError, match="h264 unavailable"):
+        _write_clip_mp4(tmp_path / "clip.mp4", [Image.new("RGB", (16, 16), "red")])
+
+    assert container.closed
+
+
+def test_subscriber_queue_is_bounded(tmp_path):
+    queue = SceneLibrary(tmp_path / "lib").subscribe()
+
+    assert queue.maxsize == 256
+
+
+def test_library_store_times_out_and_publishes_storage_error(tmp_path, monkeypatch):
+    async def scenario():
+        lib = SceneLibrary(tmp_path / "lib")
+        events = []
+        monkeypatch.setattr("small_cuts.engine.library.STORAGE_TIMEOUT_S", 0.01)
+        monkeypatch.setattr(lib, "store", lambda scene: time.sleep(1))
+        lib.publish_event = events.append
+
+        await lib(make_sink_scene())
+
+        assert events[0]["kind"] == "error"
+        assert events[0]["error"]["code"] == "library_write_failed"
+
+    asyncio.run(scenario())
+
+
+def test_engine_app_lifespan_closes_library():
+    class CloseableLibrary:
+        def __init__(self):
+            self.closed = False
+
+        def publish_event(self, payload):
+            pass
+
+        def close(self):
+            self.closed = True
+
+    lib = CloseableLibrary()
+    with TestClient(build_engine_app(library=lib)):
+        assert not lib.closed
+
+    assert lib.closed
 
 
 # -- list + filters ---------------------------------------------------------------

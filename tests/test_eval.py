@@ -18,6 +18,27 @@ def test_load_images_filters_and_sorts(tmp_path):
     assert [p.name for p in paths] == ["a.jpg", "b.png"]
 
 
+def test_load_images_samples_videos_into_caller_frame_dir(tmp_path, monkeypatch):
+    video = tmp_path / "clip.mp4"
+    video.write_bytes(b"not actually decoded")
+    frame_dir = tmp_path / "frames"
+
+    def fake_sample(video_path: Path, output_dir: Path | None = None):
+        assert video_path == video
+        assert output_dir == frame_dir
+        output_dir.mkdir()
+        frame = output_dir / "clip_frame000000.jpg"
+        Image.new("RGB", (64, 48), (120, 60, 30)).save(frame)
+        return [frame]
+
+    monkeypatch.setattr("small_cuts.eval._sample_video_frames", fake_sample)
+
+    paths = load_images(tmp_path, frame_dir=frame_dir)
+
+    assert paths == [frame_dir / "clip_frame000000.jpg"]
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["clip.mp4", "frames"]
+
+
 def test_load_images_accepts_iphone_heic(tmp_path):
     # iPhones shoot HEIC by default — the staged eval photos on the Spark are all .heic
     Image.new("RGB", (64, 48), (120, 60, 30)).save(tmp_path / "IMG-0.HEIC")
@@ -36,3 +57,12 @@ def test_mock_eval_produces_report(tmp_path):
     # one table row per model x style per image
     assert len(re.findall(r"^\| mock \|", report, flags=re.M)) == 4
     assert "**S**pecificity" in report
+
+
+def test_render_report_marks_missing_model_style_result(tmp_path):
+    image = tmp_path / "a.jpg"
+    Image.new("RGB", (64, 48), (240, 240, 240)).save(image)
+
+    report = render_report({"partial": {}}, [image], ["deadpan"])
+
+    assert "| partial | deadpan | (failed) | - |  |  |  |" in report

@@ -77,9 +77,9 @@ Time remaining at plan update: about 11 h 16 m.
 - Create: `modal_app/small_cuts_postcut.py`
 - Modal app: `small-cuts-postcut`
 - Modal secret: `small-cuts-postcut` with `HF_TOKEN` and `SMALL_CUTS_MODAL_API_TOKEN`
-- Modal GPU policy: performance-first for the hackathon grant, `["H100", "A100-80GB", "L40S"]`
-  fallbacks, `min_containers=1`, `buffer_containers=1`, `max_containers=4`, no same-container
-  GPU concurrency for model/TTS.
+- Modal GPU policy: cost-first after 2026-06-15 spend review, `["H100", "A100-80GB", "L40S"]`
+  fallbacks, `min_containers=0`, `buffer_containers=0`, `scaledown_window=60`,
+  `max_containers=4`, no same-container GPU concurrency for model/TTS.
 - HF bucket for development/proof: `macayaven/small-cuts-scenes-dev`, prefix `relay`.
   Do not write to `build-small-hackathon/*` buckets while iterating.
 - Evidence: update `docs/demo-readiness.md`
@@ -168,9 +168,9 @@ Add this below `_require_bearer()`:
 @app.function(
     image=image,
     timeout=60,
-    min_containers=1,
-    buffer_containers=1,
-    scaledown_window=1200,
+    min_containers=0,
+    buffer_containers=0,
+    scaledown_window=60,
     secrets=[modal.Secret.from_name("small-cuts-postcut")],
 )
 @modal.concurrent(max_inputs=20, target_inputs=10)
@@ -223,10 +223,10 @@ Add this worker to the same file:
     image=image,
     gpu=["H100", "A100-80GB", "L40S"],
     timeout=900,
-    min_containers=1,
-    buffer_containers=1,
+    min_containers=0,
+    buffer_containers=0,
     max_containers=4,
-    scaledown_window=1200,
+    scaledown_window=60,
     secrets=[modal.Secret.from_name("small-cuts-postcut")],
 )
 def process_cut(
@@ -358,7 +358,7 @@ modal_warm_upload_1_s:
 modal_warm_upload_2_s:
 video_duration_s:
 gpu_policy: H100 -> A100-80GB -> L40S
-warm_pool: min_containers=1, buffer_containers=1, max_containers=4
+warm_pool: min_containers=0, buffer_containers=0, scaledown_window=60, max_containers=4
 model_backend:
 tts_backend:
 result_quality:

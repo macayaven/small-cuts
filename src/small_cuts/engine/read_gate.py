@@ -13,10 +13,11 @@ from contextlib import asynccontextmanager
 import httpx
 from fastapi import FastAPI, Request
 from fastapi.responses import PlainTextResponse, Response, StreamingResponse
-from starlette.background import BackgroundTask
 
 ORIGIN_ENV = "SMALL_CUTS_ORIGIN_ENGINE_URL"
 DEFAULT_ORIGIN = "http://127.0.0.1:8077"
+READ_TIMEOUT = httpx.Timeout(connect=5.0, read=30.0, write=5.0, pool=5.0)
+STREAM_TIMEOUT = httpx.Timeout(connect=5.0, read=None, write=5.0, pool=5.0)
 BLOCKED_TEXT = "small-cuts public endpoint is read-only\n"
 HOP_BY_HOP_HEADERS = {
     "connection",
@@ -49,12 +50,24 @@ def _origin_url(origin_url: str, request: Request) -> str:
     return f"{url}?{request.url.query}" if request.url.query else url
 
 
+def _timeout_for_path(path: str) -> httpx.Timeout:
+    return STREAM_TIMEOUT if path == "/v1/scenes/stream" else READ_TIMEOUT
+
+
+async def _proxy_body(upstream: httpx.Response) -> AsyncIterator[bytes]:
+    try:
+        async for chunk in upstream.aiter_raw():
+            yield chunk
+    finally:
+        await upstream.aclose()
+
+
 def build_read_gate_app(origin_url: str | None = None) -> FastAPI:
     origin = (origin_url or os.environ.get(ORIGIN_ENV) or DEFAULT_ORIGIN).rstrip("/")
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        app.state.client = httpx.AsyncClient(timeout=None)
+        app.state.client = httpx.AsyncClient()
         try:
             yield
         finally:
@@ -77,23 +90,16 @@ def build_read_gate_app(origin_url: str | None = None) -> FastAPI:
                 "GET",
                 _origin_url(origin, request),
                 headers=_forward_headers(request.headers),
+                timeout=_timeout_for_path(request.url.path),
             ),
             stream=True,
         )
 
-        async def body() -> AsyncIterator[bytes]:
-            async for chunk in upstream.aiter_raw():
-                yield chunk
-
-        async def close() -> None:
-            await upstream.aclose()
-
         return StreamingResponse(
-            body(),
+            _proxy_body(upstream),
             status_code=upstream.status_code,
             headers=_forward_headers(upstream.headers),
             media_type=upstream.headers.get("content-type"),
-            background=BackgroundTask(close),
         )
 
     return app

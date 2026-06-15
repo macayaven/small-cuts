@@ -17,6 +17,7 @@ import os
 import sqlite3
 import sys
 import threading
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -24,7 +25,7 @@ from PIL import Image
 
 from small_cuts import narrator, tts
 from small_cuts.frames import pick_key_frame
-from small_cuts.title_card import derive_title, render_title_card
+from small_cuts.title_card import TITLE_MAX_LEN, derive_title, render_title_card
 
 from .session import CONTRACT_VERSION, _wav_bytes
 
@@ -32,6 +33,8 @@ DEFAULT_ROOT = "~/.small-cuts/library"
 OWNER = "carlos"  # v1 engines are single-user; the field is reserved for multi-user
 VISIBILITIES = ("private", "shared", "public")
 MEDIA_FILES = ("frame.jpg", "card.webp", "voice.wav", "clip.mp4")
+STORAGE_TIMEOUT_S = 30.0
+SUBSCRIBER_QUEUE_MAX = 256
 CLIP_MP4_FPS = 12
 CLIP_BLEND_STEPS = 1
 H264_MIN_DIMENSION = 2
@@ -98,8 +101,10 @@ class SceneLibrary:
         honest. `_hand_to_sink`'s suppression remains the last-resort backstop.
         """
         try:
-            narrated = await asyncio.to_thread(self.store, scene)
-        except Exception as exc:
+            narrated = await asyncio.wait_for(
+                asyncio.to_thread(self.store, scene), timeout=STORAGE_TIMEOUT_S
+            )
+        except (Exception, asyncio.TimeoutError) as exc:
             print(
                 f"small_cuts.engine: library write failed for scene {scene['scene_id']}: {exc!r}",
                 file=sys.stderr,
@@ -126,7 +131,10 @@ class SceneLibrary:
         Events without a seq (errors) are EPHEMERAL: not persisted, not in Last-Event-ID replay.
         """
         for queue in list(self._subscribers):
-            queue.put_nowait(payload)
+            try:
+                queue.put_nowait(payload)
+            except asyncio.QueueFull:
+                self.unsubscribe(queue)
 
     def store(self, scene: dict[str, Any]) -> dict[str, Any]:
         """Persist media + index row (blocking); returns the stored NarratedScene."""
@@ -169,18 +177,19 @@ class SceneLibrary:
                     seq,
                     scene["moment_id"],
                     scene["session_id"],
-                    scene["captured_at"],
-                    scene["created_at"],
+                    _normalize_datetime(scene["captured_at"]),
+                    _normalize_datetime(scene["created_at"]),
                     style_key,
                     title,
                     narration,
                     "private",
-                    OWNER,
+                    _owner(),
                     json.dumps(engine),
                 ),
             )
         stored = self.get(scene_id)
-        assert stored is not None  # the row was just inserted
+        if stored is None:
+            raise RuntimeError(f"scene {scene_id} missing immediately after insert")
         return stored
 
     # -- queries ---------------------------------------------------------------------
@@ -274,7 +283,7 @@ class SceneLibrary:
 
     def subscribe(self) -> asyncio.Queue[dict[str, Any]]:
         """New-scene feed for one SSE connection; pair with `unsubscribe`."""
-        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+        queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=SUBSCRIBER_QUEUE_MAX)
         self._subscribers.append(queue)
         return queue
 
@@ -306,14 +315,14 @@ def _write_clip_mp4(
 
     container = av.open(str(path), "w")
     try:
-        stream = container.add_stream(PRIMARY_VIDEO_CODEC, rate=fps)
-    except Exception:
-        stream = container.add_stream(FALLBACK_VIDEO_CODEC, rate=fps)
-    stream.width = width
-    stream.height = height
-    stream.pix_fmt = VIDEO_PIXEL_FORMAT
+        try:
+            stream = container.add_stream(PRIMARY_VIDEO_CODEC, rate=fps)
+        except Exception:
+            stream = container.add_stream(FALLBACK_VIDEO_CODEC, rate=fps)
+        stream.width = width
+        stream.height = height
+        stream.pix_fmt = VIDEO_PIXEL_FORMAT
 
-    try:
         for image in encode_frames:
             frame = av.VideoFrame.from_image(image)
             for packet in stream.encode(frame):
@@ -352,5 +361,17 @@ def _smooth_clip_frames(
 
 def _stored_title(raw_title: object, narration: str) -> str:
     if isinstance(raw_title, str) and raw_title.strip():
-        return derive_title(raw_title, max_len=80)
-    return derive_title(narration, max_len=80)
+        return derive_title(raw_title, max_len=TITLE_MAX_LEN)
+    return derive_title(narration, max_len=TITLE_MAX_LEN)
+
+
+def _owner() -> str:
+    return os.environ.get("SMALL_CUTS_ENGINE_OWNER", OWNER)
+
+
+def _normalize_datetime(value: str) -> str:
+    raw = value.replace("Z", "+00:00")
+    parsed = datetime.fromisoformat(raw)
+    if parsed.tzinfo is None:
+        raise ValueError(f"timestamp must include timezone: {value}")
+    return parsed.astimezone(timezone.utc).isoformat()

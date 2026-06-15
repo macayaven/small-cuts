@@ -69,9 +69,9 @@ def _sample_interval_s(duration_s: float) -> float:
 @app.function(
     image=image,
     timeout=60,
-    min_containers=1,
-    buffer_containers=1,
-    scaledown_window=1200,
+    min_containers=0,
+    buffer_containers=0,
+    scaledown_window=60,
     secrets=[modal.Secret.from_name("small-cuts-postcut")],
 )
 @modal.concurrent(max_inputs=20, target_inputs=10)
@@ -130,10 +130,10 @@ def poll_cut(job_id: str, authorization: str | None = Header(default=None)):
     image=image,
     gpu=["H100", "A100-80GB", "L40S"],
     timeout=900,
-    min_containers=1,
-    buffer_containers=1,
+    min_containers=0,
+    buffer_containers=0,
     max_containers=4,
-    scaledown_window=1200,
+    scaledown_window=60,
     secrets=[modal.Secret.from_name("small-cuts-postcut")],
 )
 def process_cut(
@@ -147,6 +147,8 @@ def process_cut(
     sys.path.insert(0, "/root/src")
     os.environ.setdefault("SMALL_CUTS_BACKEND", "transformers")
     os.environ.setdefault("SMALL_CUTS_TTS_BACKEND", "kokoro")
+
+    import shutil
 
     import soundfile as sf
     from huggingface_hub import HfApi
@@ -185,7 +187,12 @@ def process_cut(
     render_title_card(narration.title or narration.text, style_key=style_key).save(
         card_path, "WEBP"
     )
-    _write_clip_mp4(clip_path, frames, fps=8, blend_steps=0)
+    # Use the wearer's natural footage as the clip — not a sampled slideshow. H.264 mp4/mov/m4v
+    # play in-browser as-is; fall back to the frame slideshow only for other containers (e.g. webm).
+    if input_path.suffix.lower() in {".mp4", ".mov", ".m4v"}:
+        shutil.copyfile(input_path, clip_path)
+    else:
+        _write_clip_mp4(clip_path, frames, fps=8, blend_steps=0)
     sf.write(voice_path, speech.audio, speech.sample_rate)
 
     scene = {

@@ -27,10 +27,10 @@ the canonical command list, and the architecture live in the **root `CLAUDE.md`*
     finished-scene manifest + media from an HF bucket relay.
   - **Hybrid relay + upload mode**: `SMALL_CUTS_RELAY_BUCKET` and
     `SMALL_CUTS_ENABLE_UPLOAD_SANDBOX=1` set. This is the target final submission posture if judges
-    need direct upload verification: relay stays the public library, upload uses real narration/TTS
-    on demand, and the Space likely needs ZeroGPU or equivalent runtime for that upload action.
-    Prove this first in the private personal POC Space `macayaven/small-cuts-zerogpu-poc`; promote to
-    the org Space only after cold/warm upload timing and playback smoke pass.
+    need direct upload verification: relay stays the public library, upload calls Modal for real
+    narration/TTS on demand, and the submitted Space should remain CPU Basic. Prove this first through
+    the private Modal app `small-cuts-postcut`; promote to the org Space only after cold/warm timing,
+    bucket artifact writing, and playback smoke pass.
   - **Engine mode**: `SMALL_CUTS_ENGINE_URL` set. Polls `GET /v1/scenes` from an engine/read-gate
     endpoint. Keep this as a local/ops mode unless the current readiness doc explicitly switches back.
   - **Upload mode**: neither relay nor engine env set. Local "try it" dropzone; useful for development
@@ -56,7 +56,8 @@ the canonical command list, and the architecture live in the **root `CLAUDE.md`*
 
 ## ZeroGPU gotchas (hard-won — see KB `…/space/`)
 - In relay or engine viewer-only mode, the Space must not warm Qwen/Kokoro and should stay on
-  `cpu-basic`; ZeroGPU is only relevant to upload mode where the Space itself performs narration/TTS.
+  `cpu-basic`; ZeroGPU is only a fallback if Modal is ruled out and the Space itself performs
+  narration/TTS.
 - `@spaces.GPU` must mark the functions **Gradio binds** (the startup scan walks event handlers);
   decorating inner helpers → worker dies `No CUDA GPUs are available`.
 - **No torch forward in the main process ever** — TTS runs inside `@spaces.GPU(duration=…)` workers;
@@ -67,3 +68,7 @@ the canonical command list, and the architecture live in the **root `CLAUDE.md`*
 ## Design invariant
 - The Space is the **view platform + library**, not the capture path. Publishing/visibility happens
   **only here**, never on the glasses (D10). Make it feel like a reference live-streaming platform.
+- Wearer controls stay product-clean: `Action!` starts a take and `Cut!` finalizes it. Do not add a
+  third publish button. Glasses-origin cuts are published from the already-generated local scene
+  artifacts after `Cut!` and should show a small glasses badge in the Space; browser-uploaded judge
+  cuts use Modal and should not get that badge.

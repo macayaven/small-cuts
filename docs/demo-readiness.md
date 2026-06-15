@@ -1,6 +1,6 @@
 # Demo-Readiness Checklist
 
-Last updated: 2026-06-15 14:31 CEST.
+Last updated: 2026-06-15 14:43 CEST.
 
 ## Current Architecture Override - 2026-06-15
 
@@ -33,24 +33,30 @@ evidence for audit/history, but do not use it as the active deploy posture for t
 - Judge verification upload target for the next implementation pass: the submitted Gradio Space
   must expose a finished-video upload path so judges can verify the app without glasses, iOS, or
   local Tailnet access. Allow uploads up to 20 seconds and process them as completed cuts.
-- Before touching the submitted org Space, prove this in a private personal ZeroGPU POC:
-  `macayaven/small-cuts-zerogpu-poc`.
-- The final org Space should become a hybrid surface only after the personal POC passes:
+- Before deploying upload controls to the submitted org Space, prove this through the private Modal
+  app `small-cuts-postcut`.
+- The final org Space should become a hybrid surface only after the Modal POC passes:
   - relay/library mode for the live demo and public just-happened clips;
-  - on-demand upload mode for judge verification, with real narration/TTS, not mock output.
-- If upload inference runs inside the org Space, `cpu-basic` is no longer sufficient for that path;
-  use ZeroGPU or another rule-compatible runtime. Keep the relay/library path lightweight so the page
-  still loads even if GPU quota or cold starts affect the upload action.
-- If the personal ZeroGPU POC proves fast and stable, glasses post-cut publishing can use the same
-  finished-video bucket/hook path for public library generation. Local Mac Studio inference remains
-  the real-time glasses-to-ear path regardless.
+  - on-demand upload mode for judge verification, with real Modal-hosted narration/TTS, not mock
+    output.
+- Keep the submitted Space on `cpu-basic` for the Modal path. The Space should not warm Qwen/Kokoro;
+  it accepts uploads, requires HF login for upload only, calls Modal server-side, and renders the
+  returned scene.
+- Modal upload inference should use the hackathon grant aggressively but bounded: H100 first with
+  A100-80GB and L40S fallbacks, one warm GPU container, one active buffer container, and up to four
+  GPU containers for parallel uploads. Do not use same-container GPU concurrency for Qwen/Kokoro
+  unless the model/TTS pipeline is explicitly proven thread-safe.
+- Glasses-origin public clips should not go through Modal. `Action!` starts capture and `Cut!`
+  finalizes the take; after the local engine has produced clip, title, narration, and speech for
+  in-ear playback, the completed scene can be auto-published to the relay bucket by the local/admin
+  publisher. Those scenes should include `source="glasses"` and render a small glasses icon in the
+  top-left of the Space stage/library tile.
 - Library population target: use longer, controlled, honest clip artifacts for the public relay
   library instead of the current very short 24-frame samples.
 - iOS should restore real-time wearer captions/status for the private glasses path. Do not stretch
   the iOS/engine real-time payload just to satisfy the Space upload requirement.
-- `cpu-basic` was correct for a pure relay viewer. The judge-upload requirement supersedes that:
-  choose the simplest reliable runtime that makes upload verification real while preserving the
-  private glasses-to-ear demo path.
+- `cpu-basic` remains correct for the Space if Modal handles judge-upload inference. ZeroGPU is now
+  only a contingency if Modal is deliberately ruled out after a measured failure.
 
 ## Judged Space
 

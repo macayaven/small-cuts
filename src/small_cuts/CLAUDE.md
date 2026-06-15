@@ -22,15 +22,16 @@ the canonical command list, and the architecture live in the **root `CLAUDE.md`*
 ## Viewer modes + layout (`viewer.py`)
 - Decided at build time by env:
   - **Pure relay mode**: `SMALL_CUTS_RELAY_BUCKET` set and upload sandbox unset. This is the current
-    judged-Space posture for
-    `build-small-hackathon/small-cuts-live`: viewer-only, CPU Basic, no local model/TTS load, reads a
-    finished-scene manifest + media from an HF bucket relay.
+    safe development posture for a personal-profile staging Space (`macayaven/*`): viewer-only,
+    CPU Basic, no local model/TTS load, reads a finished-scene manifest + media from a personal HF
+    bucket relay.
   - **Hybrid relay + upload mode**: `SMALL_CUTS_RELAY_BUCKET` and
     `SMALL_CUTS_ENABLE_UPLOAD_SANDBOX=1` set. This is the target final submission posture if judges
     need direct upload verification: relay stays the public library, upload calls Modal for real
     narration/TTS on demand, and the submitted Space should remain CPU Basic. Prove this first through
-    the private Modal app `small-cuts-postcut`; promote to the org Space only after cold/warm timing,
-    bucket artifact writing, and playback smoke pass.
+    a personal-profile Space/bucket plus the private Modal app `small-cuts-postcut`; promote to
+    `build-small-hackathon/small-cuts-buffer-poc` only after cold/warm timing, bucket artifact
+    writing, and playback smoke pass.
   - **Engine mode**: `SMALL_CUTS_ENGINE_URL` set. Polls `GET /v1/scenes` from an engine/read-gate
     endpoint. Keep this as a local/ops mode unless the current readiness doc explicitly switches back.
   - **Upload mode**: neither relay nor engine env set. Local "try it" dropzone; useful for development
@@ -55,6 +56,11 @@ the canonical command list, and the architecture live in the **root `CLAUDE.md`*
   strip-and-couple path instead of the swap, since the swap touches Space file-serving.)
 
 ## ZeroGPU gotchas (hard-won — see KB `…/space/`)
+- **HF deployment safety override (2026-06-15):** do not deploy this viewer, run upload smokes, or
+  write relay artifacts against `build-small-hackathon/*` during development. Use only personal
+  `macayaven/*` Spaces and buckets until the product is fully proven. The reserved org submission
+  Space is `build-small-hackathon/small-cuts-buffer-poc`, currently private/paused by Carlos, to be
+  renamed and made public only at final submission.
 - In relay or engine viewer-only mode, the Space must not warm Qwen/Kokoro and should stay on
   `cpu-basic`; ZeroGPU is only a fallback if Modal is ruled out and the Space itself performs
   narration/TTS.

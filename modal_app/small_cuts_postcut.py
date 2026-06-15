@@ -14,7 +14,7 @@ import modal
 from fastapi import File, Form, Header, HTTPException, UploadFile
 from fastapi.responses import JSONResponse
 
-BUCKET_ID = "build-small-hackathon/small-cuts-scenes"
+BUCKET_ID = os.environ.get("SMALL_CUTS_RELAY_BUCKET", "macayaven/small-cuts-scenes-dev")
 RELAY_PREFIX = "relay"
 MAX_UPLOAD_BYTES = 80 * 1024 * 1024
 MAX_UPLOAD_SECONDS = 60.0

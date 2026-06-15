@@ -4,7 +4,18 @@
 
 **Goal:** Move judge uploads to Modal while preserving the non-negotiable private glasses-to-ear live narration demo and publishing glasses cuts from the already-generated local artifacts.
 
-**Architecture:** Keep four flows separate while validating them in order. The submitted org Space (`build-small-hackathon/small-cuts-live`) remains a CPU Basic Gradio viewer/uploader with HF OAuth on uploads. Modal hosts only the judge/browser upload service that runs Qwen3-VL-8B + Kokoro, writes finished upload artifacts to the HF bucket relay, and returns scene metadata to the Space. The glasses/iOS path remains private and real-time to the wearer's ear on the Mac Studio; `Action!` starts the take and `Cut!` finalizes it, returns local ear narration, and can auto-publish that already-finished local scene to the relay bucket without reaching Modal. Glasses-origin scenes carry a source marker so the Space can show a small glasses icon in the top-left of the clip/library tile. ZeroGPU is only a fallback if Modal fails quickly.
+**Architecture:** Keep four flows separate while validating them in order. Development and proofing
+must happen only in Carlos's personal HF profile (`macayaven/*`) using a personal Space and personal
+HF bucket. The org Space is reserved for final submission only: use
+`build-small-hackathon/small-cuts-buffer-poc`, currently private/paused by Carlos, after the personal
+solution is fully proven; then rename it and make it public. The submitted org Space remains a CPU
+Basic Gradio viewer/uploader with HF OAuth on uploads. Modal hosts only the judge/browser upload
+service that runs Qwen3-VL-8B + Kokoro, writes finished upload artifacts to the HF bucket relay, and
+returns scene metadata to the Space. The glasses/iOS path remains private and real-time to the
+wearer's ear on the Mac Studio; `Action!` starts the take and `Cut!` finalizes it, returns local ear
+narration, and can auto-publish that already-finished local scene to the relay bucket without reaching
+Modal. Glasses-origin scenes carry a source marker so the Space can show a small glasses icon in the
+top-left of the clip/library tile. ZeroGPU is only a fallback if Modal fails quickly.
 
 **Tech Stack:** Gradio, Hugging Face Spaces CPU Basic, HF OAuth, Modal Web Functions + GPU Functions, HF bucket relay, PyAV/H.264 MP4 generation, Qwen3-VL-8B, Kokoro TTS, SwiftUI iOS app, FastAPI engine, Ray-Ban Meta glasses.
 
@@ -32,8 +43,8 @@ Time remaining at plan update: about 11 h 16 m.
   - relay viewer/library from `SMALL_CUTS_RELAY_BUCKET`;
   - upload drawer enabled by `SMALL_CUTS_ENABLE_UPLOAD_SANDBOX=1` and
     `SMALL_CUTS_MODAL_API_URL`.
-- The upload drawer must use real Modal-hosted narration/TTS, not mock output. Keep
-  `build-small-hackathon/small-cuts-live` on CPU Basic unless Modal is ruled out and the fallback
+- The upload drawer must use real Modal-hosted narration/TTS, not mock output. Keep the personal
+  staging Space and final reserved org Space on CPU Basic unless Modal is ruled out and the fallback
   ZeroGPU path is deliberately chosen.
 - Glasses-origin cuts do not use Modal. `Cut!` remains the only wearer-side completion action:
   after the local engine has produced clip, narration, title, and speech, a demo/admin publisher can
@@ -69,7 +80,8 @@ Time remaining at plan update: about 11 h 16 m.
 - Modal GPU policy: performance-first for the hackathon grant, `["H100", "A100-80GB", "L40S"]`
   fallbacks, `min_containers=1`, `buffer_containers=1`, `max_containers=4`, no same-container
   GPU concurrency for model/TTS.
-- HF bucket: `build-small-hackathon/small-cuts-scenes`, prefix `relay`
+- HF bucket for development/proof: `macayaven/small-cuts-scenes-dev`, prefix `relay`.
+  Do not write to `build-small-hackathon/*` buckets while iterating.
 - Evidence: update `docs/demo-readiness.md`
 
 - [ ] **Step 1: Verify Modal auth without printing secrets**
@@ -112,7 +124,7 @@ import modal
 from fastapi import File, Form, Header, HTTPException, UploadFile
 from fastapi.responses import JSONResponse
 
-BUCKET_ID = "build-small-hackathon/small-cuts-scenes"
+BUCKET_ID = os.environ.get("SMALL_CUTS_RELAY_BUCKET", "macayaven/small-cuts-scenes-dev")
 RELAY_PREFIX = "relay"
 MAX_UPLOAD_BYTES = 80 * 1024 * 1024
 
@@ -380,9 +392,9 @@ Add this to `tests/test_app_entrypoint.py`:
 
 ```python
 def test_space_relay_with_modal_upload_does_not_force_local_backends(monkeypatch):
-    monkeypatch.setenv("SPACE_ID", "build-small-hackathon/small-cuts-live")
+    monkeypatch.setenv("SPACE_ID", "macayaven/small-cuts-staging")
     monkeypatch.delenv("SMALL_CUTS_ENGINE_URL", raising=False)
-    monkeypatch.setenv("SMALL_CUTS_RELAY_BUCKET", "build-small-hackathon/small-cuts-scenes")
+    monkeypatch.setenv("SMALL_CUTS_RELAY_BUCKET", "macayaven/small-cuts-scenes-dev")
     monkeypatch.setenv("SMALL_CUTS_ENABLE_UPLOAD_SANDBOX", "1")
     monkeypatch.setenv("SMALL_CUTS_MODAL_API_URL", "https://example.modal.run")
     monkeypatch.delenv("SMALL_CUTS_BACKEND", raising=False)
@@ -1028,7 +1040,7 @@ Acceptance:
 Run the viewer against a local fake bucket or copy staged files into the relay cache, then open the local Gradio app:
 
 ```bash
-SMALL_CUTS_RELAY_BUCKET=build-small-hackathon/small-cuts-scenes \
+SMALL_CUTS_RELAY_BUCKET=macayaven/small-cuts-scenes-dev \
 SMALL_CUTS_RELAY_PREFIX=relay \
 SMALL_CUTS_BACKEND=mock \
 SMALL_CUTS_TTS_BACKEND=mock \
@@ -1044,7 +1056,7 @@ glasses badge.
 Run:
 
 ```bash
-SMALL_CUTS_RELAY_BUCKET=build-small-hackathon/small-cuts-scenes \
+SMALL_CUTS_RELAY_BUCKET=macayaven/small-cuts-scenes-dev \
 SMALL_CUTS_RELAY_PREFIX=relay \
 uv run python scripts/build_demo_relay_library.py --sync --delete-extra
 ```
@@ -1064,8 +1076,9 @@ git commit -m "Populate longer glasses relay library"
 - Local repo.
 - iPhone/glasses.
 - Modal app `small-cuts-postcut`.
-- HF Space `build-small-hackathon/small-cuts-live`.
-- HF bucket `build-small-hackathon/small-cuts-scenes`.
+- Personal staging Space `macayaven/small-cuts-staging` or another explicitly named
+  `macayaven/*` Space.
+- Personal staging bucket `macayaven/small-cuts-scenes-dev`.
 
 - [ ] **Step 1: Run full local Python gate**
 
@@ -1116,12 +1129,16 @@ Browser smoke:
 - Confirm a >60 second clip is rejected with a clear message.
 - Confirm anonymous viewing still works in a separate/private browser session.
 
-- [ ] **Step 5: Deploy to the org Space only after local tests and Modal POC pass**
+- [ ] **Step 5: Deploy to personal staging only after local tests and Modal POC pass**
+
+Do not deploy to `build-small-hackathon/*` in this step. Use a Space owned by the personal
+`macayaven` profile and a personal HF bucket. The org Space
+`build-small-hackathon/small-cuts-buffer-poc` is reserved for final submission only.
 
 Upload source:
 
 ```bash
-hf upload build-small-hackathon/small-cuts-live . \
+hf upload macayaven/small-cuts-staging . \
   --repo-type=space \
   --exclude '.git/*' \
   --exclude '.venv/*' \
@@ -1136,22 +1153,23 @@ hf upload build-small-hackathon/small-cuts-live . \
 Set runtime variables:
 
 ```bash
-hf spaces variables add build-small-hackathon/small-cuts-live -e SMALL_CUTS_RELAY_BUCKET=build-small-hackathon/small-cuts-scenes
-hf spaces variables add build-small-hackathon/small-cuts-live -e SMALL_CUTS_RELAY_PREFIX=relay
-hf spaces variables add build-small-hackathon/small-cuts-live -e SMALL_CUTS_ENABLE_UPLOAD_SANDBOX=1
-hf spaces variables add build-small-hackathon/small-cuts-live -e SMALL_CUTS_UPLOAD_MAX_SECONDS=60
-hf spaces variables add build-small-hackathon/small-cuts-live -e SMALL_CUTS_MODAL_API_URL="$SMALL_CUTS_MODAL_API_URL"
-hf spaces secrets add build-small-hackathon/small-cuts-live -s SMALL_CUTS_MODAL_API_TOKEN="$SMALL_CUTS_MODAL_API_TOKEN"
-hf spaces variables delete build-small-hackathon/small-cuts-live SMALL_CUTS_ENGINE_URL
+hf spaces variables add macayaven/small-cuts-staging -e SMALL_CUTS_RELAY_BUCKET=macayaven/small-cuts-scenes-dev
+hf spaces variables add macayaven/small-cuts-staging -e SMALL_CUTS_RELAY_PREFIX=relay
+hf spaces variables add macayaven/small-cuts-staging -e SMALL_CUTS_ENABLE_UPLOAD_SANDBOX=1
+hf spaces variables add macayaven/small-cuts-staging -e SMALL_CUTS_UPLOAD_MAX_SECONDS=60
+hf spaces variables add macayaven/small-cuts-staging -e SMALL_CUTS_MODAL_API_URL="$SMALL_CUTS_MODAL_API_URL"
+hf spaces secrets add macayaven/small-cuts-staging -s SMALL_CUTS_MODAL_API_TOKEN="$SMALL_CUTS_MODAL_API_TOKEN"
+hf spaces variables delete macayaven/small-cuts-staging SMALL_CUTS_ENGINE_URL
 ```
 
 Expected: relay viewer still boots quickly on CPU Basic; upload action calls Modal through the
-Space backend; the same short clip that passed against Modal locally works on the org Space.
+Space backend; the same short clip that passed against Modal locally works on the personal staging
+Space.
 
 If Modal POC fails and there is not enough time for a one-line fix, do not switch org hardware.
-Disable `SMALL_CUTS_ENABLE_UPLOAD_SANDBOX`, keep the org Space on the safest relay/library posture,
-and rely on the demo video plus public relay library for judging. ZeroGPU is a fallback only if
-Modal is ruled out deliberately and time remains to test it locally first.
+Disable `SMALL_CUTS_ENABLE_UPLOAD_SANDBOX`, keep the personal staging Space on the safest
+relay/library posture, and rely on the demo video plus public relay library for judging. ZeroGPU is
+a fallback only if Modal is ruled out deliberately and time remains to test it locally first.
 
 - [ ] **Step 6: Hosted smoke**
 
@@ -1199,7 +1217,11 @@ Implement the hybrid final submission plan. Preserve the non-negotiable private 
 Important constraints:
 - The Space upload path has no glasses, no iOS, and no real-time promise.
 - Prove the upload path first through the private Modal app `small-cuts-postcut`.
-- Promote the upload path into `build-small-hackathon/small-cuts-live` only if Modal cold/warm timing, bucket artifact writing, and playback smoke pass.
+- Use only personal-profile HF resources (`macayaven/*`) for development, Space deploys, upload
+  smoke, relay smoke, and bucket writes. Do not use `build-small-hackathon/*` while iterating.
+- Promote the upload path into `build-small-hackathon/small-cuts-buffer-poc` only at final
+  submission, after the personal staging Space passes Modal cold/warm timing, bucket artifact
+  writing, playback smoke, and glasses relay smoke. Rename it and make it public at that final step.
 - The glasses/iOS path must restore real-time wearer captions and must not be burdened with a 60-second video payload.
 - The wearer UI remains `Action!` and `Cut!` only. Do not add a third publish button.
 - Glasses-origin public library items are published from local already-generated scene artifacts after `Cut!`; they do not reach Modal.
@@ -1218,8 +1240,10 @@ Preferred order:
 6. Local gates.
 7. Short physical glasses smoke.
 8. Longer honest glasses relay library generation with source badge.
-9. Promote to org Space only if Modal POC + local verification pass.
+9. Promote to a personal-profile staging Space only if Modal POC + local verification pass.
 10. Hosted smoke and readiness docs.
+11. Final submission promotion to `build-small-hackathon/small-cuts-buffer-poc` only after the
+    personal staging product is fully proven.
 
 Commit after each task-sized verified change with short messages.
 ```

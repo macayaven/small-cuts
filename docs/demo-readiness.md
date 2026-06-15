@@ -1,6 +1,6 @@
 # Demo-Readiness Checklist
 
-Last updated: 2026-06-15 16:01 CEST.
+Last updated: 2026-06-15 16:02 CEST.
 
 ## Current Architecture Override - 2026-06-15
 
@@ -174,6 +174,15 @@ evidence for audit/history, but do not use it as the active deploy posture for t
 - [x] iOS simulator suite passes: 64 tests, 1 live-engine smoke skipped, 0 failures.
 - [x] Opt-in Swift live-engine smoke passes against `ws://127.0.0.1:8077/v1/session`
   with real `SceneAudio` in 4.4 s.
+- [x] Physical-device prep: `xcrun xctrace list devices` sees the iPhone 14 Pro on iOS 26.6,
+  and `xcodebuild build` for destination `00008120-001045510C3B401E` succeeded with
+  command-line signing overrides only.
+- [x] Current build installed to the physical iPhone via `xcrun devicectl device install app`.
+- [x] Relay publisher dry-run against `http://127.0.0.1:8077` with
+  `--include-private --source glasses` staged one scene locally and wrote `source="glasses"` plus
+  `source_icon="glasses"` into the staged manifest without syncing the HF bucket.
+- [ ] Launching the installed iPhone app is pending an unlocked device; `devicectl` launch was
+  denied by SpringBoard because the phone was locked.
 - [ ] Physical iPhone simulated-source smoke after reinstalling the latest app.
 - [ ] Physical Ray-Ban Meta glasses smoke: in-ear narration returns while the Space receives the same cut.
 

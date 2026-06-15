@@ -37,7 +37,9 @@ Last updated: 2026-06-15 08:18 CEST.
 - [x] Real seed POV clip (`rayuela.mp4`) returns `ack accepted`, `SceneAudio`, idle status,
   and public `clip.mp4`/`voice.wav` through the read gate.
 - [x] Latest local engine restart is on the retained-storage-task fix, then warmed with
-  `rayuela.mp4` scene `0330bfcc-e5d1-4615-bcf6-95e57e164c6a`.
+  `rayuela.mp4` scene `162a9e89-3494-45d2-b28e-bf2a03d8c3cf` on the final thumbnail code.
+- [x] Final warm-up scene stores `clip.mp4`, `voice.wav`, and a POV `frame.jpg`; active Space
+  renders it as the newest cut with no desktop overflow.
 - [x] iOS simulator suite passes: 63 tests, 1 live-engine smoke skipped, 0 failures.
 - [x] Opt-in Swift live-engine smoke passes against `ws://127.0.0.1:8077/v1/session`
   with real `SceneAudio` in 4.4 s.

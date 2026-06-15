@@ -28,6 +28,7 @@ from small_cuts.engine.library import (  # noqa: E402
     RGB_MODE,
     SceneLibrary,
     _smooth_clip_frames,
+    _write_clip_mp4,
 )
 from small_cuts.title_card import derive_title  # noqa: E402
 from test_engine_session import Reader, make_envelope  # noqa: E402
@@ -154,6 +155,18 @@ def test_store_writes_clip_url_and_title_for_multiframe_scene(tmp_path):
         clip = client.get(stored["media"]["clip_url"])
         assert clip.status_code == 200
     assert clip.content == clip_path.read_bytes()
+
+
+def test_write_clip_mp4_can_disable_blends(tmp_path):
+    av = pytest.importorskip("av")
+    path = tmp_path / "clip.mp4"
+    frames = [Image.new("RGB", (64, 96), (i * 30, 20, 20)) for i in range(4)]
+
+    _write_clip_mp4(path, frames, fps=8, blend_steps=0)
+
+    with av.open(path) as container:
+        assert float(container.streams.video[0].average_rate) == pytest.approx(8)
+        assert sum(1 for _ in container.decode(video=0)) == 4
 
 
 def test_store_prefers_generated_title_when_present(tmp_path):

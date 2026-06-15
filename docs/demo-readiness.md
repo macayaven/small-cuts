@@ -1,6 +1,6 @@
 # Demo-Readiness Checklist
 
-Last updated: 2026-06-15 14:43 CEST.
+Last updated: 2026-06-15 15:30 CEST.
 
 ## Current Architecture Override - 2026-06-15
 
@@ -32,7 +32,8 @@ evidence for audit/history, but do not use it as the active deploy posture for t
      proven.
 - Judge verification upload target for the next implementation pass: the submitted Gradio Space
   must expose a finished-video upload path so judges can verify the app without glasses, iOS, or
-  local Tailnet access. Allow uploads up to 20 seconds and process them as completed cuts.
+  local Tailnet access. Allow uploads up to 60 seconds by default and process them as completed
+  cuts. This matches an instant-clip/reel-length posture while keeping the Modal path bounded.
 - Before deploying upload controls to the submitted org Space, prove this through the private Modal
   app `small-cuts-postcut`.
 - The final org Space should become a hybrid surface only after the Modal POC passes:
@@ -57,6 +58,37 @@ evidence for audit/history, but do not use it as the active deploy posture for t
   the iOS/engine real-time payload just to satisfy the Space upload requirement.
 - `cpu-basic` remains correct for the Space if Modal handles judge-upload inference. ZeroGPU is now
   only a contingency if Modal is deliberately ruled out after a measured failure.
+
+## Modal Post-Cut POC Evidence - 2026-06-15 15:30 CEST
+
+- [x] Modal CLI authenticated as profile `macayaven`.
+- [x] Stale Small Cuts Modal app `small-cuts-buffer-inference-poc` was stopped before creating the
+  new post-cut infra. The two interrupted `small-cuts-postcut` dev serve attempts are also stopped.
+- [x] Modal secret `small-cuts-postcut` exists in Modal environment `main` with keys `HF_TOKEN` and
+  `SMALL_CUTS_MODAL_API_TOKEN`; no token values were written to repo docs.
+- [x] Private Modal app `small-cuts-postcut` deployed at
+  `https://macayaven--small-cuts-postcut-api.modal.run`.
+- [x] Modal GPU policy encoded as H100 -> A100-80GB -> L40S, with
+  `min_containers=1`, `buffer_containers=1`, `max_containers=4`, and no same-container GPU
+  concurrency on the Qwen/Kokoro worker.
+- [x] Upload cap is now 60 seconds by default, with the Space-facing
+  `SMALL_CUTS_UPLOAD_MAX_SECONDS` remaining the deployment override. A 61-second synthetic MP4 was
+  rejected by the deployed Modal API with HTTP 422 and message
+  `video is too long; upload up to 60 seconds`.
+- [x] Local syntax/lint smoke passed:
+  `python -m py_compile modal_app/small_cuts_postcut.py`,
+  `uv run ruff check modal_app/small_cuts_postcut.py src/small_cuts/engine/library.py tests/test_engine_library.py`,
+  `uv run ruff format --check modal_app/small_cuts_postcut.py src/small_cuts/engine/library.py tests/test_engine_library.py`,
+  and
+  `uv run pytest tests/test_engine_library.py::test_write_clip_mp4_can_disable_blends -q`.
+- [x] Clean Modal dev serve smoke accepted `/private/tmp/small-cuts-codec-smoke.mp4` in 0.63 s,
+  completed with real Qwen/Kokoro output, and returned scene `modal-6da427b60106`:
+  title `The Green Screen`, model `Qwen/Qwen3-VL-8B-Instruct`, TTS `hexgrad/Kokoro-82M`.
+- [x] HF bucket artifact writing smoke passed: `relay/uploads/modal-6da427b60106/` contains exactly
+  `scene.json`, `media/frame.jpg`, `media/card.webp`, `media/clip.mp4`, and `media/voice.wav`.
+  Relay root was checked after cleanup and contains only `health.txt` plus `uploads/`.
+- [ ] Warm 5-60 second upload timings are still pending; only a 1-second cold smoke has been
+  measured so far.
 
 ## Judged Space
 

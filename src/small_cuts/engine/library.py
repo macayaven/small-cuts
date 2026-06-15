@@ -287,7 +287,12 @@ class SceneLibrary:
             self._db.close()
 
 
-def _write_clip_mp4(path: Path, frames: list[Image.Image], fps: int = CLIP_MP4_FPS) -> None:
+def _write_clip_mp4(
+    path: Path,
+    frames: list[Image.Image],
+    fps: int = CLIP_MP4_FPS,
+    blend_steps: int = CLIP_BLEND_STEPS,
+) -> None:
     """Render a small browser-playable MP4 from sampled POV frames."""
     import av
 
@@ -297,9 +302,7 @@ def _write_clip_mp4(path: Path, frames: list[Image.Image], fps: int = CLIP_MP4_F
     # shave one pixel if needed; capture frames are already downscaled upstream.
     width = max(H264_MIN_DIMENSION, width - (width % 2))
     height = max(H264_MIN_DIMENSION, height - (height % 2))
-    encode_frames = _smooth_clip_frames(
-        rgb_frames, blend_steps=CLIP_BLEND_STEPS, size=(width, height)
-    )
+    encode_frames = _smooth_clip_frames(rgb_frames, blend_steps=blend_steps, size=(width, height))
 
     container = av.open(str(path), "w")
     try:

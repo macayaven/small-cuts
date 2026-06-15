@@ -21,8 +21,8 @@ Time remaining at plan update: about 11 h 16 m.
 ## Decisions Locked By This Plan
 
 - Do a short physical glasses smoke before public library population. This confirms the non-negotiable glasses -> iPhone -> Mac engine -> in-ear narration path before spending time polishing public artifacts.
-- Do not expand the iOS real-time WebSocket payload to 20 seconds just for the Space. That would risk upload latency and the ear-first experience.
-- Implement the 20-second video upload as a hosted judge verification path. The Space accepts the
+- Do not expand the iOS real-time WebSocket payload to 60 seconds just for the Space. That would risk upload latency and the ear-first experience.
+- Implement the 60-second video upload as a hosted judge verification path. The Space accepts the
   completed clip, requires HF login for upload, sends the clip to Modal with a server-side bearer
   secret, and replays the Modal-generated scene with synced captions.
 - Prove the hosted inference path first with a private Modal POC endpoint. Do not deploy upload
@@ -46,12 +46,12 @@ Time remaining at plan update: about 11 h 16 m.
 - `app.py`: keep the submitted Space viewer/uploader lightweight on CPU Basic; do not load local model/TTS backends when Modal upload is configured.
 - `modal_app/small_cuts_postcut.py`: Modal FastAPI app + GPU worker for post-cut video inference, TTS, artifact writing, and job polling.
 - `src/small_cuts/modal_upload.py`: Space-side Modal client with bearer auth, file upload, polling, and result normalization.
-- `src/small_cuts/viewer.py`: hybrid relay + upload UI, HF login requirement for uploads, 20-second upload validation, uploaded-video stage replay, glasses-source badge rendering, upload pinning so relay polling does not overwrite the judge's uploaded result.
+- `src/small_cuts/viewer.py`: hybrid relay + upload UI, HF login requirement for uploads, 60-second upload validation, uploaded-video stage replay, glasses-source badge rendering, upload pinning so relay polling does not overwrite the judge's uploaded result.
 - `src/small_cuts/engine/library.py`: reusable MP4 writer options for upload/library clip generation.
 - `src/small_cuts/frames.py`: optional duration helper and bounded frame sampling tests.
 - `tests/test_modal_upload.py`: Modal client auth, polling, timeout, and scene normalization.
 - `tests/test_app_entrypoint.py`: Space backend selection stays viewer-only when Modal upload is configured.
-- `tests/test_viewer.py`: upload drawer visibility, HF login gate, 20-second cap, uploaded clip replay, relay polling not interrupting an uploaded result.
+- `tests/test_viewer.py`: upload drawer visibility, HF login gate, 60-second cap, uploaded clip replay, relay polling not interrupting an uploaded result.
 - `tests/test_engine_library.py`: MP4 writer FPS/blend behavior for longer clips.
 - `scripts/measure_modal_upload.py`: optional timing harness if browser-only timing is too manual.
 - `ios/SmallCuts/SmallCuts/Capture/CaptureCoordinator.swift`: restore explicit wearer captions/status for the real-time glasses path.
@@ -355,7 +355,7 @@ result_quality:
 Promotion threshold:
 
 - Cold run can be slow but must complete without crash.
-- Warm 5-20 second uploads target under 60 seconds; acceptable fallback is under 120 seconds if the
+- Warm 5-60 second uploads target under 60 seconds; acceptable fallback is under 120 seconds if the
   page clearly shows progress and the demo video covers the live experience.
 - Narration must be real Qwen output and audio must be real Kokoro output.
 
@@ -721,9 +721,9 @@ git commit -m "Show authenticated Modal upload in relay viewer"
 Add tests in `tests/test_viewer.py`:
 
 ```python
-def test_upload_video_cap_defaults_to_twenty_seconds(monkeypatch):
+def test_upload_video_cap_defaults_to_sixty_seconds(monkeypatch):
     monkeypatch.delenv("SMALL_CUTS_UPLOAD_MAX_SECONDS", raising=False)
-    assert viewer.upload_max_seconds() == 20.0
+    assert viewer.upload_max_seconds() == 60.0
 
 
 def test_modal_scene_can_drive_uploaded_stage():
@@ -767,11 +767,11 @@ UPLOAD_MAX_SECONDS_ENV = "SMALL_CUTS_UPLOAD_MAX_SECONDS"
 
 
 def upload_max_seconds() -> float:
-    raw = os.environ.get(UPLOAD_MAX_SECONDS_ENV, "20")
+    raw = os.environ.get(UPLOAD_MAX_SECONDS_ENV, "60")
     try:
         return max(1.0, float(raw))
     except ValueError:
-        return 20.0
+        return 60.0
 
 
 def _video_duration_s(video_path: str | Path) -> float | None:
@@ -802,7 +802,7 @@ def _write_clip_mp4(
 ```
 
 Existing callers keep the default blend. Modal and upload paths pass `blend_steps=0` so a sampled
-20-second upload does not double its apparent duration.
+60-second upload does not double its apparent duration.
 
 - [ ] **Step 4: Add the Modal upload handler**
 
@@ -1110,10 +1110,10 @@ uv run --no-sync python app.py
 Browser smoke:
 
 - Sign in with Hugging Face.
-- Upload a 5-20 second test clip.
+- Upload a 5-60 second test clip.
 - Confirm generated stage uses `<video>`, not only a still.
 - Confirm title, voice, captions, and progress render.
-- Confirm a >20 second clip is rejected with a clear message.
+- Confirm a >60 second clip is rejected with a clear message.
 - Confirm anonymous viewing still works in a separate/private browser session.
 
 - [ ] **Step 5: Deploy to the org Space only after local tests and Modal POC pass**
@@ -1139,7 +1139,7 @@ Set runtime variables:
 hf spaces variables add build-small-hackathon/small-cuts-live -e SMALL_CUTS_RELAY_BUCKET=build-small-hackathon/small-cuts-scenes
 hf spaces variables add build-small-hackathon/small-cuts-live -e SMALL_CUTS_RELAY_PREFIX=relay
 hf spaces variables add build-small-hackathon/small-cuts-live -e SMALL_CUTS_ENABLE_UPLOAD_SANDBOX=1
-hf spaces variables add build-small-hackathon/small-cuts-live -e SMALL_CUTS_UPLOAD_MAX_SECONDS=20
+hf spaces variables add build-small-hackathon/small-cuts-live -e SMALL_CUTS_UPLOAD_MAX_SECONDS=60
 hf spaces variables add build-small-hackathon/small-cuts-live -e SMALL_CUTS_MODAL_API_URL="$SMALL_CUTS_MODAL_API_URL"
 hf spaces secrets add build-small-hackathon/small-cuts-live -s SMALL_CUTS_MODAL_API_TOKEN="$SMALL_CUTS_MODAL_API_TOKEN"
 hf spaces variables delete build-small-hackathon/small-cuts-live SMALL_CUTS_ENGINE_URL
@@ -1194,13 +1194,13 @@ Read first:
 - docs/hackathon-rules.md
 
 Goal:
-Implement the hybrid final submission plan. Preserve the non-negotiable private glasses-to-ear path. Add a judge-verifiable finished-video upload path in the submitted Gradio Space, up to 20 seconds, with real title/narration/TTS and video replay through Modal. Keep relay/library public viewing via HF bucket. Do not publish or deploy to the Space until local tests and local browser smoke pass.
+Implement the hybrid final submission plan. Preserve the non-negotiable private glasses-to-ear path. Add a judge-verifiable finished-video upload path in the submitted Gradio Space, up to 60 seconds by default, with real title/narration/TTS and video replay through Modal. Keep relay/library public viewing via HF bucket. Do not publish or deploy to the Space until local tests and local browser smoke pass.
 
 Important constraints:
 - The Space upload path has no glasses, no iOS, and no real-time promise.
 - Prove the upload path first through the private Modal app `small-cuts-postcut`.
 - Promote the upload path into `build-small-hackathon/small-cuts-live` only if Modal cold/warm timing, bucket artifact writing, and playback smoke pass.
-- The glasses/iOS path must restore real-time wearer captions and must not be burdened with a 20-second video payload.
+- The glasses/iOS path must restore real-time wearer captions and must not be burdened with a 60-second video payload.
 - The wearer UI remains `Action!` and `Cut!` only. Do not add a third publish button.
 - Glasses-origin public library items are published from local already-generated scene artifacts after `Cut!`; they do not reach Modal.
 - Glasses-origin clips must carry source metadata and show a small glasses icon in the top-left of the Space stage/library tile.
@@ -1213,7 +1213,7 @@ Preferred order:
 1. Modal post-cut POC setup and timing smoke.
 2. Space runtime and Modal client tests/implementation.
 3. Relay-mode authenticated upload drawer and upload pinning.
-4. 20-second upload validation and Modal scene replay.
+4. 60-second upload validation and Modal scene replay.
 5. iOS wearer caption restoration.
 6. Local gates.
 7. Short physical glasses smoke.
@@ -1226,6 +1226,6 @@ Commit after each task-sized verified change with short messages.
 
 ## Self-Review
 
-- Spec coverage: Modal POC, measured promotion gate, glasses smoke first, Space upload as judge verification, 20-second upload, source-badged glasses library clips, real-time iOS captions, no iOS/glasses for upload, no third wearer-side publish button, and no relay-only mock upload are covered.
+- Spec coverage: Modal POC, measured promotion gate, glasses smoke first, Space upload as judge verification, 60-second upload, source-badged glasses library clips, real-time iOS captions, no iOS/glasses for upload, no third wearer-side publish button, and no relay-only mock upload are covered.
 - Placeholder scan: no task depends on a vague "add tests" or "handle errors"; every task names files and expected commands.
 - Type consistency: `upload_scene` is carried through the existing engine UI state dict; `clip_src` and `duration` match `format_stage()` keys already used by the stage renderer.

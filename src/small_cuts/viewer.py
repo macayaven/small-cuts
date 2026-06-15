@@ -51,7 +51,7 @@ from .hf_relay import (
 )
 from .modal_upload import ModalUploadClient, ModalUploadError
 from .observability import capture_exception
-from .styles import DEFAULT_STYLE_KEY, MAX_SCENE_HINT_CHARS, STYLES
+from .styles import DEFAULT_STYLE_KEY, STYLES
 from .title_card import derive_title
 from .tts import speak
 from .ui import THEME as THEME  # re-export: app.py launches the viewer with the Off-Brand theme
@@ -62,6 +62,9 @@ MODAL_API_URL_ENV = "SMALL_CUTS_MODAL_API_URL"
 MODAL_API_TOKEN_ENV = "SMALL_CUTS_MODAL_API_TOKEN"
 UPLOAD_SANDBOX_ENV = "SMALL_CUTS_ENABLE_UPLOAD_SANDBOX"
 UPLOAD_MAX_SECONDS_ENV = "SMALL_CUTS_UPLOAD_MAX_SECONDS"
+UPLOAD_MAX_BYTES = 80 * 1024 * 1024
+UPLOAD_FORMAT_LABEL = "MP4, MOV, WebM, M4V"
+UPLOAD_ALLOWED_SUFFIXES = {".mp4", ".mov", ".webm", ".m4v"}
 # The narrator-as-chat feed is dropped from the default layout (single centered column);
 # flip this on to revive it (a future "see transcription" surface for non-live clips).
 SHOW_FEED = os.environ.get("SMALL_CUTS_SHOW_FEED", "").strip().lower() not in (
@@ -227,6 +230,17 @@ footer { display: none !important; }
 /* --- Review-2 relayout: single centered column, control pill, masked icons --- */
 .sc-topbar { display: flex; align-items: flex-start; gap: 12px; }
 .sc-topbar .sc-brand { flex: 1 1 auto; }
+.sc-upload-auth { flex: 0 0 auto !important; width: auto !important; min-width: 0 !important;
+  display: inline-flex !important; align-items: center !important;
+  justify-content: flex-end !important;
+  gap: 8px !important; align-self: flex-start !important; margin-left: auto !important; }
+.sc-upload-signin { flex: 0 0 auto !important; width: auto !important; min-width: 0 !important; }
+.sc-upload-signin button, .sc-upload-signin a, .sc-upload-signin .lg {
+  width: auto !important; min-width: 0 !important; max-width: max-content !important;
+  height: 30px !important; padding: 0 10px !important; border: 1px solid #2A292F !important;
+  border-radius: 999px !important; background: transparent !important; color: #E8E4D8 !important;
+  box-shadow: none !important; font-size: .72rem !important; letter-spacing: 0 !important;
+  white-space: nowrap !important; }
 .sc-header { justify-content: center; text-align: center; }
 .sc-progress { max-width: 560px; height: 4px; margin: 12px auto 2px; border-radius: 3px;
   background: #2A292F; overflow: hidden; }
@@ -251,6 +265,35 @@ footer { display: none !important; }
   -webkit-mask-size: 24px; mask-size: 24px; background-color: #8a8894 !important; }
 .sc-ico-like-filled.sc-icbtn, .sc-ico-flag-filled.sc-icbtn {
   background-color: #D4AF37 !important; }
+#sc-upload-popover { position: fixed !important; top: 52px; right: 28px; z-index: 900;
+  width: min(338px, calc(100vw - 32px)); min-height: 0 !important; height: auto !important;
+  overflow: visible !important; padding: 0 !important; background: transparent !important;
+  border: none !important; box-shadow: none !important; }
+#sc-upload-popover > #sc-upload-popover { position: static !important; width: 100% !important;
+  min-height: 0 !important; height: auto !important; padding: 0 !important;
+  background: transparent !important; border: none !important; box-shadow: none !important;
+  overflow: visible !important; }
+#sc-upload-popover > .styler, #sc-upload-popover > #sc-upload-popover > .styler {
+  padding: 14px !important; background: rgba(17,17,22,.97) !important;
+  border: 1px solid #2A292F !important; border-radius: 8px !important;
+  box-shadow: 0 18px 50px rgba(0,0,0,.38) !important; backdrop-filter: blur(10px);
+  overflow: visible !important; }
+#sc-upload-popover .block { background: transparent !important; border: none !important;
+  box-shadow: none !important; }
+.sc-upload-help-title { font-family: 'Spectral', serif; color: #E8E4D8; font-size: 1rem;
+  line-height: 1.2; margin-bottom: 5px; }
+.sc-upload-help-meta { color: #8a8894; font-family: 'IBM Plex Mono', monospace;
+  font-size: .68rem; line-height: 1.5; text-transform: uppercase; letter-spacing: .08em; }
+.sc-upload-video { margin: 10px 0 8px !important; }
+#sc-upload-popover button { width: 100% !important; min-height: 26px !important; }
+.sc-upload-status { min-height: 22px; display: flex; align-items: center; gap: 8px;
+  color: #8a8894; font-size: .78rem; line-height: 1.3; }
+.sc-upload-status.running { color: #E8E4D8; }
+.sc-upload-status.complete { color: #D4AF37; }
+.sc-upload-spinner { display: inline-block; width: 14px; height: 14px; border-radius: 50%;
+  border: 2px solid rgba(212,175,55,.28); border-top-color: #D4AF37;
+  animation: sc-spin .75s linear infinite; }
+@keyframes sc-spin { to { transform: rotate(360deg); } }
 /* custom file-backed player (Review-3): the master clock is a hidden <audio id="sc-voice"> in
    .sc-audio-host. gr.Audio can't serve as the clock — it plays via wavesurfer, leaving its own
    <audio> element empty/unreadable. The pill's play/pause + volume drive #sc-voice via JS. */
@@ -354,6 +397,38 @@ def upload_max_seconds() -> float:
         return 60.0
 
 
+def upload_max_mb() -> int:
+    return UPLOAD_MAX_BYTES // (1024 * 1024)
+
+
+def _video_size_bytes(video_path: str | Path) -> int | None:
+    try:
+        return Path(video_path).stat().st_size
+    except OSError:
+        return None
+
+
+def render_upload_panel_help_html(max_seconds: float | None = None) -> str:
+    seconds = max_seconds if max_seconds is not None else upload_max_seconds()
+    return (
+        '<div class="sc-upload-help">'
+        '<div class="sc-upload-help-title">Drop or browse your video</div>'
+        '<div class="sc-upload-help-meta">'
+        f"Up to {seconds:.0f} seconds · {upload_max_mb()} MB max · {UPLOAD_FORMAT_LABEL}"
+        "</div></div>"
+    )
+
+
+def render_upload_status_html(state: str = "idle") -> str:
+    if state == "running":
+        body = '<span class="sc-upload-spinner" aria-hidden="true"></span>Generating your cut...'
+    elif state == "complete":
+        body = "Cut ready."
+    else:
+        body = ""
+    return f'<div class="sc-upload-status {html.escape(state, quote=True)}">{body}</div>'
+
+
 def _upload_username(profile_or_state: Any) -> str | None:
     if not profile_or_state:
         return None
@@ -380,6 +455,16 @@ def _upload_username(profile_or_state: Any) -> str | None:
 def _upload_auth_state(profile: gr.OAuthProfile | None) -> dict[str, str]:
     username = _upload_username(profile)
     return {"username": username} if username else {}
+
+
+def _upload_auth_ui(profile: gr.OAuthProfile | None):
+    auth_state = _upload_auth_state(profile)
+    signed_in = bool(auth_state)
+    return (
+        auth_state,
+        gr.update(visible=not signed_in),
+        gr.update(visible=signed_in),
+    )
 
 
 def _require_upload_profile(profile: gr.OAuthProfile | None) -> str:
@@ -938,6 +1023,18 @@ def _submit_modal_upload(
     if not video_path:
         return _modal_upload_warning_response("Upload a video clip first.", state)
 
+    suffix = Path(video_path).suffix.lower()
+    if suffix and suffix not in UPLOAD_ALLOWED_SUFFIXES:
+        return _modal_upload_warning_response(
+            f"Please upload one of: {UPLOAD_FORMAT_LABEL}.", state
+        )
+
+    size_bytes = _video_size_bytes(video_path)
+    if size_bytes is not None and size_bytes > UPLOAD_MAX_BYTES:
+        return _modal_upload_warning_response(
+            f"Please upload a clip up to {upload_max_mb()} MB.", state
+        )
+
     duration = _video_duration_s(video_path)
     max_seconds = upload_max_seconds()
     if duration is not None and duration > max_seconds + 0.25:
@@ -1347,8 +1444,19 @@ def build_viewer_app() -> gr.Blocks:
                 padding=False,
             )
             if upload_sandbox:
-                gr.LoginButton("Sign in", logout_value="Signed in ({})", size="sm")
-            if upload_enabled:
+                with gr.Row(elem_classes="sc-upload-auth"):
+                    upload_login = gr.LoginButton(
+                        "🤗 Sign in to upload",
+                        logout_value="Signed in ({})",
+                        size="sm",
+                        elem_classes=["sc-upload-signin"],
+                    )
+                    upload_btn = gr.Button(
+                        "",
+                        visible=False,
+                        elem_classes=["sc-icbtn", "sc-upload", "sc-ico-upload"],
+                    )
+            elif upload_enabled:
                 upload_btn = gr.Button("", elem_classes=["sc-icbtn", "sc-upload", "sc-ico-upload"])
         # Theater layout (Review-3): stage + controls on the left, the library as a side rail on
         # the right. Fills the width and keeps everything in one viewport (no main scroll); the
@@ -1417,23 +1525,28 @@ def build_viewer_app() -> gr.Blocks:
                     visible=SHOW_FEED,
                 )
                 if upload_enabled:
-                    # The upload sandbox opens on demand from the top-right icon — off the main
-                    # view, video-only (the product narrates video, not stills).
+                    # The upload sandbox opens on demand from the top-right icon as a compact
+                    # overlay, video-only (the product narrates video, not stills).
                     image_none = gr.State(None)
-                    with gr.Accordion(
-                        "▸ Try it — narrate your own video",
-                        open=False,
-                        visible=False,
-                        elem_classes="sc-tryit",
-                    ) as tryit_panel:
-                        drop_video = gr.Video(sources=["upload"], show_label=False, height=140)
-                        hint = gr.Textbox(
-                            show_label=False,
-                            container=False,
-                            max_length=MAX_SCENE_HINT_CHARS,
-                            placeholder="whisper context to the narrator (optional)",
+                    hint = gr.State("")
+                    with gr.Group(visible=False, elem_id="sc-upload-popover") as upload_panel:
+                        gr.HTML(
+                            render_upload_panel_help_html(),
+                            elem_classes="sc-plain",
+                            padding=False,
                         )
-                        go = gr.Button("🎬 Narrate this video", variant="primary", size="sm")
+                        drop_video = gr.Video(
+                            sources=["upload"],
+                            show_label=False,
+                            height=128,
+                            elem_classes="sc-upload-video",
+                        )
+                        upload_status = gr.HTML(
+                            render_upload_status_html(),
+                            elem_classes="sc-plain",
+                            padding=False,
+                        )
+                        go = gr.Button("Narrate", variant="primary", size="sm")
             with gr.Column(elem_classes="sc-rail-col"):
                 gr.HTML(
                     f'<div class="sc-rail-head">{RAIL_MARK_SVG}<span>Library</span></div>',
@@ -1464,7 +1577,22 @@ def build_viewer_app() -> gr.Blocks:
             else None
         )
         if upload_enabled:
-            upload_btn.click(lambda: gr.update(open=True, visible=True), outputs=[tryit_panel])
+
+            def _show_upload_panel():
+                return (
+                    gr.update(visible=True),
+                    render_upload_status_html(),
+                    gr.update(interactive=True),
+                )
+
+            upload_btn.click(
+                _show_upload_panel,
+                outputs=[upload_panel, upload_status, go],
+                queue=False,
+            )
+
+            def _upload_pending_ui():
+                return render_upload_status_html("running"), gr.update(interactive=False)
 
         if client is not None:
             engine = client  # narrow the type for the closures below
@@ -1479,7 +1607,7 @@ def build_viewer_app() -> gr.Blocks:
                     auth_state,
                     profile: gr.OAuthProfile | None,
                 ):
-                    return _submit_modal_upload(
+                    result = _submit_modal_upload(
                         video_path,
                         style_key,
                         scene_hint,
@@ -1488,8 +1616,18 @@ def build_viewer_app() -> gr.Blocks:
                         engine,
                         upload_auth_state=auth_state,
                     )
+                    status = (
+                        render_upload_status_html("complete")
+                        if not _is_gradio_update(result[0])
+                        else render_upload_status_html()
+                    )
+                    return (*result, status, gr.update(interactive=True))
 
                 go.click(
+                    _upload_pending_ui,
+                    outputs=[upload_status, go],
+                    queue=False,
+                ).then(
                     _go_modal_upload_ui,
                     inputs=[drop_video, style, hint, scenes_state, upload_auth_state],
                     outputs=[
@@ -1500,6 +1638,8 @@ def build_viewer_app() -> gr.Blocks:
                         shelf,
                         scenes_state,
                         visibility,
+                        upload_status,
+                        go,
                     ],
                     concurrency_limit=1,
                     concurrency_id=UPLOAD_CONCURRENCY_ID,
@@ -1786,7 +1926,13 @@ def build_viewer_app() -> gr.Blocks:
                 like_update, report_update = _scene_action_updates(
                     scene_id, liked_ids, reported_ids
                 )
-                return (*outputs, like_update, report_update)
+                return (
+                    *outputs,
+                    like_update,
+                    report_update,
+                    render_upload_status_html("complete"),
+                    gr.update(interactive=True),
+                )
 
             def _like_current(scenes, pinned_id, liked_ids, reported_ids):
                 scene_id = _scene_id(_current_scene(scenes or [], pinned_id))
@@ -1834,7 +1980,15 @@ def build_viewer_app() -> gr.Blocks:
             ]
             # Narration fires only on the explicit button — binding drop_video.change too
             # would double-narrate (and double the TTS work) the moment a file lands.
-            go.click(_go_live_ui, inputs=go_inputs, outputs=go_outputs)
+            go.click(
+                _upload_pending_ui,
+                outputs=[upload_status, go],
+                queue=False,
+            ).then(
+                _go_live_ui,
+                inputs=go_inputs,
+                outputs=[*go_outputs, upload_status, go],
+            )
             like_btn.click(
                 _like_current,
                 inputs=[scenes_state, pinned_state, liked_state, reported_state],
@@ -1872,7 +2026,7 @@ def build_viewer_app() -> gr.Blocks:
             )
 
         if upload_sandbox:
-            demo.load(_upload_auth_state, outputs=[upload_auth_state])
+            demo.load(_upload_auth_ui, outputs=[upload_auth_state, upload_login, upload_btn])
         demo.load(js=PLAYBACK_SYNC_JS)
     demo.queue(max_size=UPLOAD_QUEUE_MAX_SIZE, default_concurrency_limit=1)
     return demo

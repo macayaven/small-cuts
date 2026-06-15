@@ -18,7 +18,7 @@ class ModalUploadClient:
     token: str
     http_client: httpx.Client | None = None
     poll_interval_s: float = 1.0
-    timeout_s: float = 180.0
+    timeout_s: float = 900.0
 
     def submit_video(
         self,

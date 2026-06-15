@@ -6,6 +6,10 @@ import pytest
 from small_cuts.modal_upload import ModalUploadClient, ModalUploadError
 
 
+def test_modal_client_default_timeout_matches_worker_budget():
+    assert ModalUploadClient("https://modal.example", "secret").timeout_s == 900.0
+
+
 def test_modal_client_submits_and_polls_result(tmp_path):
     video = tmp_path / "clip.mp4"
     video.write_bytes(b"fake")

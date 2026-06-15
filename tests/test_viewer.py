@@ -201,6 +201,49 @@ def test_submit_modal_upload_rejects_over_duration(monkeypatch):
     assert outputs[5]["scenes"] == []
 
 
+def test_submit_modal_upload_rejects_oversized_file(monkeypatch, tmp_path):
+    clip = tmp_path / "clip.mp4"
+    clip.write_bytes(b"x")
+    monkeypatch.setattr(viewer, "_video_size_bytes", lambda _path: viewer.UPLOAD_MAX_BYTES + 1)
+    warnings = []
+
+    monkeypatch.setattr(viewer.gr, "Warning", lambda message: warnings.append(message))
+    monkeypatch.setattr(viewer, "_modal_upload_client", lambda: pytest.fail("modal called"))
+
+    outputs = viewer._submit_modal_upload(
+        str(clip),
+        "deadpan",
+        "",
+        viewer._pack_engine_ui_state([], None, None, None),
+        SimpleNamespace(name="Alice Example", username="alice"),
+        fake_client(lambda _request: httpx.Response(200, json={"scenes": []})),
+    )
+
+    assert warnings == ["Please upload a clip up to 80 MB."]
+    assert outputs[5]["scenes"] == []
+
+
+def test_submit_modal_upload_rejects_unsupported_extension(monkeypatch, tmp_path):
+    clip = tmp_path / "clip.avi"
+    clip.write_bytes(b"x")
+    warnings = []
+
+    monkeypatch.setattr(viewer.gr, "Warning", lambda message: warnings.append(message))
+    monkeypatch.setattr(viewer, "_modal_upload_client", lambda: pytest.fail("modal called"))
+
+    outputs = viewer._submit_modal_upload(
+        str(clip),
+        "deadpan",
+        "",
+        viewer._pack_engine_ui_state([], None, None, None),
+        SimpleNamespace(name="Alice Example", username="alice"),
+        fake_client(lambda _request: httpx.Response(200, json={"scenes": []})),
+    )
+
+    assert warnings == ["Please upload one of: MP4, MOV, WebM, M4V."]
+    assert outputs[5]["scenes"] == []
+
+
 def test_submit_modal_upload_without_video_warns_instead_of_raising(monkeypatch):
     warnings = []
 
@@ -409,6 +452,88 @@ def test_upload_sandbox_bounds_queue_and_upload_concurrency(monkeypatch):
     assert target_event == "relay_scene"
     assert components_by_id[target_id]["type"] == "html"
     assert components_by_id[target_id]["props"]["elem_classes"] == ["sc-relay-events"]
+
+
+def test_upload_sandbox_uses_topbar_popover_not_stage_accordion(monkeypatch):
+    monkeypatch.setenv(viewer.ENGINE_URL_ENV, "http://127.0.0.1:9")
+    monkeypatch.setenv(viewer.UPLOAD_SANDBOX_ENV, "1")
+    monkeypatch.setenv(viewer.MODAL_API_URL_ENV, "https://example.modal.run")
+    mock_gradio_oauth(monkeypatch)
+
+    app = viewer.build_viewer_app()
+    components = app.config["components"]
+
+    assert not [
+        component
+        for component in components
+        if component["type"] == "accordion"
+        and component["props"].get("elem_classes") == ["sc-tryit"]
+    ]
+    assert [
+        component
+        for component in components
+        if component["props"].get("elem_id") == "sc-upload-popover"
+    ]
+    helper = "\n".join(
+        str(component["props"].get("value", ""))
+        for component in components
+        if component["type"] == "html"
+    )
+    assert "Drop or browse your video" in helper
+    assert "Up to 60 seconds" in helper
+    assert "80 MB" in helper
+    assert "MP4, MOV, WebM, M4V" in helper
+
+
+def test_upload_sandbox_signin_is_compact_and_upload_gated(monkeypatch):
+    monkeypatch.setenv(viewer.ENGINE_URL_ENV, "http://127.0.0.1:9")
+    monkeypatch.setenv(viewer.UPLOAD_SANDBOX_ENV, "1")
+    monkeypatch.setenv(viewer.MODAL_API_URL_ENV, "https://example.modal.run")
+    mock_gradio_oauth(monkeypatch)
+
+    app = viewer.build_viewer_app()
+    components = app.config["components"]
+
+    login = [
+        component
+        for component in components
+        if component["type"] == "button"
+        and component["props"].get("elem_classes") == ["sc-upload-signin"]
+    ]
+    assert len(login) == 1
+    assert login[0]["props"]["value"] == "🤗 Sign in to upload"
+
+    upload_buttons = [
+        component
+        for component in components
+        if component["type"] == "button"
+        and "sc-upload" in component["props"].get("elem_classes", [])
+    ]
+    assert len(upload_buttons) == 1
+    assert upload_buttons[0]["props"]["visible"] is False
+
+
+def test_upload_auth_ui_swaps_signin_for_upload_icon():
+    assert viewer._upload_auth_ui(None) == (
+        {},
+        gr.update(visible=True),
+        gr.update(visible=False),
+    )
+
+    state, signin_update, upload_update = viewer._upload_auth_ui(
+        SimpleNamespace(name="Alice Example", username="alice")
+    )
+
+    assert state == {"username": "alice"}
+    assert signin_update == gr.update(visible=False)
+    assert upload_update == gr.update(visible=True)
+
+
+def test_upload_status_html_has_pending_spinner():
+    html = viewer.render_upload_status_html("running")
+
+    assert "sc-upload-spinner" in html
+    assert "Generating your cut" in html
 
 
 def test_relay_event_bridge_listens_for_hook_events():

@@ -83,6 +83,11 @@ gh pr merge --auto --squash
   polling, uploads, repo creation, variable/secrets changes, or smoke requests in a loop. Switch to
   local-only and direct Modal verification, then wait for explicit human approval for one specific
   next HF Space action.
+- **Current personal dev Space:** `macayaven/small-cuts-dev` is private, uses paid hardware above
+  CPU Basic, and has Dev Mode enabled for careful interactive work from Cursor/VS Code. Treat it as
+  the only active personal Space target, but do not deploy, restart, poll, mutate variables/secrets,
+  open Dev Mode sessions, or run smoke traffic there unless Carlos explicitly approves one specific
+  HF Space action.
 - **Gradio 6**: `theme=` is a `launch()` kwarg, **not** `gr.Blocks()`.
 - **ruff isort gotcha**: not-yet-existing first-party modules classify as third-party (I001) in
   pre-implementation test files — write imports in post-implementation order, ignore the early fail.

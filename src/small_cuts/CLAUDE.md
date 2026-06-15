@@ -65,6 +65,10 @@ the canonical command list, and the architecture live in the **root `CLAUDE.md`*
   immediately. Do not keep polling, restarting, uploading, changing variables/secrets, creating
   replacement Spaces, or fetching logs. Verify locally or directly against Modal until Carlos
   approves one explicit next HF Space action.
+- Current personal dev Space: `macayaven/small-cuts-dev`. It is private, on paid hardware above CPU
+  Basic, and has Dev Mode enabled for careful interactive work from Cursor/VS Code. Do not deploy,
+  restart, poll, mutate variables/secrets, open Dev Mode sessions, or smoke-test it without one
+  explicit approval from Carlos for that exact HF Space action.
 - In relay or engine viewer-only mode, the Space must not warm Qwen/Kokoro and should stay on
   `cpu-basic`; ZeroGPU is only a fallback if Modal is ruled out and the Space itself performs
   narration/TTS.

@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import os
 import shutil
+import sys
 import tempfile
 import time
 from pathlib import Path
@@ -129,13 +130,18 @@ def notify_relay_hook(
         return
     hook_token = (args.hook_token or "").strip()
     headers = {"Authorization": f"Bearer {hook_token}"} if hook_token else {}
-    response = httpx.post(
-        hook_url,
-        headers=headers,
-        json={"bucket": bucket, "prefix": prefix, "scene_count": snapshot.scene_count},
-        timeout=HOOK_TIMEOUT_S,
-    )
-    response.raise_for_status()
+    try:
+        response = httpx.post(
+            hook_url,
+            headers=headers,
+            json={"bucket": bucket, "prefix": prefix, "scene_count": snapshot.scene_count},
+            timeout=HOOK_TIMEOUT_S,
+        )
+        response.raise_for_status()
+    except Exception as exc:
+        capture_exception(exc)
+        print(f"relay hook notify failed (non-fatal): {exc!r}", file=sys.stderr, flush=True)
+        return
     print(f"notified relay hook {hook_url}")
 
 
@@ -145,9 +151,13 @@ def main() -> None:
     while True:
         try:
             publish_once(args)
+        except SystemExit:
+            raise
         except Exception as exc:
             capture_exception(exc)
-            raise
+            print(f"publish_hf_relay: {exc!r}", file=sys.stderr, flush=True)
+            if not args.watch:
+                raise
         if not args.watch:
             return
         time.sleep(args.interval)

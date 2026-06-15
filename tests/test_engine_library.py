@@ -259,6 +259,24 @@ def test_clip_smoothing_inserts_single_micro_dissolve_between_frames():
     assert frames[1].getpixel(sample_pixel) == midpoint
 
 
+def test_engine_app_lifespan_closes_library():
+    class CloseableLibrary:
+        def __init__(self):
+            self.closed = False
+
+        def publish_event(self, payload):
+            pass
+
+        def close(self):
+            self.closed = True
+
+    lib = CloseableLibrary()
+    with TestClient(build_engine_app(library=lib)):
+        assert not lib.closed
+
+    assert lib.closed
+
+
 # -- list + filters ---------------------------------------------------------------
 
 

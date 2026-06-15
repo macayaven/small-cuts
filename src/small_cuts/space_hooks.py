@@ -21,6 +21,7 @@ from fastapi.responses import StreamingResponse
 RELAY_HOOK_TOKEN_ENV = "SMALL_CUTS_RELAY_HOOK_TOKEN"
 RELAY_HOOK_PATH = "/small-cuts/hooks/relay-scene"
 RELAY_EVENTS_PATH = "/small-cuts/events"
+SSE_HEARTBEAT_S = 15.0
 
 
 class RelayEventHub:
@@ -69,23 +70,35 @@ def install_relay_hooks(app: FastAPI, *, hub: RelayEventHub | None = None) -> Re
 
     @app.get(RELAY_EVENTS_PATH)
     async def relay_events(request: Request) -> StreamingResponse:
-        async def stream() -> AsyncIterator[str]:
-            queue = event_hub.subscribe()
-            try:
-                yield _sse("ready", {"status": "connected"})
-                while not await request.is_disconnected():
-                    event = await queue.get()
-                    yield _sse("relay-scene", event)
-            finally:
-                event_hub.unsubscribe(queue)
-
         return StreamingResponse(
-            stream(),
+            relay_event_stream(event_hub, request, heartbeat_s=SSE_HEARTBEAT_S),
             media_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
 
     return event_hub
+
+
+async def relay_event_stream(
+    event_hub: RelayEventHub,
+    request: Request,
+    *,
+    heartbeat_s: float = SSE_HEARTBEAT_S,
+) -> AsyncIterator[str]:
+    queue = event_hub.subscribe()
+    try:
+        yield _sse("ready", {"status": "connected"})
+        while True:
+            if await request.is_disconnected():
+                break
+            try:
+                event = await asyncio.wait_for(queue.get(), timeout=heartbeat_s)
+            except asyncio.TimeoutError:
+                yield ": ping\n\n"
+                continue
+            yield _sse("relay-scene", event)
+    finally:
+        event_hub.unsubscribe(queue)
 
 
 def _require_hook_authorization(authorization: str | None) -> None:

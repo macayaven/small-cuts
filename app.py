@@ -1,11 +1,10 @@
 """Hugging Face Space entrypoint for Small Cuts.
 
-Local dev keeps the lazy/mock defaults; on a Space this module wires the real
-backends eagerly so visitors never pay the model-load cost per click:
+Local dev keeps the lazy/mock defaults. On a Space this module refuses unsafe
+CPU local inference and never lets startup failures crash-loop the container:
 
 - ``import spaces`` happens before anything touches torch (ZeroGPU hijack).
-- The narrator loads at module scope (ZeroGPU packs the weights at startup).
-- The narration hot path runs under ``@spaces.GPU``.
+- The narrator loads lazily inside the ``@spaces.GPU`` event handler.
 - TTS runs inside @spaces.GPU workers too (kokoro's torch use poisons
   worker forks if it ever runs in the main process).
 """
@@ -15,6 +14,7 @@ import sys
 import warnings
 from pathlib import Path
 
+import gradio as gr
 from starlette.exceptions import StarletteDeprecationWarning
 
 ROOT = Path(__file__).resolve().parent
@@ -47,26 +47,55 @@ if ON_SPACE and NEEDS_LOCAL_INFERENCE:
     os.environ.setdefault("SMALL_CUTS_BACKEND", "transformers")
     os.environ.setdefault("SMALL_CUTS_TTS_BACKEND", "kokoro")
 
-from small_cuts import narrator  # noqa: E402
-from small_cuts.observability import init_sentry  # noqa: E402
+from small_cuts.observability import capture_exception, init_sentry  # noqa: E402
 from small_cuts.space_hooks import install_relay_hooks  # noqa: E402
 from small_cuts.viewer import THEME, build_viewer_app  # noqa: E402
 
 init_sentry()
 
-# Eager load: download + pack weights at startup, not on the first click.
-# The @spaces.GPU mark lives on the viewer's go-live handler (via ui._gpu;
-# ZeroGPU's startup scan only finds GPU functions on what Gradio binds).
-if NEEDS_LOCAL_INFERENCE:
-    _backend = narrator.get_backend()
-    if spaces is not None and _backend.name == "transformers":
-        _backend._load()
+STARTUP_ERROR: str | None = None
 
-# In engine mode the Space is only a public reader for a private home-node engine, so it must not
-# warm local model weights or expose upload narration controls. No main-process TTS pre-warm:
-# kokoro's torch use must stay inside @spaces.GPU workers.
-demo = build_viewer_app()
-install_relay_hooks(demo.app)
+
+def _allow_cpu_inference() -> bool:
+    return os.environ.get("SMALL_CUTS_ALLOW_CPU_INFERENCE", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+
+
+def _validate_startup_mode() -> None:
+    if ON_SPACE and NEEDS_LOCAL_INFERENCE and spaces is None and not _allow_cpu_inference():
+        raise RuntimeError(
+            "refusing local inference on a Space without ZeroGPU; configure relay, engine, "
+            "or Modal upload mode, or set SMALL_CUTS_ALLOW_CPU_INFERENCE=1 explicitly"
+        )
+
+
+def _degraded_app(message: str) -> gr.Blocks:
+    with gr.Blocks(title="Small Cuts") as degraded:
+        gr.Markdown(
+            f"# Small Cuts is temporarily unavailable\n\nStartup configuration failed: `{message}`"
+        )
+    return degraded
+
+
+def _build_demo() -> gr.Blocks:
+    _validate_startup_mode()
+    # In engine/relay/upload modes the Space is a public reader and upload front door, so it must
+    # not warm local model weights. In local-inference mode, ZeroGPU loads lazily inside the
+    # Gradio handler decorated with @spaces.GPU.
+    app = build_viewer_app()
+    install_relay_hooks(app.app)
+    return app
+
+
+try:
+    demo = _build_demo()
+except Exception as exc:
+    capture_exception(exc)
+    STARTUP_ERROR = str(exc)
+    demo = _degraded_app(STARTUP_ERROR)
 
 if __name__ == "__main__":
     demo.launch(theme=THEME)

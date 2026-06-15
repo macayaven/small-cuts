@@ -9,7 +9,10 @@ from __future__ import annotations
 
 import copy
 import json
+import os
 import tempfile
+import threading
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -28,6 +31,7 @@ DEFAULT_SCENE_LIMIT = 60
 MEDIA_KEYS = ("frame_url", "card_url", "audio_url", "clip_url")
 PUBLISH_VISIBILITIES = frozenset({"shared", "public"})
 HTTP_TIMEOUT_S = 20.0
+MANIFEST_CACHE_TTL_S = 5.0
 
 
 class BucketFileSystem(Protocol):
@@ -71,6 +75,7 @@ class BucketSceneClient:
         fs: BucketFileSystem | None = None,
         cache_dir: str | Path | None = None,
         register_static_paths: Any | None = None,
+        manifest_cache_ttl_s: float = MANIFEST_CACHE_TTL_S,
     ) -> None:
         self.bucket_id = bucket_id.strip()
         if not self.bucket_id:
@@ -90,6 +95,10 @@ class BucketSceneClient:
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         if register_static_paths is not None:
             register_static_paths([self.cache_dir])
+        self.manifest_cache_ttl_s = manifest_cache_ttl_s
+        self._manifest_lock = threading.Lock()
+        self._media_lock = threading.Lock()
+        self._manifest_cache: tuple[float, list[dict[str, Any]]] | None = None
 
     @property
     def fs(self) -> BucketFileSystem:
@@ -100,17 +109,35 @@ class BucketSceneClient:
         return self._fs
 
     def list_scenes(self, limit: int = DEFAULT_SCENE_LIMIT) -> list[dict[str, Any]]:
-        try:
-            raw = self.fs.cat(f"{self.root}/{RELAY_MANIFEST}")
-            manifest = json.loads(raw.decode("utf-8"))
-            scenes = manifest.get("scenes", [])
-            if not isinstance(scenes, list):
-                raise ValueError("relay manifest scenes must be a list")
-            return [self._hydrate_scene(scene) for scene in scenes[-limit:]]
-        except FileNotFoundError:
-            return []
-        except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
-            raise BucketRelayError(f"could not read relay bucket {self.bucket_id}: {exc}") from exc
+        with self._manifest_lock:
+            now = time.monotonic()
+            if (
+                self._manifest_cache is not None
+                and now - self._manifest_cache[0] < self.manifest_cache_ttl_s
+            ):
+                return copy.deepcopy(self._manifest_cache[1][-limit:])
+            try:
+                raw = self.fs.cat(f"{self.root}/{RELAY_MANIFEST}")
+            except FileNotFoundError:
+                self._manifest_cache = (now, [])
+                return []
+            try:
+                manifest = json.loads(raw.decode("utf-8"))
+                scenes = manifest.get("scenes", [])
+                if not isinstance(scenes, list):
+                    raise ValueError("relay manifest scenes must be a list")
+                hydrated = []
+                for scene in scenes:
+                    try:
+                        hydrated.append(self._hydrate_scene(scene))
+                    except FileNotFoundError:
+                        continue
+                self._manifest_cache = (now, hydrated)
+                return copy.deepcopy(hydrated[-limit:])
+            except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
+                raise BucketRelayError(
+                    f"could not read relay bucket {self.bucket_id}: {exc}"
+                ) from exc
 
     def media_url(self, path: str | None) -> str | None:
         if not path:
@@ -119,9 +146,15 @@ class BucketSceneClient:
             return path
         relative = self._relative_media_path(path)
         target = self.cache_dir / relative
-        if not target.exists():
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_bytes(self.fs.cat(f"{self.root}/{relative.as_posix()}"))
+        with self._media_lock:
+            if not target.exists():
+                target.parent.mkdir(parents=True, exist_ok=True)
+                tmp = target.with_name(f".{target.name}.{os.getpid()}.{threading.get_ident()}.tmp")
+                try:
+                    tmp.write_bytes(self.fs.cat(f"{self.root}/{relative.as_posix()}"))
+                    tmp.replace(target)
+                finally:
+                    tmp.unlink(missing_ok=True)
         return gradio_file_url(target)
 
     def _hydrate_scene(self, scene: dict[str, Any]) -> dict[str, Any]:

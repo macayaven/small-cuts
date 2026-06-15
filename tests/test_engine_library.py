@@ -94,7 +94,12 @@ def test_ws_flow_persists_contract_valid_scene(tmp_path):
         assert scene["scene_id"] == audio_frame["scene_id"]
         assert scene["moment_id"] == envelope["moment_id"]
         assert scene["session_id"] == envelope["session_id"]
-        assert scene["captured_at"] == envelope["captured_at"]
+        assert (
+            scene["captured_at"]
+            == datetime.fromisoformat(envelope["captured_at"].replace("Z", "+00:00"))
+            .astimezone(timezone.utc)
+            .isoformat()
+        )
         assert scene["created_at"] == audio_frame["created_at"]
         assert scene["style_key"] == envelope["context"]["style_key"]
         assert scene["narration"] == audio_frame["narration"]

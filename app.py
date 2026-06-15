@@ -12,12 +12,21 @@ backends eagerly so visitors never pay the model-load cost per click:
 
 import os
 import sys
+import warnings
 from pathlib import Path
+
+from starlette.exceptions import StarletteDeprecationWarning
 
 ROOT = Path(__file__).resolve().parent
 SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
+
+warnings.filterwarnings(
+    "ignore",
+    message=r".*HTTP_422_UNPROCESSABLE_ENTITY.*HTTP_422_UNPROCESSABLE_CONTENT.*",
+    category=StarletteDeprecationWarning,
+)
 
 ON_SPACE = bool(os.environ.get("SPACE_ID"))
 ENGINE_MODE = bool(os.environ.get("SMALL_CUTS_ENGINE_URL", "").strip())

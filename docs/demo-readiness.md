@@ -51,6 +51,8 @@ Last updated: 2026-06-15 08:18 CEST.
 - [x] README claims `track:wood`, `achievement:offgrid`, `achievement:offbrand`, `achievement:llama`, and `achievement:fieldnotes`.
 - [x] Redeploy README/frontmatter after this checklist update.
 - [x] Verify the Space metadata shows `offgrid` and `llama` tags after redeploy.
+- [ ] Make the field-notes URL public; `https://huggingface.co/blog/macayaven/small-cuts-field-notes`
+  returned `401` on 2026-06-15 08:18 CEST.
 - [ ] Add demo video link.
 - [ ] Add social post link.
 - [ ] Run the submission analyzer before final submission.

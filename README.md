@@ -120,7 +120,7 @@ uv run ruff check . && uv run ruff format --check . && uv run pytest
 
 ## Repository map
 
-- `app.py` — Hugging Face Space entrypoint (Gradio, ZeroGPU)
+- `app.py` — Hugging Face Space entrypoint (Gradio CPU viewer/library)
 - `src/small_cuts/` — the product: `viewer.py` (streaming viewer), `narrator.py` (VLM backends),
   `tts.py` (Kokoro), `styles.py` (grounded prompt), `engine/` (real-time home node), `seed_media/`
 - `ios/SmallCuts/` — the Ray-Ban Meta glasses capture app

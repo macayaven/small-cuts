@@ -148,6 +148,30 @@ def test_store_writes_clip_url_and_title_for_multiframe_scene(tmp_path):
         assert clip.content == clip_path.read_bytes()
 
 
+def test_store_uses_key_frame_for_scene_poster(tmp_path):
+    lib = SceneLibrary(tmp_path / "lib")
+    flat = Image.new("RGB", (32, 56), (12, 12, 12))
+    detailed = Image.new("RGB", (32, 56), (40, 120, 80))
+    pixels = detailed.load()
+    for y in range(56):
+        for x in range(32):
+            if (x + y) % 2:
+                pixels[x, y] = (230, 225, 170)
+
+    stored = lib.store(
+        make_sink_scene(
+            image=flat,
+            clip_frames=[flat, detailed, Image.new("RGB", (32, 56), (245, 245, 245))],
+        )
+    )
+
+    frame_path = tmp_path / "lib" / "media" / stored["scene_id"] / "frame.jpg"
+    poster = Image.open(frame_path).convert("RGB")
+    colors = poster.resize((1, 1)).getpixel((0, 0))
+    assert colors[1] > colors[0]
+    assert colors[1] > colors[2]
+
+
 # -- library storage ------------------------------------------------------------
 
 

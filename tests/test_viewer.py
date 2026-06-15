@@ -147,7 +147,7 @@ def test_poll_engine_renders_the_whole_page():
     # audio is now the hidden master-clock <audio> element carrying the served voice URL
     assert "<audio" in audio and 'id="sc-voice"' in audio
     assert f"{ENGINE_URL}/media/9f1c7e4a/voice.wav" in audio
-    assert shelf == [(f"{ENGINE_URL}/media/9f1c7e4a/card.webp", "The Bicycle Is Mustard Yellow")]
+    assert shelf == [(f"{ENGINE_URL}/media/9f1c7e4a/frame.jpg", "The Bicycle Is Mustard Yellow")]
     assert scenes == [GOLDEN_SCENE]
     assert current == GOLDEN_SCENE["scene_id"]
     assert playing == GOLDEN_SCENE["scene_id"]
@@ -215,11 +215,41 @@ def test_go_live_handler_stages_a_scene(monkeypatch):
     assert pinned is None
 
 
+def test_local_scene_thumbnail_uses_stage_frame_not_title_card():
+    frame = make_image(color=(10, 220, 120))
+    card = make_image(width=1280, height=720, color=(220, 10, 10))
+
+    scene = viewer.make_local_scene(frame, card, "The title card stays elsewhere.", "deadpan")
+
+    color = scene["card_thumb"].resize((1, 1)).getpixel((0, 0))
+    assert color[1] > color[0]
+    assert color[1] > color[2]
+
+
 def test_go_live_handler_without_moment_still_narrates(monkeypatch):
     monkeypatch.delenv("SMALL_CUTS_BACKEND", raising=False)
     *_page, scenes, _pinned = viewer._go_live_handler(None, None, "deadpan", "", [])
     assert len(scenes) == 1
     assert "scene" in scenes[0]["narration"].lower()  # the empty-stage easter egg
+
+
+def test_go_live_handler_video_uses_key_frame(monkeypatch):
+    monkeypatch.delenv("SMALL_CUTS_BACKEND", raising=False)
+    key_frame = make_image(color=(10, 220, 120))
+    captured = {}
+
+    monkeypatch.setattr(viewer, "sample_frames", lambda _path: [make_image(), key_frame])
+    monkeypatch.setattr(viewer, "pick_key_frame", lambda frames: frames[-1])
+
+    def fake_narrate_core(frame, style_key, scene_hint, empty_caption):
+        captured["frame"] = frame
+        return make_image(width=1280, height=720), "The frame has been chosen deliberately."
+
+    monkeypatch.setattr(viewer, "_narrate_core", fake_narrate_core)
+
+    viewer._go_live_handler(None, "clip.mp4", "deadpan", "", [])
+
+    assert captured["frame"] is key_frame
 
 
 def test_go_live_handler_appends_to_session_shelf(monkeypatch):

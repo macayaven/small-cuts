@@ -4,7 +4,7 @@ import av
 import pytest
 from PIL import Image
 
-from small_cuts.frames import pick_frame, sample_frames
+from small_cuts.frames import pick_frame, pick_key_frame, sample_frames
 
 FIXTURES = Path("~/small-cuts-fixtures/videos").expanduser()
 
@@ -62,6 +62,24 @@ def test_pick_frame_returns_middle():
 def test_pick_frame_empty_raises():
     with pytest.raises(ValueError):
         pick_frame([])
+
+
+def test_pick_key_frame_prefers_detailed_well_exposed_frame():
+    flat_start = Image.new("RGB", (32, 32), (8, 8, 8))
+    flat_end = Image.new("RGB", (32, 32), (245, 245, 245))
+    detailed = Image.new("RGB", (32, 32), (36, 120, 76))
+    pixels = detailed.load()
+    for y in range(32):
+        for x in range(32):
+            if (x + y) % 2:
+                pixels[x, y] = (215, 220, 180)
+
+    assert pick_key_frame([flat_start, detailed, flat_end]) is detailed
+
+
+def test_pick_key_frame_empty_raises():
+    with pytest.raises(ValueError):
+        pick_key_frame([])
 
 
 def test_eval_wrapper_still_saves_jpegs(tmp_path):

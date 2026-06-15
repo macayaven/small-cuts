@@ -23,6 +23,7 @@ from typing import Any
 from PIL import Image
 
 from small_cuts import narrator, tts
+from small_cuts.frames import pick_key_frame
 from small_cuts.title_card import derive_title, render_title_card
 
 from .session import CONTRACT_VERSION, _wav_bytes
@@ -128,8 +129,9 @@ class SceneLibrary:
 
         scene_dir = self.media_dir / scene_id
         scene_dir.mkdir(parents=True, exist_ok=True)
-        scene["image"].convert("RGB").save(scene_dir / "frame.jpg", "JPEG", quality=90)
         clip_frames = scene.get("clip_frames") or []
+        poster = pick_key_frame(clip_frames) if clip_frames else scene["image"]
+        poster.convert("RGB").save(scene_dir / "frame.jpg", "JPEG", quality=90)
         if len(clip_frames) >= 2:
             try:
                 _write_clip_mp4(scene_dir / "clip.mp4", clip_frames)

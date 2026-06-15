@@ -36,7 +36,7 @@ from PIL import Image
 
 from . import demo_seed
 from ._icons import ICON_CSS
-from .frames import pick_frame, sample_frames
+from .frames import pick_key_frame, sample_frames
 from .styles import DEFAULT_STYLE_KEY, STYLES
 from .title_card import derive_title
 from .tts import speak
@@ -484,11 +484,11 @@ class EngineClient:
 
 
 def shelf_items(scenes: list[dict[str, Any]], client: EngineClient) -> list[tuple[str, str]]:
-    """Gallery payload: card.webp thumbnails captioned with the scene title."""
+    """Gallery payload: POV frame thumbnails captioned with the generated scene title."""
     items = []
     for scene in scenes:
         media = scene.get("media") or {}
-        src = client.media_url(media.get("card_url") or media.get("frame_url"))
+        src = client.media_url(media.get("frame_url") or media.get("card_url"))
         if src:
             items.append((src, scene.get("title", "")))
     return items
@@ -583,6 +583,8 @@ def make_local_scene(
 ) -> dict[str, Any]:
     """Session-state scene for upload mode: same keys format_stage understands."""
     stage_image = frame if frame is not None else card
+    thumb = stage_image.copy()
+    thumb.thumbnail((400, 540))
     return {
         "scene_id": f"local-{uuid.uuid4().hex[:12]}",
         "title": derive_title(narration),
@@ -590,7 +592,7 @@ def make_local_scene(
         "style_key": style_key,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "frame_src": _data_uri(stage_image),
-        "card_thumb": card.resize((480, 270)),
+        "card_thumb": thumb,
     }
 
 
@@ -615,7 +617,7 @@ def _go_live_handler(
     frame = image
     empty_caption = EMPTY_STAGE_CAPTION
     if frame is None and video_path:
-        frame = pick_frame(sample_frames(video_path))
+        frame = pick_key_frame(sample_frames(video_path))
         empty_caption = EMPTY_VIDEO_CAPTION
     card, narration = _narrate_core(frame, style_key, scene_hint or "", empty_caption)
     scene = make_local_scene(frame, card, narration, style_key)

@@ -1,6 +1,51 @@
 # Demo-Readiness Checklist
 
-Last updated: 2026-06-15 10:34 CEST.
+Last updated: 2026-06-15 14:06 CEST.
+
+## Current Architecture Override - 2026-06-15
+
+This section supersedes the older Cloudflare engine-mode checklist items below. Keep the old
+evidence for audit/history, but do not use it as the active deploy posture for the final run.
+
+- Active judged Space: `build-small-hackathon/small-cuts-live`, public, `cpu-basic`.
+- Paused/private Spaces: `build-small-hackathon/small-cuts` and
+  `build-small-hackathon/small-cuts-buffer-poc`.
+- The live Space is currently viewer-only. It reads finished scenes from the HF bucket relay, not
+  from Cloudflare or a live engine URL. The next implementation pass should make this same Space
+  hybrid by adding the judge upload path below.
+- Current relay settings:
+  - `SMALL_CUTS_RELAY_BUCKET=build-small-hackathon/small-cuts-scenes`
+  - `SMALL_CUTS_RELAY_PREFIX=relay`
+  - `SMALL_CUTS_BACKEND=mock`
+  - `SMALL_CUTS_TTS_BACKEND=mock`
+- The relay bucket currently has only the canary/health object; intentional library population is
+  still pending.
+- Private live path remains: Ray-Ban Meta glasses -> iPhone app -> Mac Studio engine over
+  Tailnet/local network -> immediate `SceneAudio` back to the iPhone/glasses. This glasses-to-ear
+  loop is non-negotiable.
+- Public Space path is post-cut: after the take is completed, publish the finished clip, generated
+  title, narration, voice, thumbnail/poster, and manifest into the HF bucket relay.
+- Test order for the final run:
+  1. Short physical glasses smoke first, before populating the public library.
+  2. Populate the library only from controlled, honest pipeline outputs.
+  3. Run the full demo rehearsal after both private ear playback and public relay playback are
+     proven.
+- Judge verification upload target for the next implementation pass: the submitted Gradio Space
+  must expose a finished-video upload path so judges can verify the app without glasses, iOS, or
+  local Tailnet access. Allow uploads up to 20 seconds and process them as completed cuts.
+- The final Space should therefore become a hybrid surface:
+  - relay/library mode for the live demo and public just-happened clips;
+  - on-demand upload mode for judge verification, with real narration/TTS, not mock output.
+- If upload inference runs inside the Space, `cpu-basic` is no longer sufficient for that path; use
+  ZeroGPU or another rule-compatible runtime. Keep the relay/library path lightweight so the page
+  still loads even if GPU quota or cold starts affect the upload action.
+- Library population target: use longer, controlled, honest clip artifacts for the public relay
+  library instead of the current very short 24-frame samples.
+- iOS should restore real-time wearer captions/status for the private glasses path. Do not stretch
+  the iOS/engine real-time payload just to satisfy the Space upload requirement.
+- `cpu-basic` was correct for a pure relay viewer. The judge-upload requirement supersedes that:
+  choose the simplest reliable runtime that makes upload verification real while preserving the
+  private glasses-to-ear demo path.
 
 ## Judged Space
 

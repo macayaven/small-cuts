@@ -20,8 +20,19 @@ the canonical command list, and the architecture live in the **root `CLAUDE.md`*
   one instance per key — do **not** construct backends per call (re-loads 16 GB on the Space).
 
 ## Viewer modes + layout (`viewer.py`)
-- Decided at build time by **`SMALL_CUTS_ENGINE_URL`**: **set** → engine mode (polls `GET /v1/scenes`,
-  visibility `PATCH` back); **unset** → upload mode (the Space's local "go live" dropzone).
+- Decided at build time by env:
+  - **Pure relay mode**: `SMALL_CUTS_RELAY_BUCKET` set and upload sandbox unset. This is the current
+    judged-Space posture for
+    `build-small-hackathon/small-cuts-live`: viewer-only, CPU Basic, no local model/TTS load, reads a
+    finished-scene manifest + media from an HF bucket relay.
+  - **Hybrid relay + upload mode**: `SMALL_CUTS_RELAY_BUCKET` and
+    `SMALL_CUTS_ENABLE_UPLOAD_SANDBOX=1` set. This is the target final submission posture if judges
+    need direct upload verification: relay stays the public library, upload uses real narration/TTS
+    on demand, and the Space likely needs ZeroGPU or equivalent runtime for that upload action.
+  - **Engine mode**: `SMALL_CUTS_ENGINE_URL` set. Polls `GET /v1/scenes` from an engine/read-gate
+    endpoint. Keep this as a local/ops mode unless the current readiness doc explicitly switches back.
+  - **Upload mode**: neither relay nor engine env set. Local "try it" dropzone; useful for development
+    and fallback demos, not the active public relay architecture.
 - **Layout (Review-3 theater):** full-width top bar (Voice-Cut brand mark + upload icon), then a
   two-column **theater** — left: 9:16 stage (ratio is a hard invariant) + display-only progress bar +
   control **pill** (rewind/forward = **clip-to-clip**; gr.Audio stripped to **play/pause + volume**;
@@ -42,6 +53,8 @@ the canonical command list, and the architecture live in the **root `CLAUDE.md`*
   strip-and-couple path instead of the swap, since the swap touches Space file-serving.)
 
 ## ZeroGPU gotchas (hard-won — see KB `…/space/`)
+- In relay or engine viewer-only mode, the Space must not warm Qwen/Kokoro and should stay on
+  `cpu-basic`; ZeroGPU is only relevant to upload mode where the Space itself performs narration/TTS.
 - `@spaces.GPU` must mark the functions **Gradio binds** (the startup scan walks event handlers);
   decorating inner helpers → worker dies `No CUDA GPUs are available`.
 - **No torch forward in the main process ever** — TTS runs inside `@spaces.GPU(duration=…)` workers;

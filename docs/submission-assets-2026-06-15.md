@@ -172,6 +172,14 @@ Closing paragraph:
 
 ## Final Submission Checklist
 
+Official field guide requirements checked from `build-small-hackathon/field-guide`:
+
+- Ship a Gradio Space inside the `build-small-hackathon` org.
+- Record a public demo video.
+- Publish one social media post.
+- Put both links in the Space README.
+- Put track and badge tags in the README YAML frontmatter.
+
 - [x] Space is public and running on `cpu-basic`.
 - [x] Deployed Space SHA is `3654f4e89f44a994f64332bdea980290f7c2039f`.
 - [x] Space variable `SMALL_CUTS_ENGINE_URL` points at
@@ -189,3 +197,7 @@ Closing paragraph:
 - [ ] Human click confirms Space play starts audio, video, captions, and progress together.
 - [ ] Physical e2e: glasses/iPhone produce in-ear narration and the same cut appears in Space.
 - [ ] Submission analyzer passes.
+
+Deadline rule: if the Field Notes URL is still private near final submission, either make it public
+through the HF web editor or remove `achievement:fieldnotes` from README/frontmatter before the
+final analyzer pass. Do not submit a broken badge claim.

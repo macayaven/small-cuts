@@ -150,6 +150,7 @@ def prepare_relay_snapshot(
     *,
     limit: int = DEFAULT_SCENE_LIMIT,
     include_private: bool = False,
+    source: str | None = None,
     client: httpx.Client | None = None,
 ) -> RelaySnapshot:
     """Stage a bucket-ready manifest + media snapshot from the private engine."""
@@ -165,7 +166,7 @@ def prepare_relay_snapshot(
         response.raise_for_status()
         scenes = response.json().get("scenes", [])[-limit:]
         published = [
-            _stage_scene_media(base_url, output, scene, http)
+            _stage_scene_media(base_url, output, scene, http, source=source)
             for scene in scenes
             if _should_publish_scene(scene, include_private=include_private)
         ]
@@ -194,8 +195,13 @@ def _stage_scene_media(
     output_dir: Path,
     scene: dict[str, Any],
     client: httpx.Client,
+    *,
+    source: str | None = None,
 ) -> dict[str, Any]:
     staged = copy.deepcopy(scene)
+    if source:
+        staged["source"] = source
+        staged["source_icon"] = source
     media = staged.get("media")
     if not isinstance(media, dict):
         staged["media"] = {}

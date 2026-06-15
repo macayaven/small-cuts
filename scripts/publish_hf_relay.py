@@ -51,6 +51,11 @@ def parse_args() -> argparse.Namespace:
         help="Publish private scenes too. Use only for an intentional controlled demo.",
     )
     parser.add_argument(
+        "--source",
+        default="",
+        help='Optional public provenance marker for staged scenes, e.g. "glasses".',
+    )
+    parser.add_argument(
         "--delete-extra",
         action="store_true",
         help="Delete bucket files not present in the staged snapshot.",
@@ -80,6 +85,7 @@ def publish_once(args: argparse.Namespace) -> None:
         stage_dir,
         limit=args.limit,
         include_private=args.include_private,
+        source=args.source.strip() or None,
     )
     dest = f"hf://buckets/{args.bucket}/{args.prefix.strip('/')}"
     if args.dry_run:

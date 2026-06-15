@@ -84,3 +84,29 @@ def test_prepare_relay_snapshot_can_include_private_scenes(tmp_path):
 
     assert snapshot.scene_count == 1
     assert (tmp_path / "media/9f1c7e4a/frame.jpg").exists()
+
+
+def test_prepare_relay_snapshot_can_mark_scene_source(tmp_path):
+    scene = {
+        **GOLDEN["narrated-scene.schema.json"],
+        "visibility": "public",
+        "media": {"frame_url": "/media/9f1c7e4a/frame.jpg"},
+    }
+
+    def handler(request):
+        if request.url.path == "/v1/scenes":
+            return httpx.Response(200, json={"scenes": [scene]})
+        assert request.url.path == "/media/9f1c7e4a/frame.jpg"
+        return httpx.Response(200, content=b"frame")
+
+    hf_relay.prepare_relay_snapshot(
+        ENGINE_URL,
+        tmp_path,
+        source="glasses",
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    manifest = json.loads((tmp_path / "manifest.json").read_text())
+    (published,) = manifest["scenes"]
+    assert published["source"] == "glasses"
+    assert published["source_icon"] == "glasses"

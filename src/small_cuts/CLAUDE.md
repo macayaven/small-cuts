@@ -72,6 +72,10 @@ the canonical command list, and the architecture live in the **root `CLAUDE.md`*
 - In relay or engine viewer-only mode, the Space must not warm Qwen/Kokoro and should stay on
   `cpu-basic`; ZeroGPU is only a fallback if Modal is ruled out and the Space itself performs
   narration/TTS.
+- Relay refresh is push-triggered, not timer-polled. The publisher calls
+  `/small-cuts/hooks/relay-scene` after a successful bucket sync, and browsers refresh once from
+  the `/small-cuts/events` SSE event through a `gr.HTML(js_on_load=...)` custom event bridge.
+  Do not reintroduce `gr.Timer` relay polling or hidden-button click bridges.
 - `@spaces.GPU` must mark the functions **Gradio binds** (the startup scan walks event handlers);
   decorating inner helpers → worker dies `No CUDA GPUs are available`.
 - **No torch forward in the main process ever** — TTS runs inside `@spaces.GPU(duration=…)` workers;

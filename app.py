@@ -49,6 +49,7 @@ if ON_SPACE and NEEDS_LOCAL_INFERENCE:
 
 from small_cuts import narrator  # noqa: E402
 from small_cuts.observability import init_sentry  # noqa: E402
+from small_cuts.space_hooks import install_relay_hooks  # noqa: E402
 from small_cuts.viewer import THEME, build_viewer_app  # noqa: E402
 
 init_sentry()
@@ -65,6 +66,7 @@ if NEEDS_LOCAL_INFERENCE:
 # warm local model weights or expose upload narration controls. No main-process TTS pre-warm:
 # kokoro's torch use must stay inside @spaces.GPU workers.
 demo = build_viewer_app()
+install_relay_hooks(demo.app)
 
 if __name__ == "__main__":
     demo.launch(theme=THEME)

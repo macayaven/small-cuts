@@ -10,6 +10,7 @@ import tempfile
 import time
 from pathlib import Path
 
+import httpx
 from huggingface_hub import HfApi
 
 from small_cuts.hf_relay import (
@@ -20,6 +21,10 @@ from small_cuts.hf_relay import (
     prepare_relay_snapshot,
 )
 from small_cuts.observability import capture_exception, init_sentry
+from small_cuts.space_hooks import RELAY_HOOK_TOKEN_ENV
+
+RELAY_HOOK_URL_ENV = "SMALL_CUTS_RELAY_HOOK_URL"
+HOOK_TIMEOUT_S = 5.0
 
 
 def parse_args() -> argparse.Namespace:
@@ -62,6 +67,16 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--dry-run", action="store_true", help="Stage locally without syncing.")
     parser.add_argument(
+        "--hook-url",
+        default=os.environ.get(RELAY_HOOK_URL_ENV, ""),
+        help="Optional Space relay hook URL called once after a successful bucket sync.",
+    )
+    parser.add_argument(
+        "--hook-token",
+        default=os.environ.get(RELAY_HOOK_TOKEN_ENV, ""),
+        help=f"Bearer token for --hook-url. Defaults to {RELAY_HOOK_TOKEN_ENV}.",
+    )
+    parser.add_argument(
         "--stage-dir",
         default=str(Path(tempfile.gettempdir()) / "small-cuts-relay-publish"),
         help="Local staging directory.",
@@ -99,6 +114,29 @@ def publish_once(args: argparse.Namespace) -> None:
         quiet=False,
     )
     print(f"published {snapshot.scene_count} scene(s) to {dest}")
+    notify_relay_hook(args, snapshot, bucket=args.bucket, prefix=args.prefix.strip("/"))
+
+
+def notify_relay_hook(
+    args: argparse.Namespace,
+    snapshot,
+    *,
+    bucket: str,
+    prefix: str,
+) -> None:
+    hook_url = (args.hook_url or "").strip()
+    if not hook_url:
+        return
+    hook_token = (args.hook_token or "").strip()
+    headers = {"Authorization": f"Bearer {hook_token}"} if hook_token else {}
+    response = httpx.post(
+        hook_url,
+        headers=headers,
+        json={"bucket": bucket, "prefix": prefix, "scene_count": snapshot.scene_count},
+        timeout=HOOK_TIMEOUT_S,
+    )
+    response.raise_for_status()
+    print(f"notified relay hook {hook_url}")
 
 
 def main() -> None:

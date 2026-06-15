@@ -1,6 +1,6 @@
 # Demo-Readiness Checklist
 
-Last updated: 2026-06-15 17:51 CEST.
+Last updated: 2026-06-15 17:58 CEST.
 
 ## HF Deployment Safety Override - 2026-06-15
 
@@ -48,6 +48,10 @@ testing, or the final run.
   missing auth, and Modal failures soft-fail through `gr.Warning` while preserving the current stage.
 - [x] Upload OAuth state capture is defensive against unexpected profile/session shapes.
 - [x] Modal upload click is single-concurrency and the Gradio queue has an explicit bounded max size.
+- [x] Removed constant Gradio relay polling. Relay refresh is hook-triggered: publisher calls
+  `/small-cuts/hooks/relay-scene` after successful bucket sync, browsers receive
+  `/small-cuts/events`, then refresh once through a `gr.HTML(js_on_load=...)` custom
+  `relay_scene` event bridge.
 - [ ] Not deployed or smoked on HF. `macayaven/small-cuts-dev` still needs explicit one-action
   approval before any deploy, Dev Mode session, log read, restart, poll, or smoke test.
 

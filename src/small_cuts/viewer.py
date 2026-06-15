@@ -1264,6 +1264,21 @@ PLAYBACK_SYNC_JS = """
 }
 """
 
+RELAY_EVENT_BRIDGE_JS = """
+  if (window.__scRelayPush) return;
+  window.__scRelayPush = true;
+  try {
+    const events = new EventSource('/small-cuts/events');
+    events.addEventListener('relay-scene', (event) => {
+      let payload = {};
+      try {
+        payload = event.data ? JSON.parse(event.data) : {};
+      } catch (e) {}
+      trigger('relay_scene', payload);
+    });
+  } catch (e) {}
+"""
+
 
 def build_viewer_app() -> gr.Blocks:
     """The P1 viewer page. Mode is decided once, at build time, from the env."""
@@ -1425,6 +1440,18 @@ def build_viewer_app() -> gr.Blocks:
         # "Back to live" is now the (clickable) header; this button stays for its un-pin /
         # re-follow-live wiring but is hidden via CSS and triggered by the header click in JS.
         live_btn = gr.Button("⟲ Back to live", elem_classes=["sc-live-btn"])
+        relay_events = (
+            gr.HTML(
+                "",
+                html_template='<span aria-hidden="true"></span>',
+                js_on_load=RELAY_EVENT_BRIDGE_JS,
+                visible="hidden",
+                elem_classes=["sc-relay-events"],
+                padding=False,
+            )
+            if client is not None
+            else None
+        )
         if upload_enabled:
             upload_btn.click(lambda: gr.update(open=True, visible=True), outputs=[tryit_panel])
 
@@ -1516,13 +1543,14 @@ def build_viewer_app() -> gr.Blocks:
                 scenes_state,
                 visibility,
             ]
-            timer = gr.Timer(POLL_SECONDS)
-            timer.tick(
-                _tick,
-                inputs=[scenes_state],
-                outputs=poll_outputs,
-                queue=False,
-            )
+            if relay_events is not None:
+                relay_events.relay_scene(
+                    _tick,
+                    inputs=[scenes_state],
+                    outputs=poll_outputs,
+                    queue=False,
+                    api_visibility="private",
+                )
 
             def _on_select(evt: gr.SelectData, state):
                 state = _engine_ui_state(state)

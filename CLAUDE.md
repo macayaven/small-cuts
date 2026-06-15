@@ -88,6 +88,10 @@ gh pr merge --auto --squash
   the only active personal Space target, but do not deploy, restart, poll, mutate variables/secrets,
   open Dev Mode sessions, or run smoke traffic there unless Carlos explicitly approves one specific
   HF Space action.
+- **No Space polling loop:** the Gradio Space must not refresh the relay by timer. A successful
+  relay publish calls the protected Space hook (`/small-cuts/hooks/relay-scene`), and browser
+  clients refresh once from the pushed SSE event (`/small-cuts/events`) through a
+  `gr.HTML(js_on_load=...)` custom event bridge, not a hidden button.
 - **Gradio 6**: `theme=` is a `launch()` kwarg, **not** `gr.Blocks()`.
 - **ruff isort gotcha**: not-yet-existing first-party modules classify as third-party (I001) in
   pre-implementation test files — write imports in post-implementation order, ignore the early fail.

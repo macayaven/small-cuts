@@ -360,13 +360,31 @@ def test_upload_sandbox_bounds_queue_and_upload_concurrency(monkeypatch):
     assert upload_fn.concurrency_id == "small-cuts-modal-upload"
     assert app._queue.max_size == 8
 
+    components_by_id = {component["id"]: component for component in app.config["components"]}
+    assert not [
+        component for component in components_by_id.values() if component["type"] == "timer"
+    ]
+
     tick_deps = [
         dep
         for dep in app.config["dependencies"]
         if dep.get("backend_fn") and dep.get("api_name") == "_tick"
     ]
+
     assert len(tick_deps) == 1
     assert tick_deps[0]["queue"] is False
+    assert tick_deps[0]["api_visibility"] == "private"
+    target_id, target_event = tick_deps[0]["targets"][0]
+    assert target_event == "relay_scene"
+    assert components_by_id[target_id]["type"] == "html"
+    assert components_by_id[target_id]["props"]["elem_classes"] == ["sc-relay-events"]
+
+
+def test_relay_event_bridge_listens_for_hook_events():
+    assert "EventSource('/small-cuts/events')" in viewer.RELAY_EVENT_BRIDGE_JS
+    assert "trigger('relay_scene'" in viewer.RELAY_EVENT_BRIDGE_JS
+    assert "button.click" not in viewer.RELAY_EVENT_BRIDGE_JS
+    assert ".sc-relay-refresh" not in viewer.RELAY_EVENT_BRIDGE_JS
 
 
 def test_bucket_scene_client_reads_manifest_and_caches_media(tmp_path, monkeypatch):

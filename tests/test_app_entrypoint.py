@@ -94,6 +94,23 @@ def test_space_relay_with_modal_upload_does_not_force_local_backends(monkeypatch
     assert os.environ.get("SMALL_CUTS_TTS_BACKEND") is None
 
 
+def test_app_installs_relay_hook_routes(monkeypatch):
+    monkeypatch.setenv("SPACE_ID", "macayaven/small-cuts-dev")
+    monkeypatch.delenv("SMALL_CUTS_ENGINE_URL", raising=False)
+    monkeypatch.setenv("SMALL_CUTS_RELAY_BUCKET", "macayaven/small-cuts-scenes-dev")
+    monkeypatch.setitem(sys.modules, "spaces", None)
+
+    app_path = Path(__file__).resolve().parents[1] / "app.py"
+    spec = importlib.util.spec_from_file_location("_small_cuts_test_app_hooks", app_path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    route_paths = {route.path for route in module.demo.app.routes}
+    assert "/small-cuts/hooks/relay-scene" in route_paths
+    assert "/small-cuts/events" in route_paths
+
+
 def test_app_filters_gradio_starlette_queue_warning(monkeypatch):
     monkeypatch.setenv("SMALL_CUTS_ENGINE_URL", "http://127.0.0.1:9")
 

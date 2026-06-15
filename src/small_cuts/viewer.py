@@ -39,6 +39,7 @@ from ._icons import ICON_CSS
 from .frames import pick_key_frame, sample_frames
 from .hf_relay import (
     DEFAULT_RELAY_PREFIX,
+    MEDIA_KEYS,
     RELAY_BUCKET_ENV,
     RELAY_PREFIX_ENV,
     BucketRelayError,
@@ -46,6 +47,7 @@ from .hf_relay import (
 from .hf_relay import (
     BucketSceneClient as _BucketSceneClient,
 )
+from .modal_upload import ModalUploadClient, ModalUploadError
 from .observability import capture_exception
 from .styles import DEFAULT_STYLE_KEY, STYLES
 from .title_card import derive_title
@@ -55,7 +57,9 @@ from .ui import TITLE, _gpu, _narrate_core, _speak_handler
 
 ENGINE_URL_ENV = "SMALL_CUTS_ENGINE_URL"
 MODAL_API_URL_ENV = "SMALL_CUTS_MODAL_API_URL"
+MODAL_API_TOKEN_ENV = "SMALL_CUTS_MODAL_API_TOKEN"
 UPLOAD_SANDBOX_ENV = "SMALL_CUTS_ENABLE_UPLOAD_SANDBOX"
+UPLOAD_MAX_SECONDS_ENV = "SMALL_CUTS_UPLOAD_MAX_SECONDS"
 # The narrator-as-chat feed is dropped from the default layout (single centered column);
 # flip this on to revive it (a future "see transcription" surface for non-live clips).
 SHOW_FEED = os.environ.get("SMALL_CUTS_SHOW_FEED", "").strip().lower() not in (
@@ -301,10 +305,31 @@ def upload_sandbox_enabled() -> bool:
     return _truthy_env(UPLOAD_SANDBOX_ENV) and bool(os.environ.get(MODAL_API_URL_ENV, "").strip())
 
 
+def upload_max_seconds() -> float:
+    raw = os.environ.get(UPLOAD_MAX_SECONDS_ENV, "60").strip()
+    try:
+        return max(1.0, float(raw))
+    except ValueError:
+        return 60.0
+
+
 def _require_upload_profile(profile: gr.OAuthProfile | None) -> str:
-    if profile is None or not getattr(profile, "name", None):
+    username = (
+        getattr(profile, "username", None)
+        or (profile.get("preferred_username") if isinstance(profile, dict) else None)
+        or getattr(profile, "name", None)
+    )
+    if profile is None or not username:
         raise gr.Error("Sign in with Hugging Face to upload a cut.")
-    return str(profile.name)
+    return str(username)
+
+
+def _modal_upload_client() -> ModalUploadClient:
+    base_url = os.environ.get(MODAL_API_URL_ENV, "").strip()
+    token = os.environ.get(MODAL_API_TOKEN_ENV, "").strip()
+    if not base_url or not token:
+        raise gr.Error("Modal upload is not configured.")
+    return ModalUploadClient(base_url, token)
 
 
 def _style_label(style_key: str) -> str:
@@ -545,6 +570,20 @@ def shelf_items(
     return items
 
 
+def _scene_with_media_urls(
+    scene: dict[str, Any], client: EngineClient | BucketSceneClient
+) -> dict[str, Any]:
+    hydrated = {**scene}
+    media = scene.get("media")
+    if not isinstance(media, dict):
+        hydrated["media"] = {}
+        return hydrated
+    hydrated["media"] = {**media}
+    for key in MEDIA_KEYS:
+        hydrated["media"][key] = client.media_url(media.get(key))
+    return hydrated
+
+
 def poll_engine(
     client: EngineClient | BucketSceneClient,
     scenes_prev: list[dict[str, Any]],
@@ -621,6 +660,21 @@ def poll_engine(
 
 
 # -- upload mode (the hackathon Space) -------------------------------------------------
+
+
+def _video_duration_s(video_path: str | Path) -> float | None:
+    try:
+        import av
+
+        with av.open(str(video_path)) as container:
+            if container.duration is not None:
+                return float(container.duration / 1_000_000)
+            stream = container.streams.video[0] if container.streams.video else None
+            if stream and stream.duration is not None and stream.time_base is not None:
+                return float(stream.duration * stream.time_base)
+    except Exception as exc:
+        capture_exception(exc)
+    return None
 
 
 def _data_uri(image: Image.Image, max_side: int = 1080) -> str:
@@ -759,6 +813,62 @@ def _pack_engine_ui_state(
         if upload_scene is _KEEP_UPLOAD_SCENE
         else upload_scene,
     }
+
+
+def _submit_modal_upload(
+    video_path: str | None,
+    style_key: str,
+    scene_hint: str,
+    state: Any,
+    profile: gr.OAuthProfile | None,
+    media_client: EngineClient | BucketSceneClient,
+) -> tuple[Any, ...]:
+    if not video_path:
+        raise gr.Error("Upload a video clip first.")
+
+    duration = _video_duration_s(video_path)
+    max_seconds = upload_max_seconds()
+    if duration is not None and duration > max_seconds + 0.25:
+        raise gr.Error(f"Please upload a clip up to {max_seconds:.0f} seconds.")
+
+    uploader = _require_upload_profile(profile)
+    try:
+        raw_scene = _modal_upload_client().submit_video(
+            video_path,
+            uploader_hf_username=uploader,
+            style_key=style_key,
+            scene_hint=scene_hint,
+        )
+    except (ModalUploadError, httpx.HTTPError) as exc:
+        raise gr.Error(f"Modal upload failed: {exc}") from exc
+
+    scene = _scene_with_media_urls(raw_scene, media_client)
+    current_state = _engine_ui_state(state)
+    scenes = [*current_state["scenes"], scene][-SHELF_LIMIT:]
+    payload = format_stage(scene)
+    scene_id = payload["scene_id"]
+    return (
+        render_header_html(payload["title"], payload["style_label"], live=False),
+        render_stage_html(
+            payload["frame_src"],
+            payload["caption"],
+            live=False,
+            clip_src=payload["clip_src"],
+            duration=payload["duration"],
+        ),
+        render_feed_html([feed_entry(s) for s in scenes[-FEED_LIMIT:]]),
+        _audio_html(payload["audio_src"]) if payload["audio_src"] else gr.skip(),
+        shelf_items(scenes, media_client),
+        _pack_engine_ui_state(
+            scenes,
+            scene_id,
+            scene_id,
+            scene_id,
+            previous=current_state,
+            upload_scene=scene,
+        ),
+        gr.update(value=payload["visibility"]) if payload["visibility"] else gr.skip(),
+    )
 
 
 def _as_id_set(value: Any) -> set[str]:
@@ -1200,6 +1310,38 @@ def build_viewer_app() -> gr.Blocks:
 
         if client is not None:
             engine = client  # narrow the type for the closures below
+
+            if upload_sandbox:
+
+                def _go_modal_upload_ui(
+                    video_path,
+                    style_key,
+                    scene_hint,
+                    state,
+                    profile: gr.OAuthProfile | None,
+                ):
+                    return _submit_modal_upload(
+                        video_path,
+                        style_key,
+                        scene_hint,
+                        state,
+                        profile,
+                        engine,
+                    )
+
+                go.click(
+                    _go_modal_upload_ui,
+                    inputs=[drop_video, style, hint, scenes_state],
+                    outputs=[
+                        header,
+                        stage,
+                        feed,
+                        audio,
+                        shelf,
+                        scenes_state,
+                        visibility,
+                    ],
+                )
 
             def _tick(state):
                 state = _engine_ui_state(state)

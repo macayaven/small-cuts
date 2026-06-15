@@ -8,6 +8,7 @@ viewer's formatter is pinned to the same shape the contract suite enforces.
 import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from types import SimpleNamespace
 from urllib.parse import unquote
 
 import gradio as gr
@@ -70,6 +71,12 @@ def test_upload_requires_hf_profile():
         viewer._require_upload_profile(None)
 
 
+def test_upload_profile_uses_hf_username():
+    profile = SimpleNamespace(name="Alice Example", username="alice")
+
+    assert viewer._require_upload_profile(profile) == "alice"
+
+
 def test_uploaded_scene_is_preserved_in_engine_state():
     upload_scene = {
         "scene_id": "modal-upload-1",
@@ -86,6 +93,103 @@ def test_uploaded_scene_is_preserved_in_engine_state():
     )
 
     assert state["upload_scene"]["scene_id"] == "modal-upload-1"
+
+
+def test_upload_video_cap_defaults_to_sixty_seconds(monkeypatch):
+    monkeypatch.delenv("SMALL_CUTS_UPLOAD_MAX_SECONDS", raising=False)
+
+    assert viewer.upload_max_seconds() == 60.0
+
+
+def test_modal_scene_can_drive_uploaded_stage():
+    scene = {
+        "scene_id": "modal-1",
+        "title": "A sentence.",
+        "narration": "A sentence.",
+        "style_key": "deadpan",
+        "created_at": "2026-06-15T12:00:00+00:00",
+        "media": {
+            "frame_url": "/gradio_api/file=/tmp/frame.jpg",
+            "clip_url": "/gradio_api/file=/tmp/clip.mp4",
+            "audio_url": "/gradio_api/file=/tmp/voice.wav",
+        },
+        "duration": 12.5,
+    }
+
+    payload = viewer.format_stage(scene)
+
+    assert payload["clip_src"].endswith("clip.mp4")
+    assert payload["audio_src"].endswith("voice.wav")
+    assert payload["duration"] == 12.5
+
+
+def test_submit_modal_upload_rejects_over_duration(monkeypatch):
+    monkeypatch.setenv("SMALL_CUTS_UPLOAD_MAX_SECONDS", "60")
+    monkeypatch.setattr(viewer, "_video_duration_s", lambda _path: 61.0)
+
+    with pytest.raises(gr.Error, match="up to 60 seconds"):
+        viewer._submit_modal_upload(
+            "clip.mp4",
+            "deadpan",
+            "",
+            viewer._pack_engine_ui_state([], None, None, None),
+            SimpleNamespace(name="Alice Example", username="alice"),
+            fake_client(lambda _request: httpx.Response(200, json={"scenes": []})),
+        )
+
+
+def test_submit_modal_upload_pins_returned_scene(monkeypatch):
+    scene = {
+        "scene_id": "modal-1",
+        "title": "A Modal Scene",
+        "narration": "The clip now has a real voice.",
+        "style_key": "deadpan",
+        "created_at": "2026-06-15T12:00:00+00:00",
+        "visibility": "public",
+        "media": {
+            "frame_url": "uploads/modal-1/media/frame.jpg",
+            "card_url": "uploads/modal-1/media/card.webp",
+            "clip_url": "uploads/modal-1/media/clip.mp4",
+            "audio_url": "uploads/modal-1/media/voice.wav",
+        },
+        "duration": 7.5,
+        "source": "upload",
+    }
+    calls = []
+
+    class FakeModalUploadClient:
+        def submit_video(self, video_path, *, uploader_hf_username, style_key, scene_hint):
+            calls.append((video_path, uploader_hf_username, style_key, scene_hint))
+            return scene
+
+    class FakeMediaClient:
+        base_url = ""
+
+        def media_url(self, path):
+            return f"/gradio_api/file=/tmp/{Path(path).name}" if path else None
+
+    monkeypatch.setattr(viewer, "_video_duration_s", lambda _path: 7.5)
+    monkeypatch.setattr(viewer, "_modal_upload_client", lambda: FakeModalUploadClient())
+
+    header, stage, feed, audio, shelf, state, visibility = viewer._submit_modal_upload(
+        "clip.mp4",
+        "deadpan",
+        "show the ending",
+        viewer._pack_engine_ui_state([], None, None, None),
+        SimpleNamespace(name="Alice Example", username="alice"),
+        FakeMediaClient(),
+    )
+
+    assert calls == [("clip.mp4", "alice", "deadpan", "show the ending")]
+    assert "A Modal Scene" in header
+    assert "clip.mp4" in stage
+    assert "real voice" in feed
+    assert "voice.wav" in audio
+    assert shelf == [("/gradio_api/file=/tmp/frame.jpg", "A Modal Scene")]
+    assert state["upload_scene"]["scene_id"] == "modal-1"
+    assert state["current_id"] == "modal-1"
+    assert state["playing_id"] == "modal-1"
+    assert visibility["value"] == "public"
 
 
 def test_bucket_scene_client_reads_manifest_and_caches_media(tmp_path, monkeypatch):

@@ -4,7 +4,37 @@ import sys
 import warnings
 from pathlib import Path
 
+import gradio.oauth
 from starlette.exceptions import StarletteDeprecationWarning
+
+
+def _mock_gradio_oauth(monkeypatch):
+    monkeypatch.setattr(
+        gradio.oauth,
+        "_get_mocked_oauth_info",
+        lambda: {
+            "access_token": "mock-oauth-token-for-ci",
+            "token_type": "bearer",
+            "expires_in": 3600,
+            "id_token": "AAAAAAAAAAAAAAAAAAAAAAAAAA",
+            "scope": "openid profile",
+            "expires_at": 9999999999,
+            "userinfo": {
+                "sub": "11111111111111111111111",
+                "name": "CI User",
+                "preferred_username": "ci-user",
+                "profile": "https://huggingface.co/ci-user",
+                "picture": "",
+                "website": "",
+                "aud": "00000000-0000-0000-0000-000000000000",
+                "auth_time": 1691672844,
+                "nonce": "aaaaaaaaaaaaaaaaaaa",
+                "iat": 1691672844,
+                "exp": 1691676444,
+                "iss": "https://huggingface.co",
+            },
+        },
+    )
 
 
 def test_space_engine_mode_does_not_force_local_backends(monkeypatch):
@@ -52,6 +82,7 @@ def test_space_relay_with_modal_upload_does_not_force_local_backends(monkeypatch
     monkeypatch.delenv("SMALL_CUTS_BACKEND", raising=False)
     monkeypatch.delenv("SMALL_CUTS_TTS_BACKEND", raising=False)
     monkeypatch.setitem(sys.modules, "spaces", None)
+    _mock_gradio_oauth(monkeypatch)
 
     app_path = Path(__file__).resolve().parents[1] / "app.py"
     spec = importlib.util.spec_from_file_location("_small_cuts_test_app_modal", app_path)

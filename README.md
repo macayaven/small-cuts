@@ -68,7 +68,10 @@ The Space is the **view platform + library** half of the loop:
   titles, narration, voice, thumbnails, and clips are **produced by Small Cuts**.
 - **"Try it"** — a tucked-away, HF-login upload drawer. Sign in, drop a short video, and a private
   **Modal** GPU service runs the real Qwen + Kokoro pipeline and replays your generated cut in the
-  same theater. This is the judge-verifiable path: no glasses or iOS required.
+  same theater. This is the judge-verifiable path: no glasses or iOS required. **Privacy-first:**
+  your upload is narrated *only for your session* — it's never added to the public library or shown
+  to anyone else, and a refresh clears it. The library you browse is separate, curated, persistent
+  content (real glasses moments); your private try-it never mixes into it.
 
 ---
 

@@ -29,6 +29,8 @@ the canonical command list, and the architecture live in the **root `CLAUDE.md`*
     `SMALL_CUTS_ENABLE_UPLOAD_SANDBOX=1` set. This is the target final submission posture if judges
     need direct upload verification: relay stays the public library, upload uses real narration/TTS
     on demand, and the Space likely needs ZeroGPU or equivalent runtime for that upload action.
+    Prove this first in the private personal POC Space `macayaven/small-cuts-zerogpu-poc`; promote to
+    the org Space only after cold/warm upload timing and playback smoke pass.
   - **Engine mode**: `SMALL_CUTS_ENGINE_URL` set. Polls `GET /v1/scenes` from an engine/read-gate
     endpoint. Keep this as a local/ops mode unless the current readiness doc explicitly switches back.
   - **Upload mode**: neither relay nor engine env set. Local "try it" dropzone; useful for development

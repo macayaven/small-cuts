@@ -1,6 +1,6 @@
 # Demo-Readiness Checklist
 
-Last updated: 2026-06-15 14:06 CEST.
+Last updated: 2026-06-15 14:31 CEST.
 
 ## Current Architecture Override - 2026-06-15
 
@@ -33,12 +33,17 @@ evidence for audit/history, but do not use it as the active deploy posture for t
 - Judge verification upload target for the next implementation pass: the submitted Gradio Space
   must expose a finished-video upload path so judges can verify the app without glasses, iOS, or
   local Tailnet access. Allow uploads up to 20 seconds and process them as completed cuts.
-- The final Space should therefore become a hybrid surface:
+- Before touching the submitted org Space, prove this in a private personal ZeroGPU POC:
+  `macayaven/small-cuts-zerogpu-poc`.
+- The final org Space should become a hybrid surface only after the personal POC passes:
   - relay/library mode for the live demo and public just-happened clips;
   - on-demand upload mode for judge verification, with real narration/TTS, not mock output.
-- If upload inference runs inside the Space, `cpu-basic` is no longer sufficient for that path; use
-  ZeroGPU or another rule-compatible runtime. Keep the relay/library path lightweight so the page
+- If upload inference runs inside the org Space, `cpu-basic` is no longer sufficient for that path;
+  use ZeroGPU or another rule-compatible runtime. Keep the relay/library path lightweight so the page
   still loads even if GPU quota or cold starts affect the upload action.
+- If the personal ZeroGPU POC proves fast and stable, glasses post-cut publishing can use the same
+  finished-video bucket/hook path for public library generation. Local Mac Studio inference remains
+  the real-time glasses-to-ear path regardless.
 - Library population target: use longer, controlled, honest clip artifacts for the public relay
   library instead of the current very short 24-frame samples.
 - iOS should restore real-time wearer captions/status for the private glasses path. Do not stretch

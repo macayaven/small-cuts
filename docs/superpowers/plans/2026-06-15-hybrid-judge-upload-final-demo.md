@@ -2,31 +2,39 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Ship one submitted Gradio Space that judges can verify by uploading a finished video, while preserving the non-negotiable private glasses-to-ear live narration demo.
+**Goal:** Prove the judge-upload path in an isolated personal ZeroGPU Space, then promote the measured working path into the submitted org Space while preserving the non-negotiable private glasses-to-ear live narration demo.
 
-**Architecture:** Keep three flows separate. The glasses/iOS path is private and real-time to the wearer's ear. The public relay/library path shows completed clips from an HF bucket. The judge upload path is a finished-video workflow inside the Gradio Space; it has no glasses, no iOS app, and no real-time claim.
+**Architecture:** Keep four flows separate while validating them in order. The personal ZeroGPU POC (`macayaven/small-cuts-zerogpu-poc`) proves upload inference without risking the submitted Space. The submitted org Space (`build-small-hackathon/small-cuts-live`) keeps relay/library viewing and receives the upload path only after POC smoke passes. The glasses/iOS path remains private and real-time to the wearer's ear; if ZeroGPU post-cut inference is fast enough, glasses can also publish finished videos through the bucket/hook path for the public library.
 
-**Tech Stack:** Gradio, Hugging Face Space, ZeroGPU for on-demand upload inference, HF bucket relay, PyAV/H.264 MP4 generation, Qwen3-VL-8B, Kokoro TTS, SwiftUI iOS app, FastAPI engine, Ray-Ban Meta glasses.
+**Tech Stack:** Gradio, Hugging Face Spaces, personal ZeroGPU POC, org Space, HF bucket relay, PyAV/H.264 MP4 generation, Qwen3-VL-8B, Kokoro TTS, SwiftUI iOS app, FastAPI engine, Ray-Ban Meta glasses.
 
 ---
 
 ## Current Timebox
 
-Plan timestamp: 2026-06-15 12:06 UTC / 14:06 CEST.
+Plan timestamp: 2026-06-15 12:31 UTC / 14:31 CEST.
 
 Submission deadline: 2026-06-15 23:59 UTC / 2026-06-16 01:59 CEST.
 
-Time remaining at plan creation: about 11 h 53 m.
+Time remaining at plan update: about 11 h 28 m.
 
 ## Decisions Locked By This Plan
 
 - Do a short physical glasses smoke before public library population. This confirms the non-negotiable glasses -> iPhone -> Mac engine -> in-ear narration path before spending time polishing public artifacts.
 - Do not expand the iOS real-time WebSocket payload to 20 seconds just for the Space. That would risk upload latency and the ear-first experience.
 - Implement the 20-second video upload as a Space-only judge verification path. It processes a completed uploaded clip, generates title/narration/TTS, and replays the uploaded clip with synced captions.
+- Prove the upload path first in a personal private ZeroGPU Space named
+  `macayaven/small-cuts-zerogpu-poc`. Do not risk the submitted org Space until cold/warm upload
+  timing and playback behavior are measured.
 - The submitted Space should be hybrid:
   - relay viewer/library from `SMALL_CUTS_RELAY_BUCKET`;
   - upload drawer enabled by `SMALL_CUTS_ENABLE_UPLOAD_SANDBOX=1`.
-- The upload drawer must use real narration/TTS, not mock output. If it runs inside the Space, use `zero-a10g`; keep the relay viewer fast so the page remains useful even if GPU quota/cold start slows the upload action.
+- The upload drawer must use real narration/TTS, not mock output. If the personal POC is good, promote
+  the same path to the org Space and run `build-small-hackathon/small-cuts-live` on `zero-a10g`; keep
+  the relay viewer fast so the page remains useful even if GPU quota/cold start slows the upload action.
+- If ZeroGPU post-cut timings are acceptable, finished glasses videos can later use the same
+  bucket-triggered post-cut inference path for the public library. Local Mac Studio inference remains
+  the real-time in-ear path regardless.
 - Public library clips should be longer and generated honestly from real glasses clips with the same model prompt/title/TTS path, not hand-written captions.
 
 ## File Responsibilities
@@ -38,11 +46,119 @@ Time remaining at plan creation: about 11 h 53 m.
 - `tests/test_app_entrypoint.py`: Space backend selection in hybrid relay+upload mode.
 - `tests/test_viewer.py`: upload drawer visibility, 20-second cap, uploaded clip replay, relay polling not interrupting an uploaded result.
 - `tests/test_engine_library.py`: MP4 writer FPS/blend behavior for longer clips.
+- Personal POC Space `macayaven/small-cuts-zerogpu-poc`: private, disposable ZeroGPU target for
+  upload inference timing and browser smoke.
+- `scripts/measure_zerogpu_upload.py`: optional timing harness if browser-only timing is too manual.
 - `ios/SmallCuts/SmallCuts/Capture/CaptureCoordinator.swift`: restore explicit wearer captions/status for the real-time glasses path.
 - `ios/SmallCuts/SmallCuts/UI/ContentView.swift`: only if the caption pane needs copy/layout adjustment.
 - `ios/SmallCuts/SmallCutsTests/CaptureCoordinatorTakeTests.swift`: caption state tests for Cut -> waiting -> SceneAudio.
 - `scripts/publish_hf_relay.py` or a new `scripts/build_demo_relay_library.py`: publish only selected, controlled longer clips to the relay bucket.
 - `docs/demo-readiness.md`: keep the active state updated after each gate.
+
+## Task 0: Personal ZeroGPU Upload POC
+
+**Files/Services:**
+- Space: `macayaven/small-cuts-zerogpu-poc`
+- Source: current checkout
+- Modify only if needed: `README.md` Space metadata, Space variables/secrets
+- Evidence: update `docs/demo-readiness.md`
+
+- [ ] **Step 1: Create or reset the private personal POC Space**
+
+Run:
+
+```bash
+hf repo create macayaven/small-cuts-zerogpu-poc --repo-type=space --space-sdk=gradio --private --yes
+hf spaces settings macayaven/small-cuts-zerogpu-poc --hardware zero-a10g
+```
+
+Expected: a private personal Gradio Space exists and reports ZeroGPU hardware. If the repo already
+exists, skip `repo create` and run only the hardware command.
+
+- [ ] **Step 2: Upload the current app source to the personal POC**
+
+Run:
+
+```bash
+hf upload macayaven/small-cuts-zerogpu-poc . \
+  --repo-type=space \
+  --exclude '.git/*' \
+  --exclude '.venv/*' \
+  --exclude 'ios/*' \
+  --exclude 'docs/reviews/*' \
+  --exclude 'docs/superpowers/*' \
+  --exclude 'docs/submission-readiness-*.md' \
+  --exclude '__pycache__/*' \
+  --exclude '.pytest_cache/*'
+```
+
+Expected: upload succeeds and the personal POC rebuilds independently of the org Space.
+
+- [ ] **Step 3: Configure POC upload mode only**
+
+Run:
+
+```bash
+hf spaces variables delete macayaven/small-cuts-zerogpu-poc SMALL_CUTS_RELAY_BUCKET || true
+hf spaces variables delete macayaven/small-cuts-zerogpu-poc SMALL_CUTS_ENGINE_URL || true
+hf spaces variables set macayaven/small-cuts-zerogpu-poc SMALL_CUTS_ENABLE_UPLOAD_SANDBOX=1
+hf spaces variables set macayaven/small-cuts-zerogpu-poc SMALL_CUTS_UPLOAD_MAX_SECONDS=20
+hf spaces variables set macayaven/small-cuts-zerogpu-poc SMALL_CUTS_BACKEND=transformers
+hf spaces variables set macayaven/small-cuts-zerogpu-poc SMALL_CUTS_TTS_BACKEND=kokoro
+```
+
+Expected: the POC runs the self-contained upload path with real Qwen/Kokoro and no relay dependency.
+
+- [ ] **Step 4: Smoke the POC manually**
+
+Open:
+
+```text
+https://huggingface.co/spaces/macayaven/small-cuts-zerogpu-poc
+```
+
+Acceptance:
+
+- Space loads without using local engine or Cloudflare.
+- Upload drawer is visible.
+- A 5-20 second clip produces a generated title, generated narration, voice, captions, and replayable
+  video.
+- A >20 second clip is rejected clearly.
+- The output is grounded enough to be judge-facing.
+
+- [ ] **Step 5: Measure cold and warm upload timings**
+
+Record at least three runs:
+
+```text
+cold_start_s:
+warm_upload_1_s:
+warm_upload_2_s:
+video_duration_s:
+model_backend:
+tts_backend:
+result_quality:
+```
+
+Promotion threshold:
+
+- Cold run can be slow but must complete without crash.
+- Warm 5-20 second uploads should complete reliably enough for judging. Target: under 60 seconds;
+  acceptable fallback: under 120 seconds if the page clearly shows progress and the demo video covers
+  the live experience.
+- Narration must be real Qwen output and audio must be real Kokoro output.
+
+- [ ] **Step 6: Decide promotion**
+
+If POC passes, promote the code/config to `build-small-hackathon/small-cuts-live` in Task 6.
+
+If POC fails, keep `build-small-hackathon/small-cuts-live` as relay/library plus demo video, and do
+not burn remaining time debugging ZeroGPU unless the failure is a one-line configuration issue.
+
+- [ ] **Step 7: Update readiness evidence**
+
+Append timing and promotion decision to `docs/demo-readiness.md` under the current architecture
+override before moving to Task 1.
 
 ## Task 1: Hybrid Runtime Selection
 
@@ -563,6 +679,7 @@ git commit -m "Populate longer relay library"
 **Files/Services:**
 - Local repo.
 - iPhone/glasses.
+- Personal POC Space `macayaven/small-cuts-zerogpu-poc`.
 - HF Space `build-small-hackathon/small-cuts-live`.
 - HF bucket `build-small-hackathon/small-cuts-scenes`.
 
@@ -612,7 +729,7 @@ Browser smoke:
 - Confirm title, voice, captions, and progress render.
 - Confirm a >20 second clip is rejected with a clear message.
 
-- [ ] **Step 5: Deploy after local tests only**
+- [ ] **Step 5: Deploy to the org Space only after local tests and personal POC pass**
 
 Upload source:
 
@@ -639,13 +756,17 @@ hf spaces variables set build-small-hackathon/small-cuts-live SMALL_CUTS_UPLOAD_
 hf spaces variables delete build-small-hackathon/small-cuts-live SMALL_CUTS_ENGINE_URL
 ```
 
-If upload inference runs inside the Space, switch to ZeroGPU:
+If Task 0 POC passed and upload inference is being promoted, switch the org Space to ZeroGPU:
 
 ```bash
 hf spaces settings build-small-hackathon/small-cuts-live --hardware zero-a10g
 ```
 
-Expected: relay viewer still boots quickly; upload action schedules GPU work.
+Expected: relay viewer still boots quickly; upload action schedules GPU work; the same short clip that
+passed on the personal POC works on the org Space.
+
+If Task 0 POC failed, do not switch org hardware. Keep the org Space on the safest relay/library
+posture and rely on the demo video plus public relay library for judging.
 
 - [ ] **Step 6: Hosted smoke**
 
@@ -654,9 +775,9 @@ Acceptance:
 - Space URL loads.
 - Relay library appears.
 - A human click plays video + voice + captions.
-- Upload drawer is available.
-- Uploading a short clip produces real title/narration/TTS.
-- Upload result stays on screen and is not interrupted by relay polling.
+- If Task 0 was promoted: upload drawer is available.
+- If Task 0 was promoted: uploading a short clip produces real title/narration/TTS.
+- If Task 0 was promoted: upload result stays on screen and is not interrupted by relay polling.
 - Mobile viewport has no overflow.
 
 - [ ] **Step 7: Final docs and submission**
@@ -690,6 +811,8 @@ Implement the hybrid final submission plan. Preserve the non-negotiable private 
 
 Important constraints:
 - The Space upload path has no glasses, no iOS, and no real-time promise.
+- Prove the upload path first in the private personal ZeroGPU POC Space `macayaven/small-cuts-zerogpu-poc`.
+- Promote the upload path into `build-small-hackathon/small-cuts-live` only if the personal POC passes cold/warm timing and playback smoke.
 - The glasses/iOS path must restore real-time wearer captions and must not be burdened with a 20-second video payload.
 - The public relay library must use honest generated narration/title/TTS, not hand-written captions.
 - Do not stage or commit unrelated Xcode project signing noise unless it is required by the task.
@@ -697,21 +820,22 @@ Important constraints:
 - Run the exact verification gates in the plan before claiming completion.
 
 Preferred order:
-1. Hybrid runtime selection tests and implementation.
-2. Relay-mode upload drawer and upload pinning.
-3. 20-second upload video replay and MP4 normalization.
-4. iOS wearer caption restoration.
-5. Local gates.
-6. Short physical glasses smoke.
-7. Longer honest relay library generation.
-8. Deploy only after local verification.
-9. Hosted smoke and readiness docs.
+1. Personal ZeroGPU upload POC setup and timing smoke.
+2. Hybrid runtime selection tests and implementation.
+3. Relay-mode upload drawer and upload pinning.
+4. 20-second upload video replay and MP4 normalization.
+5. iOS wearer caption restoration.
+6. Local gates.
+7. Short physical glasses smoke.
+8. Longer honest relay library generation.
+9. Promote to org Space only if POC + local verification pass.
+10. Hosted smoke and readiness docs.
 
 Commit after each task-sized verified change with short messages.
 ```
 
 ## Self-Review
 
-- Spec coverage: glasses smoke first, Space upload as judge verification, 20-second upload, longer library clips, real-time iOS captions, no iOS/glasses for upload, and no relay-only mock upload are covered.
+- Spec coverage: personal ZeroGPU POC, measured promotion gate, glasses smoke first, Space upload as judge verification, 20-second upload, longer library clips, real-time iOS captions, no iOS/glasses for upload, and no relay-only mock upload are covered.
 - Placeholder scan: no task depends on a vague "add tests" or "handle errors"; every task names files and expected commands.
 - Type consistency: `upload_scene` is carried through the existing engine UI state dict; `clip_src` and `duration` match `format_stage()` keys already used by the stage renderer.

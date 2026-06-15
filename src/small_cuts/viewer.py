@@ -684,6 +684,37 @@ def _stepped_scene(
     return scenes[(idx + delta) % len(scenes)]
 
 
+def _is_gradio_update(value: Any) -> bool:
+    return isinstance(value, dict) and value.get("__type__") == "update"
+
+
+def _engine_ui_state(value: Any) -> dict[str, Any]:
+    data = value if isinstance(value, dict) else {}
+    scenes = data.get("scenes")
+    return {
+        "scenes": scenes if isinstance(scenes, list) else [],
+        "pinned_id": data.get("pinned_id"),
+        "current_id": data.get("current_id"),
+        "playing_id": data.get("playing_id"),
+    }
+
+
+def _pack_engine_ui_state(
+    scenes: Any,
+    pinned_id: str | None,
+    current_id: Any,
+    playing_id: Any,
+    previous: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    prev = _engine_ui_state(previous)
+    return {
+        "scenes": prev["scenes"] if _is_gradio_update(scenes) else scenes,
+        "pinned_id": pinned_id,
+        "current_id": prev["current_id"] if _is_gradio_update(current_id) else current_id,
+        "playing_id": prev["playing_id"] if _is_gradio_update(playing_id) else playing_id,
+    }
+
+
 def _as_id_set(value: Any) -> set[str]:
     if not value:
         return set()
@@ -990,10 +1021,10 @@ def build_viewer_app() -> gr.Blocks:
         blocks = gr.Blocks(title=TITLE, css=VIEWER_CSS)
 
     with blocks as demo:
-        scenes_state = gr.State(seed)
+        scenes_state = gr.State(
+            _pack_engine_ui_state([], None, None, None) if client is not None else seed
+        )
         pinned_state = gr.State(None)  # scene_id pinned from the shelf, None = follow live
-        current_state = gr.State(None)  # scene_id currently on stage (visibility target)
-        playing_state = gr.State(None)  # scene_id loaded in the audio player
         liked_state = gr.State(set())  # upload-mode session-local likes, keyed by scene_id
         reported_state = gr.State(set())  # upload-mode session-local reports, keyed by scene_id
 
@@ -1113,9 +1144,39 @@ def build_viewer_app() -> gr.Blocks:
         if client is not None:
             engine = client  # narrow the type for the closures below
 
-            def _tick(scenes_prev, pinned_id, playing_id, current_id):
-                return poll_engine(
-                    engine, scenes_prev or [], pinned_id, playing_id, current_id=current_id
+            def _tick(state):
+                state = _engine_ui_state(state)
+                (
+                    header_update,
+                    stage_update,
+                    feed_update,
+                    audio_update,
+                    shelf_update,
+                    scenes,
+                    current_id,
+                    playing_id,
+                    visibility_update,
+                ) = poll_engine(
+                    engine,
+                    state["scenes"],
+                    state["pinned_id"],
+                    state["playing_id"],
+                    current_id=state["current_id"],
+                )
+                return (
+                    header_update,
+                    stage_update,
+                    feed_update,
+                    audio_update,
+                    shelf_update,
+                    _pack_engine_ui_state(
+                        scenes,
+                        state["pinned_id"],
+                        current_id,
+                        playing_id,
+                        previous=state,
+                    ),
+                    visibility_update,
                 )
 
             poll_outputs = [
@@ -1125,21 +1186,20 @@ def build_viewer_app() -> gr.Blocks:
                 audio,
                 shelf,
                 scenes_state,
-                current_state,
-                playing_state,
                 visibility,
             ]
             timer = gr.Timer(POLL_SECONDS)
             timer.tick(
                 _tick,
-                inputs=[scenes_state, pinned_state, playing_state, current_state],
+                inputs=[scenes_state],
                 outputs=poll_outputs,
             )
 
-            def _on_select(evt: gr.SelectData, scenes):
-                scenes = scenes or []
+            def _on_select(evt: gr.SelectData, state):
+                state = _engine_ui_state(state)
+                scenes = state["scenes"]
                 if not scenes:
-                    return (gr.skip(),) * 7
+                    return (gr.skip(),) * 5
                 scene = scenes[_clamp_index(evt.index, len(scenes))]
                 payload = format_stage(scene, engine.base_url)
                 return (
@@ -1152,9 +1212,13 @@ def build_viewer_app() -> gr.Blocks:
                         duration=payload["duration"],
                     ),
                     _audio_html(payload["audio_src"]) if payload["audio_src"] else gr.skip(),
-                    payload["scene_id"],
-                    payload["scene_id"],
-                    payload["scene_id"],
+                    _pack_engine_ui_state(
+                        scenes,
+                        payload["scene_id"],
+                        payload["scene_id"],
+                        payload["scene_id"],
+                        previous=state,
+                    ),
                     gr.update(value=payload["visibility"]) if payload["visibility"] else gr.skip(),
                 )
 
@@ -1165,19 +1229,18 @@ def build_viewer_app() -> gr.Blocks:
                     header,
                     stage,
                     audio,
-                    pinned_state,
-                    current_state,
-                    playing_state,
+                    scenes_state,
                     visibility,
                 ],
             )
 
-            def _step_engine(delta, scenes, pinned_id):
+            def _step_engine(delta, state):
                 # rewind/forward step clip-to-clip over the library (never intra-clip)
-                scenes = scenes or []
-                scene = _stepped_scene(scenes, pinned_id, delta)
+                state = _engine_ui_state(state)
+                scenes = state["scenes"]
+                scene = _stepped_scene(scenes, state["pinned_id"], delta)
                 if scene is None:
-                    return (gr.skip(),) * 7
+                    return (gr.skip(),) * 5
                 payload = format_stage(scene, engine.base_url)
                 return (
                     render_header_html(payload["title"], payload["style_label"], payload["live"]),
@@ -1189,16 +1252,22 @@ def build_viewer_app() -> gr.Blocks:
                         duration=payload["duration"],
                     ),
                     _audio_html(payload["audio_src"]) if payload["audio_src"] else gr.skip(),
-                    payload["scene_id"],
-                    payload["scene_id"],
-                    payload["scene_id"],
+                    _pack_engine_ui_state(
+                        scenes,
+                        payload["scene_id"],
+                        payload["scene_id"],
+                        payload["scene_id"],
+                        previous=state,
+                    ),
                     gr.update(value=payload["visibility"]) if payload["visibility"] else gr.skip(),
                 )
 
-            def _back_to_live_engine(scenes, playing_id):
-                scenes = scenes or []
+            def _back_to_live_engine(state):
+                state = _engine_ui_state(state)
+                scenes = state["scenes"]
                 scene = scenes[-1] if scenes else None
                 payload = format_stage(scene, engine.base_url)
+                playing_id = state["playing_id"]
                 if payload["audio_src"] and payload["scene_id"] != playing_id:
                     audio_update, playing_id = (
                         _audio_html(payload["audio_src"]),
@@ -1216,9 +1285,13 @@ def build_viewer_app() -> gr.Blocks:
                         duration=payload["duration"],
                     ),
                     audio_update,
-                    None,
-                    payload["scene_id"],
-                    playing_id,
+                    _pack_engine_ui_state(
+                        scenes,
+                        None,
+                        payload["scene_id"],
+                        playing_id,
+                        previous=state,
+                    ),
                     gr.update(value=payload["visibility"]) if payload["visibility"] else gr.skip(),
                 )
 
@@ -1226,23 +1299,22 @@ def build_viewer_app() -> gr.Blocks:
                 header,
                 stage,
                 audio,
-                pinned_state,
-                current_state,
-                playing_state,
+                scenes_state,
                 visibility,
             ]
             rewind_btn.click(
-                lambda s, p: _step_engine(-1, s, p),
-                inputs=[scenes_state, pinned_state],
+                lambda state: _step_engine(-1, state),
+                inputs=[scenes_state],
                 outputs=step_outputs_e,
             )
             forward_btn.click(
-                lambda s, p: _step_engine(1, s, p),
-                inputs=[scenes_state, pinned_state],
+                lambda state: _step_engine(1, state),
+                inputs=[scenes_state],
                 outputs=step_outputs_e,
             )
 
-            def _on_visibility(value, current_id):
+            def _on_visibility(value, state):
+                current_id = _engine_ui_state(state)["current_id"]
                 if not visibility_controls or not current_id or value not in VISIBILITIES:
                     return
                 try:
@@ -1250,10 +1322,10 @@ def build_viewer_app() -> gr.Blocks:
                 except httpx.HTTPError as exc:
                     raise gr.Error(f"Could not update visibility: {exc}") from exc
 
-            visibility.input(_on_visibility, inputs=[visibility, current_state])
+            visibility.input(_on_visibility, inputs=[visibility, scenes_state])
             live_btn.click(
                 _back_to_live_engine,
-                inputs=[scenes_state, playing_state],
+                inputs=[scenes_state],
                 outputs=step_outputs_e,
             )
         else:

@@ -20,7 +20,8 @@ SMALL_CUTS_BACKEND=mock uv run python -m small_cuts.engine                      
   (≤10 s budget). Send one throwaway moment after start.
 
 ## Env
-`SMALL_CUTS_ENGINE_HOST`/`_PORT` (0.0.0.0 / 8077) · `_LIBRARY_DIR` (`~/.small-cuts/library`) ·
+`SMALL_CUTS_ENGINE_HOST`/`_PORT` (127.0.0.1 / 8077; set host explicitly for LAN/Tailnet) ·
+`_LIBRARY_DIR` (`~/.small-cuts/library`) ·
 `_GGUF_PATH`/`_MMPROJ_PATH` · `_LLAMA_SERVER` (binary) · `_LLAMA_URL` (external server, skips spawn) ·
 `_MODEL_ID` · `_TEMPERATURE` (0.3).
 
@@ -30,5 +31,9 @@ SMALL_CUTS_BACKEND=mock uv run python -m small_cuts.engine                      
 - CI uses an in-process fake OpenAI server — no real model needed.
 
 ## Inspect a running engine
-- `http://mac-studio:8077/v1/scenes` (JSON) · `curl -N http://mac-studio:8077/v1/scenes/stream` (SSE) ·
-  library files at `~/.small-cuts/library`. Engine validates every frame against `docs/contracts/`.
+- Loopback: `http://127.0.0.1:8077/v1/scenes` (JSON) ·
+  `curl -N http://127.0.0.1:8077/v1/scenes/stream` (SSE).
+- LAN/Tailnet: set `SMALL_CUTS_ENGINE_HOST=0.0.0.0`, then use the host name, e.g.
+  `http://mac-studio:8077/v1/scenes`.
+- Library files live at `~/.small-cuts/library`. Engine validates every frame against
+  `docs/contracts/`.

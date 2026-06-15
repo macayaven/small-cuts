@@ -54,6 +54,8 @@ from .ui import THEME as THEME  # re-export: app.py launches the viewer with the
 from .ui import TITLE, _gpu, _narrate_core, _speak_handler
 
 ENGINE_URL_ENV = "SMALL_CUTS_ENGINE_URL"
+MODAL_API_URL_ENV = "SMALL_CUTS_MODAL_API_URL"
+UPLOAD_SANDBOX_ENV = "SMALL_CUTS_ENABLE_UPLOAD_SANDBOX"
 # The narrator-as-chat feed is dropped from the default layout (single centered column);
 # flip this on to revive it (a future "see transcription" surface for non-live clips).
 SHOW_FEED = os.environ.get("SMALL_CUTS_SHOW_FEED", "").strip().lower() not in (
@@ -68,6 +70,7 @@ FEED_LIMIT = 12
 SHELF_LIMIT = 60
 HTTP_TIMEOUT_S = 5.0
 VISIBILITIES = ("private", "shared", "public")
+_KEEP_UPLOAD_SCENE = object()
 
 EMPTY_STAGE_CAPTION = (
     "The narrator clears his throat, looks at the empty screen, and waits. "
@@ -287,6 +290,21 @@ VIEWER_CSS += ICON_CSS
 
 
 # -- scene formatting (pure, both modes) -------------------------------------------
+
+
+def _truthy_env(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in ("1", "true", "yes")
+
+
+def upload_sandbox_enabled() -> bool:
+    """Relay-mode judge uploads are enabled only when Modal is explicitly configured."""
+    return _truthy_env(UPLOAD_SANDBOX_ENV) and bool(os.environ.get(MODAL_API_URL_ENV, "").strip())
+
+
+def _require_upload_profile(profile: gr.OAuthProfile | None) -> str:
+    if profile is None or not getattr(profile, "name", None):
+        raise gr.Error("Sign in with Hugging Face to upload a cut.")
+    return str(profile.name)
 
 
 def _style_label(style_key: str) -> str:
@@ -713,11 +731,13 @@ def _is_gradio_update(value: Any) -> bool:
 def _engine_ui_state(value: Any) -> dict[str, Any]:
     data = value if isinstance(value, dict) else {}
     scenes = data.get("scenes")
+    upload_scene = data.get("upload_scene")
     return {
         "scenes": scenes if isinstance(scenes, list) else [],
         "pinned_id": data.get("pinned_id"),
         "current_id": data.get("current_id"),
         "playing_id": data.get("playing_id"),
+        "upload_scene": upload_scene if isinstance(upload_scene, dict) else None,
     }
 
 
@@ -727,6 +747,7 @@ def _pack_engine_ui_state(
     current_id: Any,
     playing_id: Any,
     previous: dict[str, Any] | None = None,
+    upload_scene: Any = _KEEP_UPLOAD_SCENE,
 ) -> dict[str, Any]:
     prev = _engine_ui_state(previous)
     return {
@@ -734,6 +755,9 @@ def _pack_engine_ui_state(
         "pinned_id": pinned_id,
         "current_id": prev["current_id"] if _is_gradio_update(current_id) else current_id,
         "playing_id": prev["playing_id"] if _is_gradio_update(playing_id) else playing_id,
+        "upload_scene": prev["upload_scene"]
+        if upload_scene is _KEEP_UPLOAD_SCENE
+        else upload_scene,
     }
 
 
@@ -1025,6 +1049,8 @@ def build_viewer_app() -> gr.Blocks:
     else:
         client = None
     seed = _seed_scenes() if client is None else []
+    upload_sandbox = upload_sandbox_enabled()
+    upload_enabled = client is None or upload_sandbox
 
     if client:
         boot_header = render_header_html("Tuning the antenna…", "standby", live=False)
@@ -1065,7 +1091,9 @@ def build_viewer_app() -> gr.Blocks:
                 "ear lands here as a cut you can keep.</span></div>",
                 padding=False,
             )
-            if client is None:
+            if upload_sandbox:
+                gr.LoginButton("Sign in", logout_value="Signed in ({})", size="sm")
+            if upload_enabled:
                 upload_btn = gr.Button("", elem_classes=["sc-icbtn", "sc-upload", "sc-ico-upload"])
         # Theater layout (Review-3): stage + controls on the left, the library as a side rail on
         # the right. Fills the width and keeps everything in one viewport (no main scroll); the
@@ -1111,10 +1139,10 @@ def build_viewer_app() -> gr.Blocks:
                     audio = gr.HTML(boot_audio, elem_classes="sc-audio-host", padding=False)
                 # The play tap is handled by PLAYBACK_SYNC_JS as a delegated DOM click so the
                 # browser keeps user activation for audio.play().
-                if client is None:
+                if upload_enabled:
                     # one signature voice — no director menu; voice-over is on by default
                     style = gr.State(DEFAULT_STYLE_KEY)
-                else:
+                if client is not None:
                     visibility_controls = os.environ.get(
                         "SMALL_CUTS_ENABLE_VISIBILITY_CONTROLS", ""
                     ).strip().lower() in ("1", "true", "yes")
@@ -1133,7 +1161,7 @@ def build_viewer_app() -> gr.Blocks:
                     padding=False,
                     visible=SHOW_FEED,
                 )
-                if client is None:
+                if upload_enabled:
                     # The upload sandbox opens on demand from the top-right icon — off the main
                     # view, video-only (the product narrates video, not stills).
                     image_none = gr.State(None)
@@ -1167,7 +1195,7 @@ def build_viewer_app() -> gr.Blocks:
         # "Back to live" is now the (clickable) header; this button stays for its un-pin /
         # re-follow-live wiring but is hidden via CSS and triggered by the header click in JS.
         live_btn = gr.Button("⟲ Back to live", elem_classes=["sc-live-btn"])
-        if client is None:
+        if upload_enabled:
             upload_btn.click(lambda: gr.update(open=True, visible=True), outputs=[tryit_panel])
 
         if client is not None:
@@ -1192,6 +1220,11 @@ def build_viewer_app() -> gr.Blocks:
                     state["playing_id"],
                     current_id=state["current_id"],
                 )
+                if state["upload_scene"] is not None:
+                    header_update = gr.skip()
+                    stage_update = gr.skip()
+                    audio_update = gr.skip()
+                    playing_id = state["playing_id"]
                 return (
                     header_update,
                     stage_update,
@@ -1247,6 +1280,7 @@ def build_viewer_app() -> gr.Blocks:
                         payload["scene_id"],
                         payload["scene_id"],
                         previous=state,
+                        upload_scene=None,
                     ),
                     gr.update(value=payload["visibility"]) if payload["visibility"] else gr.skip(),
                 )
@@ -1287,6 +1321,7 @@ def build_viewer_app() -> gr.Blocks:
                         payload["scene_id"],
                         payload["scene_id"],
                         previous=state,
+                        upload_scene=None,
                     ),
                     gr.update(value=payload["visibility"]) if payload["visibility"] else gr.skip(),
                 )
@@ -1320,6 +1355,7 @@ def build_viewer_app() -> gr.Blocks:
                         payload["scene_id"],
                         playing_id,
                         previous=state,
+                        upload_scene=None,
                     ),
                     gr.update(value=payload["visibility"]) if payload["visibility"] else gr.skip(),
                 )

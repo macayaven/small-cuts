@@ -54,6 +54,40 @@ def test_build_viewer_app_bucket_relay_mode_needs_no_live_engine(monkeypatch):
     assert isinstance(viewer.build_viewer_app(), gr.Blocks)
 
 
+def test_upload_sandbox_requires_modal_url(monkeypatch):
+    monkeypatch.setenv("SMALL_CUTS_ENABLE_UPLOAD_SANDBOX", "1")
+    monkeypatch.delenv("SMALL_CUTS_MODAL_API_URL", raising=False)
+
+    assert viewer.upload_sandbox_enabled() is False
+
+    monkeypatch.setenv("SMALL_CUTS_MODAL_API_URL", "https://example.modal.run")
+
+    assert viewer.upload_sandbox_enabled() is True
+
+
+def test_upload_requires_hf_profile():
+    with pytest.raises(gr.Error, match="Sign in"):
+        viewer._require_upload_profile(None)
+
+
+def test_uploaded_scene_is_preserved_in_engine_state():
+    upload_scene = {
+        "scene_id": "modal-upload-1",
+        "title": "A Finished Judge Upload",
+        "source": "upload",
+    }
+
+    state = viewer._pack_engine_ui_state(
+        scenes=[],
+        pinned_id=None,
+        current_id=None,
+        playing_id=None,
+        previous={"upload_scene": upload_scene},
+    )
+
+    assert state["upload_scene"]["scene_id"] == "modal-upload-1"
+
+
 def test_bucket_scene_client_reads_manifest_and_caches_media(tmp_path, monkeypatch):
     class FakeBucketFs:
         def __init__(self, files):

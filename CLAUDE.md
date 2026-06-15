@@ -71,6 +71,13 @@ gh pr merge --auto --squash
 ## Conventions
 - **Local gate must mirror CI**: `ruff check` **and** `ruff format --check` **and** `pytest`
   (CI also runs gitleaks). Never trust a piped `gh pr checks --watch` exit code.
+- **HF deployment safety override (2026-06-15):** all development, smoke tests, upload tests,
+  bucket writes, and Space deploys must use Carlos's personal HF profile (`macayaven/*`) only.
+  Do **not** deploy to, poll-test, unpause, mutate variables/secrets on, or write buckets under
+  `build-small-hackathon/*` during development. The only remaining org submission Space is
+  `build-small-hackathon/small-cuts-buffer-poc`; it is private/paused by Carlos, reserved for final
+  submission, and should only be renamed/made public after the personal-profile solution is fully
+  proven. Treat `build-small-hackathon/small-cuts-live` and org relay buckets as non-test targets.
 - **Gradio 6**: `theme=` is a `launch()` kwarg, **not** `gr.Blocks()`.
 - **ruff isort gotcha**: not-yet-existing first-party modules classify as third-party (I001) in
   pre-implementation test files — write imports in post-implementation order, ignore the early fail.
@@ -94,4 +101,5 @@ gh pr merge --auto --squash
   `architecture/` (canonical + interactive `index.html`), `space/`, `mobile/`, `inference/`,
   `contracts/`, `product/`, `coordination/`. Predecessor: `10-projects/directors-cut/`.
 - **Live device test:** `ios/SmallCuts/RUNBOOK.md`. **Hackathon rules:** `docs/hackathon-rules.md`.
-- **Live Space:** `build-small-hackathon/small-cuts`. **Model:** `Qwen/Qwen3-VL-8B-Instruct` (M1 pick).
+- **HF targets:** development/testing happens only under `macayaven/*`; final submission reserves
+  `build-small-hackathon/small-cuts-buffer-poc`. **Model:** `Qwen/Qwen3-VL-8B-Instruct` (M1 pick).

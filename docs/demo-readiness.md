@@ -1,42 +1,50 @@
 # Demo-Readiness Checklist
 
-Last updated: 2026-06-15 16:16 CEST.
+Last updated: 2026-06-15 16:45 CEST.
 
-## Current Architecture Override - 2026-06-15
+## HF Deployment Safety Override - 2026-06-15
 
-This section supersedes the older Cloudflare engine-mode checklist items below. Keep the old
-evidence for audit/history, but do not use it as the active deploy posture for the final run.
+This section supersedes the older org-Space and Cloudflare engine-mode checklist items below. Keep
+the old evidence for audit/history, but do not use it as the active deploy posture for development,
+testing, or the final run.
 
-- Active judged Space: `build-small-hackathon/small-cuts-live`, public, `cpu-basic`.
-- Paused/private Spaces: `build-small-hackathon/small-cuts` and
-  `build-small-hackathon/small-cuts-buffer-poc`.
-- The live Space is currently viewer-only. It reads finished scenes from the HF bucket relay, not
-  from Cloudflare or a live engine URL. The next implementation pass should make this same Space
-  hybrid by adding the judge upload path below.
-- Current relay settings:
-  - `SMALL_CUTS_RELAY_BUCKET=build-small-hackathon/small-cuts-scenes`
+- Development/testing Space policy: use only Carlos's personal HF profile (`macayaven/*`) for all
+  Space deploys, upload smoke tests, relay smoke tests, and bucket writes.
+- Development/testing bucket policy: use only a personal bucket such as
+  `macayaven/small-cuts-scenes-dev`, prefix `relay`. Do not write to org buckets while iterating.
+- Org submission policy: do **not** deploy to, unpause, poll-test, mutate variables/secrets on, or
+  write buckets under `build-small-hackathon/*` until the personal-profile product is fully proven.
+- Reserved final org Space: `build-small-hackathon/small-cuts-buffer-poc`. It is private/paused by
+  Carlos, remains the only available org submission slot, and should be renamed and made public only
+  at the final submission promotion step.
+- Do not use `build-small-hackathon/small-cuts-live` as an active target. It was flagged by the HF
+  abuse handler after a deployment containing stale Cloudflare/Tailnet material; treat it as
+  unavailable and do not try to recover it during development.
+- Current personal relay settings for local/staging runs:
+  - `SMALL_CUTS_RELAY_BUCKET=macayaven/small-cuts-scenes-dev`
   - `SMALL_CUTS_RELAY_PREFIX=relay`
   - `SMALL_CUTS_BACKEND=mock`
   - `SMALL_CUTS_TTS_BACKEND=mock`
-- The relay bucket currently has only the canary/health object; intentional library population is
-  still pending.
+- The staging Space should be viewer-only or hybrid on `cpu-basic`. It reads finished scenes from a
+  personal HF bucket relay, not from Cloudflare or a live engine URL.
 - Private live path remains: Ray-Ban Meta glasses -> iPhone app -> Mac Studio engine over
   Tailnet/local network -> `SceneAudio` back to the iPhone/glasses after the wearer taps `Cut!`.
   This local glasses-to-ear return path is non-negotiable.
 - Public Space path is post-cut: after the take is completed, publish the finished clip, generated
-  title, narration, voice, thumbnail/poster, and manifest into the HF bucket relay.
+  title, narration, voice, thumbnail/poster, and manifest into the personal HF bucket relay.
 - Test order for the final run:
   1. Short physical glasses smoke first, before populating the public library.
   2. Populate the library only from controlled, honest pipeline outputs.
   3. Run the full demo rehearsal after both private ear playback and public relay playback are
      proven.
-- Judge verification upload target for the next implementation pass: the submitted Gradio Space
-  must expose a finished-video upload path so judges can verify the app without glasses, iOS, or
-  local Tailnet access. Allow uploads up to 60 seconds by default and process them as completed
-  cuts. This matches an instant-clip/reel-length posture while keeping the Modal path bounded.
-- Before deploying upload controls to the submitted org Space, prove this through the private Modal
-  app `small-cuts-postcut`.
-- The final org Space should become a hybrid surface only after the Modal POC passes:
+- Judge verification upload target for the next implementation pass: a personal-profile Gradio
+  staging Space must expose a finished-video upload path so judges can later verify the app without
+  glasses, iOS, or local Tailnet access. Allow uploads up to 60 seconds by default and process them
+  as completed cuts. This matches an instant-clip/reel-length posture while keeping the Modal path
+  bounded.
+- Before deploying upload controls to the reserved org Space, prove this through the private Modal
+  app `small-cuts-postcut` and the personal-profile staging Space/bucket.
+- The final org Space should become a hybrid surface only after the personal-profile path passes:
   - relay/library mode for the live demo and public just-happened clips;
   - on-demand upload mode for judge verification, with real Modal-hosted narration/TTS, not mock
     output.
@@ -49,7 +57,7 @@ evidence for audit/history, but do not use it as the active deploy posture for t
   unless the model/TTS pipeline is explicitly proven thread-safe.
 - Glasses-origin public clips should not go through Modal. `Action!` starts capture and `Cut!`
   finalizes the take; after the local engine has produced clip, title, narration, and speech for
-  in-ear playback, the completed scene can be auto-published to the relay bucket by the local/admin
+  in-ear playback, the completed scene can be auto-published to the personal relay bucket by the local/admin
   publisher. Those scenes should include `source="glasses"` and render a small glasses icon in the
   top-left of the Space stage/library tile.
 - Library population target: use longer, controlled, honest clip artifacts for the public relay
@@ -112,9 +120,13 @@ evidence for audit/history, but do not use it as the active deploy posture for t
 
 ## Judged Space
 
-- [x] Historical Space `build-small-hackathon/small-cuts` is public; active final target is
-  `build-small-hackathon/small-cuts-live` per the architecture override above.
-- [x] Space runs on `cpu-basic` as a viewer/library, not as the inference host.
+- [x] Historical org Space evidence below is retained for audit only; it is not the active
+  development or test posture.
+- [ ] Personal-profile staging Space under `macayaven/*` is the only place to test the upload and
+  relay experience before submission.
+- [ ] Reserved final org Space is `build-small-hackathon/small-cuts-buffer-poc`; rename and make it
+  public only after the personal staging path passes.
+- [x] Space runtime target remains `cpu-basic` as a viewer/library, not as the inference host.
 - [x] `SMALL_CUTS_ENGINE_URL` points at the public read gate.
 - [x] Active Space endpoint uses the known-good quick tunnel:
   `https://lincoln-greene-paragraph-tcp.trycloudflare.com`.

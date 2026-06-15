@@ -89,7 +89,7 @@ GLM for review, and Gemini for eval, all directed by Carlos.
 
 | Rule | How Small Cuts complies |
 |---|---|
-| Gradio app hosted as a Space under the org | The app **is** the product — this Space |
+| Gradio app hosted as a Space under the org | Final submission is reserved for `build-small-hackathon/small-cuts-buffer-poc` after personal-profile staging passes |
 | Every model < 32B | 8B VLM narrator + small Kokoro TTS, all open weights |
 | Demo video | Filmed POV with Ray-Ban Meta glasses → narrated by the app *(pending final link below)* |
 | Social post | Linked from this README *(pending final link below)* |
@@ -121,7 +121,7 @@ SMALL_CUTS_BACKEND=transformers uv run --no-sync python app.py
 SMALL_CUTS_BACKEND=llama_cpp SMALL_CUTS_TTS_BACKEND=kokoro uv run python -m small_cuts.engine
 
 # run the hybrid relay + Modal upload Space locally (token comes from your local secret env)
-SMALL_CUTS_RELAY_BUCKET=build-small-hackathon/small-cuts-scenes \
+SMALL_CUTS_RELAY_BUCKET=macayaven/small-cuts-scenes-dev \
 SMALL_CUTS_RELAY_PREFIX=relay \
 SMALL_CUTS_ENABLE_UPLOAD_SANDBOX=1 \
 SMALL_CUTS_MODAL_API_URL=https://macayaven--small-cuts-postcut-api.modal.run \
@@ -145,5 +145,8 @@ uv run ruff check . && uv run ruff format --check . && uv run pytest
 
 - `main` is protected (PR-based workflow); CI runs ruff lint + format check, pytest, and a
   gitleaks secret scan on every push/PR.
+- Development and smoke testing use only Carlos's personal HF profile (`macayaven/*`) for Spaces and
+  buckets. Do not deploy to `build-small-hackathon/*` until the final submission promotion step; the
+  reserved org Space is `build-small-hackathon/small-cuts-buffer-poc`.
 - **No secrets in the repo, ever.** Secrets live in 1Password Connect (local dev) and HF Space
   secrets (deployment). Client-facing endpoints use Tailnet MagicDNS HTTPS, never raw IPs.

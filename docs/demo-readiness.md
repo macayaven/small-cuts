@@ -1,6 +1,6 @@
 # Demo-Readiness Checklist
 
-Last updated: 2026-06-15 17:31 CEST.
+Last updated: 2026-06-15 17:36 CEST.
 
 ## HF Deployment Safety Override - 2026-06-15
 
@@ -24,6 +24,11 @@ testing, or the final run.
   stop all HF Space actions immediately. Do not keep retrying restarts, polls, logs, uploads,
   replacement Space creation, or variable/secrets mutations. Continue with local-only checks and
   direct Modal checks until Carlos explicitly approves one specific next HF Space action.
+- Active personal dev Space: `macayaven/small-cuts-dev`. It is private, uses paid hardware one tier
+  above free CPU Basic, and has Dev Mode enabled for careful interactive work from Cursor/VS Code.
+  Treat it as the only current personal Space target, and do not deploy, restart, poll, mutate
+  variables/secrets, open Dev Mode sessions, or smoke-test it without explicit approval for that
+  exact action.
 - Current personal relay settings for local/staging runs:
   - `SMALL_CUTS_RELAY_BUCKET=macayaven/small-cuts-scenes-dev`
   - `SMALL_CUTS_RELAY_PREFIX=relay`

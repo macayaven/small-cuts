@@ -22,7 +22,9 @@ The glasses path stays private. During the live demo, the iPhone writes to the l
 Tailnet. Public viewers and the Space only read finished scenes through a Cloudflare read gate:
 `GET /v1/scenes`, `GET /v1/scenes/stream`, and `/media/*`. The public hostname blocks the
 WebSocket capture path and visibility writes. That split is less glamorous than making everything
-public, but it is the right product boundary: private capture, public replay.
+public, but it is the right product boundary: private capture, public replay. For the hackathon
+demo this rides on a Cloudflare tunnel; a production version would turn that into durable auth,
+domain, and publishing controls rather than opening the capture path.
 
 ## Why small models worked
 

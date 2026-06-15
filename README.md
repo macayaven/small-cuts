@@ -36,7 +36,7 @@ This is the **challenger submission** for the
 **June 15, 2026, 23:59 UTC**), the strategic successor to the original
 *Director's Cut* project.
 
-## The soul of it — the real-time loop
+## The soul of it — the live loop
 
 Small Cuts was born wearing glasses. The intended experience is a **live loop**:
 
@@ -46,14 +46,14 @@ Ray-Ban Meta glasses  ──image frames──▶  home engine (small VLM + TTS)
                                               └──── finished cuts ────▶  the Space (watch · library)
 ```
 
-You walk through a moment; the narrator speaks it back to you, **chunk by chunk**, in
-near-real-time — each line short enough to land while the moment is still *recent past*,
-never racing ahead of what just happened. Within a single clip the narrator remembers what
-it already said (intra-clip coherence), so the clip reads as one continuous wry little story.
+You walk through a moment; the narrator watches a selected first-person frame and speaks
+one grounded, deadpan line back in your ear while the moment is still *recent past*. The
+finished cut then lands in the Space as a short POV clip with synced captions, title, voice,
+and library thumbnail.
 
-**One pipeline, two surfaces:** the same narration plays *in your ear* live, and lands in the
-**Space** below as a finished cut you can re-watch — with film-style subtitles that crawl in
-sync with the voice — and publish to a library.
+**One pipeline, two surfaces:** the narration returns *in your ear* during capture, and lands
+in the **Space** below as a finished cut you can re-watch — with film-style subtitles that
+crawl in sync with the voice — and publish to a library.
 
 ## What's in this Space
 
@@ -64,6 +64,8 @@ The Space is the **view platform + library** half of the loop — a small stream
 - **Voice-over replay**, with a compact custom player whose video, sound, captions, and progress
   share the same audio clock.
 - **A hero library** of real Ray-Ban Meta glasses moments, seeded so the channel is never empty.
+  These cuts are human-curated from real glasses footage so first visitors see the intended
+  experience immediately; live captures write new model-generated cuts into the same theater.
 - **"Try it"** — a tucked-away sandbox (open only on request) to narrate your *own* short video.
 
 ## How it was built
@@ -73,11 +75,12 @@ The Space is the **view platform + library** half of the loop — a small stream
 | Narrator (VLM) | `Qwen/Qwen3-VL-8B-Instruct` | Strong grounded captioning at 8B — well under 32B |
 | Voice (TTS) | **Kokoro** (24 kHz) | Tiny, expressive, open; one signature deadpan delivery |
 | Space runtime | Gradio 6 on CPU, viewer-only for live demo | The judged canvas: public theater + library |
-| Real-time engine | FastAPI WS home node, **llama.cpp** | The live in-ear loop + demo video; no cloud LLM/TTS API |
+| Local live engine | FastAPI WS home node, **llama.cpp** | The in-ear loop + demo video; no cloud LLM/TTS API |
 | Capture | iOS app for Ray-Ban Meta glasses (`ios/SmallCuts/`) | First-person moments, the way it's meant to be lived |
 
-Implementation is a cross-model team effort: **Claude (Opus)** orchestrates, **Codex (GPT-5.x)**
-implements, with **GLM** review and a **Gemini** eval judge.
+Built by **Carlos Crespo Macaya** as architect and lead. Development was accelerated with an
+AI toolchain: Claude (Opus) for design critique, Codex (GPT-5.x) for paired implementation,
+GLM for review, and Gemini for eval, all directed by Carlos.
 
 ## Hackathon compliance
 
@@ -85,8 +88,8 @@ implements, with **GLM** review and a **Gemini** eval judge.
 |---|---|
 | Gradio app hosted as a Space under the org | The app **is** the product — this Space |
 | Every model < 32B | 8B VLM narrator + small Kokoro TTS, all open weights |
-| Demo video | Filmed POV with Ray-Ban Meta glasses → narrated by the app *(link below)* |
-| Social post | Linked from this README *(link below)* |
+| Demo video | Filmed POV with Ray-Ban Meta glasses → narrated by the app *(pending final link below)* |
+| Social post | Linked from this README *(pending final link below)* |
 | Track 2 — **Thousand Token Wood** (`track:wood`) | Whimsical, delightful, AI-load-bearing, original |
 | Off the Grid (`achievement:offgrid`) | Live inference/TTS runs on local hardware; public Space reads finished cuts only |
 | Llama (`achievement:llama`) | The live engine runs through `llama.cpp` |

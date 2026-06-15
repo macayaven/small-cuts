@@ -87,8 +87,27 @@ evidence for audit/history, but do not use it as the active deploy posture for t
 - [x] HF bucket artifact writing smoke passed: `relay/uploads/modal-6da427b60106/` contains exactly
   `scene.json`, `media/frame.jpg`, `media/card.webp`, `media/clip.mp4`, and `media/voice.wav`.
   Relay root was checked after cleanup and contains only `health.txt` plus `uploads/`.
-- [ ] Warm 5-60 second upload timings are still pending; only a 1-second cold smoke has been
-  measured so far.
+- [x] Space-side Modal client smoke accepted `/private/tmp/small-cuts-upload-5s.mp4` in 121.66 s
+  against the deployed endpoint, returned scene `modal-04f98e2795cd` with title
+  `The Smoke Test`, `source="upload"`, generated narration, `media/clip.mp4`, and
+  `media/voice.wav`.
+- [x] HF bucket artifact writing smoke passed for
+  `relay/uploads/modal-04f98e2795cd/`: `scene.json`, `media/frame.jpg`, `media/card.webp`,
+  `media/clip.mp4`, and `media/voice.wav`.
+
+## Local Hybrid Verification - 2026-06-15 15:49 CEST
+
+- [x] Full Python gate passed:
+  `uv run ruff check . && uv run ruff format --check . && uv run pytest`
+  (`201 passed`, 4 warnings).
+- [x] Full iOS simulator gate passed with the plan command on `iPhone 17, OS=26.5`:
+  `66 tests`, `1` expected live-engine smoke skipped, `0` failures.
+- [x] Local Gradio relay/upload-sandbox app launched on `http://127.0.0.1:7860` with
+  `SMALL_CUTS_ENABLE_UPLOAD_SANDBOX=1`, the deployed Modal URL, and the HF relay bucket.
+- [x] Local Gradio OAuth mock sign-in worked as `macayaven`; the upload icon opened the
+  video-only upload drawer while anonymous cookie-free page load returned HTTP `200`.
+- [x] Local >60-second guard rejected `/private/tmp/small-cuts-upload-61s.mp4` before any Modal
+  call with `Please upload a clip up to 60 seconds.`
 
 ## Judged Space
 

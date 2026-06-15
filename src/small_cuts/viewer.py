@@ -2026,6 +2026,19 @@ def build_viewer_app() -> gr.Blocks:
                     queue=False,
                     api_visibility="private",
                 )
+                # Initial library paint. In bucket/engine mode the feed + shelf boot EMPTY
+                # (seed=[]) and otherwise only repaint on a pushed relay-scene SSE event — so a
+                # fresh page load (a judge opening the Space, or a tab after a silent manifest
+                # promote that fired no hook) would show nothing until the next push. Run the SAME
+                # proven _tick once on load so the current bucket library always renders. This is a
+                # one-shot initial render, NOT a timer/poll loop (the no-Space-polling rule targets
+                # timers, not page-load reads).
+                demo.load(
+                    _tick,
+                    inputs=[scenes_state],
+                    outputs=poll_outputs,
+                    queue=False,
+                )
 
             def _on_select(evt: gr.SelectData, state):
                 state = _engine_ui_state(state)

@@ -3,6 +3,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import httpx
+import pytest
 
 
 def _load_publish_script():
@@ -111,3 +112,47 @@ def test_watch_mode_continues_after_transient_publish_failure(monkeypatch):
         assert exc.code == 0
 
     assert calls == [True, True]
+
+
+@pytest.mark.parametrize("interval", ["0", "-1"])
+def test_parse_args_rejects_nonpositive_interval_when_watch(monkeypatch, capsys, interval):
+    script = _load_publish_script()
+    monkeypatch.setattr(
+        script.sys,
+        "argv",
+        ["publish_hf_relay.py", "--bucket", "macayaven/x", "--watch", "--interval", interval],
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        script.parse_args()
+
+    assert exc_info.value.code == 2
+    assert "--interval must be > 0 when --watch is set" in capsys.readouterr().err
+
+
+def test_parse_args_allows_nonpositive_interval_without_watch(monkeypatch):
+    script = _load_publish_script()
+    monkeypatch.setattr(
+        script.sys,
+        "argv",
+        ["publish_hf_relay.py", "--bucket", "macayaven/x", "--interval", "0"],
+    )
+
+    args = script.parse_args()
+
+    assert args.watch is False
+    assert args.interval == 0
+
+
+def test_parse_args_keeps_positive_interval_when_watch(monkeypatch):
+    script = _load_publish_script()
+    monkeypatch.setattr(
+        script.sys,
+        "argv",
+        ["publish_hf_relay.py", "--bucket", "macayaven/x", "--watch", "--interval", "1.5"],
+    )
+
+    args = script.parse_args()
+
+    assert args.watch is True
+    assert args.interval == 1.5

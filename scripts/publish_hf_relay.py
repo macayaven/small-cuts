@@ -82,7 +82,12 @@ def parse_args() -> argparse.Namespace:
         default=str(Path(tempfile.gettempdir()) / "small-cuts-relay-publish"),
         help="Local staging directory.",
     )
-    return parser.parse_args()
+    args = parser.parse_args()
+    if args.watch and args.interval <= 0:
+        # A non-positive interval turns the watch loop into a tight retry-spin
+        # with no backoff, hammering the engine, HF, and Sentry on transient errors.
+        parser.error("--interval must be > 0 when --watch is set")
+    return args
 
 
 def _clean_stage(path: Path) -> None:

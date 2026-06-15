@@ -285,8 +285,9 @@ html, body { overflow: hidden; height: 100%; }
 /* Bind the stage to the viewport HEIGHT (chrome reserved), width derived from 9:16 — so the
    ratio is preserved and the controls below it always stay on-screen. The aspect-ratio must
    NOT drive height off the column width (that overflowed the viewport). */
-.sc-stage-block .sc-stage-shell { height: min(calc(100dvh - 322px), 1480px) !important;
-  max-height: calc(100dvh - 322px); width: auto; flex: 0 0 auto; }
+.sc-stage-block .sc-stage-shell { height: clamp(300px, 48dvh, 430px) !important;
+  max-height: 430px; width: auto; max-width: min(100%, calc(100vw - 380px));
+  flex: 0 0 auto; }
 .sc-rail-col { flex: 0 0 286px !important; min-height: 0 !important; display: flex !important;
   flex-direction: column; }
 .sc-rail-head { display: flex; align-items: center; gap: 4px; color: #8a8894;
@@ -351,15 +352,36 @@ def upload_max_seconds() -> float:
         return 60.0
 
 
-def _require_upload_profile(profile: gr.OAuthProfile | None) -> str:
-    username = (
-        getattr(profile, "username", None)
-        or (profile.get("preferred_username") if isinstance(profile, dict) else None)
-        or getattr(profile, "name", None)
-    )
-    if profile is None or not username:
-        raise gr.Error("Sign in with Hugging Face to upload a cut.")
+def _upload_username(profile_or_state: Any) -> str | None:
+    if not profile_or_state:
+        return None
+    if isinstance(profile_or_state, dict):
+        username = (
+            profile_or_state.get("username")
+            or profile_or_state.get("preferred_username")
+            or profile_or_state.get("name")
+        )
+    else:
+        username = (
+            getattr(profile_or_state, "username", None)
+            or getattr(profile_or_state, "preferred_username", None)
+            or getattr(profile_or_state, "name", None)
+        )
+    if not username:
+        return None
     return str(username)
+
+
+def _upload_auth_state(profile: gr.OAuthProfile | None) -> dict[str, str]:
+    username = _upload_username(profile)
+    return {"username": username} if username else {}
+
+
+def _require_upload_profile(profile: gr.OAuthProfile | None) -> str:
+    username = _upload_username(profile)
+    if not username:
+        raise gr.Error("Sign in with Hugging Face to upload a cut.")
+    return username
 
 
 def _modal_upload_client() -> ModalUploadClient:
@@ -893,6 +915,7 @@ def _submit_modal_upload(
     state: Any,
     profile: gr.OAuthProfile | None,
     media_client: EngineClient | BucketSceneClient,
+    upload_auth_state: Any | None = None,
 ) -> tuple[Any, ...]:
     if not video_path:
         raise gr.Error("Upload a video clip first.")
@@ -902,7 +925,19 @@ def _submit_modal_upload(
     if duration is not None and duration > max_seconds + 0.25:
         raise gr.Error(f"Please upload a clip up to {max_seconds:.0f} seconds.")
 
-    uploader = _require_upload_profile(profile)
+    uploader = _upload_username(profile) or _upload_username(upload_auth_state)
+    if not uploader:
+        gr.Warning("Sign in with Hugging Face to upload a cut.")
+        return (
+            gr.skip(),
+            gr.skip(),
+            gr.skip(),
+            gr.skip(),
+            gr.skip(),
+            _engine_ui_state(state),
+            gr.skip(),
+        )
+
     try:
         raw_scene = _modal_upload_client().submit_video(
             video_path,
@@ -1265,6 +1300,7 @@ def build_viewer_app() -> gr.Blocks:
         pinned_state = gr.State(None)  # scene_id pinned from the shelf, None = follow live
         liked_state = gr.State(set())  # upload-mode session-local likes, keyed by scene_id
         reported_state = gr.State(set())  # upload-mode session-local reports, keyed by scene_id
+        upload_auth_state = gr.State({}) if upload_sandbox else None
 
         with gr.Row(elem_classes="sc-topbar"):
             gr.HTML(
@@ -1391,6 +1427,7 @@ def build_viewer_app() -> gr.Blocks:
                     style_key,
                     scene_hint,
                     state,
+                    auth_state,
                     profile: gr.OAuthProfile | None,
                 ):
                     return _submit_modal_upload(
@@ -1400,11 +1437,12 @@ def build_viewer_app() -> gr.Blocks:
                         state,
                         profile,
                         engine,
+                        upload_auth_state=auth_state,
                     )
 
                 go.click(
                     _go_modal_upload_ui,
-                    inputs=[drop_video, style, hint, scenes_state],
+                    inputs=[drop_video, style, hint, scenes_state, upload_auth_state],
                     outputs=[
                         header,
                         stage,
@@ -1780,5 +1818,7 @@ def build_viewer_app() -> gr.Blocks:
                 outputs=step_outputs,
             )
 
+        if upload_sandbox:
+            demo.load(_upload_auth_state, outputs=[upload_auth_state])
         demo.load(js=PLAYBACK_SYNC_JS)
     return demo

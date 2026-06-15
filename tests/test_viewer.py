@@ -77,6 +77,13 @@ def test_upload_profile_uses_hf_username():
     assert viewer._require_upload_profile(profile) == "alice"
 
 
+def test_upload_auth_state_uses_hf_username():
+    profile = SimpleNamespace(name="Alice Example", username="alice")
+
+    assert viewer._upload_auth_state(profile) == {"username": "alice"}
+    assert viewer._upload_auth_state(None) == {}
+
+
 def test_uploaded_scene_is_preserved_in_engine_state():
     upload_scene = {
         "scene_id": "modal-upload-1",
@@ -149,6 +156,33 @@ def test_submit_modal_upload_rejects_over_duration(monkeypatch):
         )
 
 
+def test_submit_modal_upload_without_auth_does_not_call_modal(monkeypatch):
+    calls = []
+    warnings = []
+
+    def fail_if_called():
+        calls.append("called")
+        raise AssertionError("Modal must not run without a Hugging Face user")
+
+    monkeypatch.setattr(viewer, "_video_duration_s", lambda _path: 7.5)
+    monkeypatch.setattr(viewer, "_modal_upload_client", fail_if_called)
+    monkeypatch.setattr(viewer.gr, "Warning", lambda message: warnings.append(message))
+
+    outputs = viewer._submit_modal_upload(
+        "clip.mp4",
+        "deadpan",
+        "",
+        viewer._pack_engine_ui_state([], None, None, None),
+        None,
+        fake_client(lambda _request: httpx.Response(200, json={"scenes": []})),
+        upload_auth_state={},
+    )
+
+    assert calls == []
+    assert warnings == ["Sign in with Hugging Face to upload a cut."]
+    assert outputs[5]["scenes"] == []
+
+
 def test_submit_modal_upload_pins_returned_scene(monkeypatch):
     scene = {
         "scene_id": "modal-1",
@@ -202,6 +236,53 @@ def test_submit_modal_upload_pins_returned_scene(monkeypatch):
     assert state["current_id"] == "modal-1"
     assert state["playing_id"] == "modal-1"
     assert visibility["value"] == "public"
+
+
+def test_submit_modal_upload_uses_cached_auth_state_when_profile_missing(monkeypatch):
+    scene = {
+        "scene_id": "modal-2",
+        "title": "A Cached Auth Scene",
+        "narration": "The callback profile was empty, but auth was captured on load.",
+        "style_key": "deadpan",
+        "created_at": "2026-06-15T12:00:00+00:00",
+        "visibility": "public",
+        "media": {
+            "frame_url": "uploads/modal-2/media/frame.jpg",
+            "card_url": "uploads/modal-2/media/card.webp",
+            "clip_url": "uploads/modal-2/media/clip.mp4",
+            "audio_url": "uploads/modal-2/media/voice.wav",
+        },
+        "duration": 7.5,
+        "source": "upload",
+    }
+    calls = []
+
+    class FakeModalUploadClient:
+        def submit_video(self, video_path, *, uploader_hf_username, style_key, scene_hint):
+            calls.append((video_path, uploader_hf_username, style_key, scene_hint))
+            return scene
+
+    class FakeMediaClient:
+        base_url = ""
+
+        def media_url(self, path):
+            return f"/gradio_api/file=/tmp/{Path(path).name}" if path else None
+
+    monkeypatch.setattr(viewer, "_video_duration_s", lambda _path: 7.5)
+    monkeypatch.setattr(viewer, "_modal_upload_client", lambda: FakeModalUploadClient())
+
+    _header, _stage, _feed, _audio, _shelf, state, _visibility = viewer._submit_modal_upload(
+        "clip.mp4",
+        "deadpan",
+        "show the ending",
+        viewer._pack_engine_ui_state([], None, None, None),
+        None,
+        FakeMediaClient(),
+        upload_auth_state={"username": "macayaven"},
+    )
+
+    assert calls == [("clip.mp4", "macayaven", "deadpan", "show the ending")]
+    assert state["upload_scene"]["scene_id"] == "modal-2"
 
 
 def test_bucket_scene_client_reads_manifest_and_caches_media(tmp_path, monkeypatch):
@@ -302,6 +383,11 @@ def test_stage_html_shows_source_badges():
     assert "sc-source-badge" not in viewer.render_stage_html(
         "http://x/f.jpg", "caption", live=False, source_icon=None
     )
+
+
+def test_stage_css_caps_desktop_height():
+    assert "height: clamp(300px, 48dvh, 430px)" in viewer.VIEWER_CSS
+    assert "calc(100dvh - 322px), 1480px" not in viewer.VIEWER_CSS
 
 
 def test_shelf_items_marks_source_tiles():

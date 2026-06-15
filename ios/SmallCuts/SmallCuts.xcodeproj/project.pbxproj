@@ -24,6 +24,7 @@
 		703135456BB79B8001542E79 /* FrameClipBufferTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E262AFA4D31BA9A26300C4F /* FrameClipBufferTests.swift */; };
 		7D5139A6D35FD05E744D4CC6 /* VoicePlayerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E9DDEF68041739F02721A89 /* VoicePlayerTests.swift */; };
 		83BDD19F1BBE8BF51058B7C7 /* CaptureCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A19AF4945B8733E10DFFDF16 /* CaptureCoordinator.swift */; };
+		86BAB5F5E30B29CA1E224BE7 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 2D6BE093CF28744F83747D0D /* Assets.xcassets */; };
 		871AB1F5FE0814DB70F255F6 /* SimulatedFrameSourceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CAC173A75920D39B139375BE /* SimulatedFrameSourceTests.swift */; };
 		AE9E22DC2E5DFD257EAC7118 /* WearablesConfigurator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73F07BCAAC50D048B18EEB5D /* WearablesConfigurator.swift */; };
 		C7DEA84FCDEF285AA62199C8 /* MWDATCore in Frameworks */ = {isa = PBXBuildFile; productRef = D51F7BE88A42D5D452245433 /* MWDATCore */; };
@@ -52,6 +53,7 @@
 		0CA6E6EA32023B901FF0F493 /* MomentBuilderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MomentBuilderTests.swift; sourceTree = "<group>"; };
 		107424152F0CCCDC3612560C /* SmallCutsTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = SmallCutsTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		23376BABE4247CA323AE33CA /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		2D6BE093CF28744F83747D0D /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		3143196467D93336B0F1931D /* EngineLoopSmokeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EngineLoopSmokeTests.swift; sourceTree = "<group>"; };
 		31D0A790E69CD08267B72A35 /* EngineSessionClientTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EngineSessionClientTests.swift; sourceTree = "<group>"; };
 		41132D629FB9E5F256BD6898 /* VoicePlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoicePlayer.swift; sourceTree = "<group>"; };
@@ -129,6 +131,7 @@
 		5C63CE7EE96872F97D943402 /* SmallCuts */ = {
 			isa = PBXGroup;
 			children = (
+				2D6BE093CF28744F83747D0D /* Assets.xcassets */,
 				23376BABE4247CA323AE33CA /* Info.plist */,
 				495B7F71D609ABA69A38283D /* App */,
 				C2CE144CCFD547185132F16F /* Capture */,
@@ -215,6 +218,7 @@
 			buildConfigurationList = 8E46504E73C893C920440678 /* Build configuration list for PBXNativeTarget "SmallCuts" */;
 			buildPhases = (
 				A13F20900B3DD5AAEDC88600 /* Sources */,
+				614A294B13925AA1DFA1FC94 /* Resources */,
 				5C4ED02C922A1B6F6AA59907 /* Frameworks */,
 			);
 			buildRules = (
@@ -287,6 +291,17 @@
 			);
 		};
 /* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		614A294B13925AA1DFA1FC94 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				86BAB5F5E30B29CA1E224BE7 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		A13F20900B3DD5AAEDC88600 /* Sources */ = {

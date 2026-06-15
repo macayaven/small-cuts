@@ -89,6 +89,7 @@ targets:
       - package: meta-wearables-dat-ios
         product: MWDATMockDevice
     settings:
+      ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
       PRODUCT_BUNDLE_IDENTIFIER: com.macayaven.smallcuts
       CODE_SIGN_STYLE: Automatic
       ENABLE_PREVIEWS: YES

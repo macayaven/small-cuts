@@ -94,6 +94,58 @@ final class MomentBuilderTests: XCTestCase {
         XCTAssertEqual(frame["height"] as? Int, 640)
     }
 
+    func test_buildIncludesCurrentFrameFirstAndCapsSupplementalFrames() throws {
+        var builder = MomentBuilder(sessionId: "s", styleKey: "deadpan")
+        let capturedAt = Date(timeIntervalSince1970: 1_765_432_100)
+        let current = CapturedFrame(
+            image: image(width: 360, height: 640),
+            capturedAt: capturedAt
+        )
+        let encoded = try XCTUnwrap(
+            MomentBuilder.encodeFrame(current.image, tsOffsetMs: 0)
+        )
+        let supplemental = try (1...25).map { i in
+            try XCTUnwrap(
+                MomentBuilder.encodeFrame(
+                    image(width: CGFloat(100 + i), height: CGFloat(200 + i)),
+                    tsOffsetMs: -i * 1_000
+                )
+            )
+        }
+
+        let built = try XCTUnwrap(
+            builder.build(
+                frame: current,
+                scores: scores,
+                device: device,
+                encoded: encoded,
+                supplementalFrames: supplemental
+            )
+        )
+        let frames = try XCTUnwrap(built.envelope["frames"] as? [[String: Any]])
+
+        XCTAssertEqual(frames.count, 24, "MomentEnvelope contract allows at most twenty-four frames")
+        XCTAssertEqual(frames[0]["ts_offset_ms"] as? Int, 0)
+        XCTAssertEqual(frames[1]["ts_offset_ms"] as? Int, -1_000)
+        XCTAssertEqual(frames[2]["ts_offset_ms"] as? Int, -2_000)
+        XCTAssertEqual(frames[3]["ts_offset_ms"] as? Int, -3_000)
+        if frames.indices.contains(23) {
+            XCTAssertEqual(frames[23]["ts_offset_ms"] as? Int, -23_000)
+        }
+    }
+
+    func test_supplementalFramesUseLowerPayloadCap() throws {
+        let encoded = try XCTUnwrap(
+            MomentBuilder.encodeSupplementalFrame(
+                image(width: 2048, height: 1536),
+                tsOffsetMs: -1_000
+            )
+        )
+
+        XCTAssertEqual(max(encoded.width, encoded.height), 640)
+        XCTAssertEqual(encoded.tsOffsetMs, -1_000)
+    }
+
     func test_datesAreParseableISO8601WithFractionalSeconds() throws {
         var builder = MomentBuilder(sessionId: "s", styleKey: "deadpan")
         let capturedAt = Date(timeIntervalSince1970: 1_765_432_100.125)

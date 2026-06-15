@@ -22,7 +22,14 @@ from PIL import Image  # noqa: E402
 
 from small_cuts.engine import build_engine_app  # noqa: E402
 from small_cuts.engine.app import _last_event_id, scene_event_stream  # noqa: E402
-from small_cuts.engine.library import SceneLibrary  # noqa: E402
+from small_cuts.engine.library import (  # noqa: E402
+    CLIP_BLEND_STEPS,
+    CLIP_MP4_FPS,
+    RGB_MODE,
+    SceneLibrary,
+    _smooth_clip_frames,
+    _write_clip_mp4,
+)
 from small_cuts.title_card import derive_title  # noqa: E402
 from test_engine_session import Reader, make_envelope  # noqa: E402
 
@@ -119,6 +126,85 @@ def test_ws_flow_persists_contract_valid_scene(tmp_path):
             assert wav.getnframes() > 0
 
 
+def test_store_writes_clip_url_and_title_for_multiframe_scene(tmp_path):
+    av = pytest.importorskip("av")
+    lib = SceneLibrary(tmp_path / "lib")
+    stored = lib.store(
+        make_sink_scene(
+            narration="The crossing sign blinked, and the afternoon took credit.",
+            clip_frames=[
+                Image.new("RGB", (32, 56), (255, 0, 0)),
+                Image.new("RGB", (32, 56), (0, 255, 0)),
+                Image.new("RGB", (32, 56), (0, 0, 255)),
+            ],
+        )
+    )
+
+    assert stored["title"] == derive_title(stored["narration"])
+    assert stored["media"]["clip_url"] == f"/media/{stored['scene_id']}/clip.mp4"
+
+    clip_path = tmp_path / "lib" / "media" / stored["scene_id"] / "clip.mp4"
+    assert clip_path.is_file()
+    with av.open(str(clip_path)) as container:
+        assert float(container.streams.video[0].average_rate) == pytest.approx(CLIP_MP4_FPS)
+        frames = list(container.decode(video=0))
+    expected_frame_count = 3 + ((3 - 1) * CLIP_BLEND_STEPS)
+    assert len(frames) >= expected_frame_count
+
+    with TestClient(build_engine_app(library=lib)) as client:
+        clip = client.get(stored["media"]["clip_url"])
+        assert clip.status_code == 200
+    assert clip.content == clip_path.read_bytes()
+
+
+def test_write_clip_mp4_can_disable_blends(tmp_path):
+    av = pytest.importorskip("av")
+    path = tmp_path / "clip.mp4"
+    frames = [Image.new("RGB", (64, 96), (i * 30, 20, 20)) for i in range(4)]
+
+    _write_clip_mp4(path, frames, fps=8, blend_steps=0)
+
+    with av.open(path) as container:
+        assert float(container.streams.video[0].average_rate) == pytest.approx(8)
+        assert sum(1 for _ in container.decode(video=0)) == 4
+
+
+def test_store_prefers_generated_title_when_present(tmp_path):
+    lib = SceneLibrary(tmp_path / "lib")
+    stored = lib.store(
+        make_sink_scene(
+            title="The Door Waits Politely",
+            narration="The door waits politely. It has done this before.",
+        )
+    )
+
+    assert stored["title"] == "The Door Waits Politely"
+
+
+def test_store_uses_key_frame_for_scene_poster(tmp_path):
+    lib = SceneLibrary(tmp_path / "lib")
+    flat = Image.new("RGB", (32, 56), (12, 12, 12))
+    detailed = Image.new("RGB", (32, 56), (40, 120, 80))
+    pixels = detailed.load()
+    for y in range(56):
+        for x in range(32):
+            if (x + y) % 2:
+                pixels[x, y] = (230, 225, 170)
+
+    stored = lib.store(
+        make_sink_scene(
+            image=flat,
+            clip_frames=[flat, detailed, Image.new("RGB", (32, 56), (245, 245, 245))],
+        )
+    )
+
+    frame_path = tmp_path / "lib" / "media" / stored["scene_id"] / "frame.jpg"
+    poster = Image.open(frame_path).convert("RGB")
+    colors = poster.resize((1, 1)).getpixel((0, 0))
+    assert colors[1] > colors[0]
+    assert colors[1] > colors[2]
+
+
 # -- library storage ------------------------------------------------------------
 
 
@@ -156,6 +242,23 @@ def test_set_visibility_rejects_unknown_value(tmp_path):
         lib.set_visibility(stored["scene_id"], "secret")
 
 
+def test_clip_smoothing_inserts_single_micro_dissolve_between_frames():
+    sample_size = (2, 2)
+    sample_pixel = (0, 0)
+    red = (200, 0, 0)
+    blue = (0, 0, 200)
+    midpoint = (100, 0, 100)
+    first = Image.new(RGB_MODE, sample_size, red)
+    second = Image.new(RGB_MODE, sample_size, blue)
+
+    frames = _smooth_clip_frames([first, second], blend_steps=CLIP_BLEND_STEPS)
+
+    assert len(frames) == 2 + CLIP_BLEND_STEPS
+    assert frames[0].getpixel(sample_pixel) == red
+    assert frames[-1].getpixel(sample_pixel) == blue
+    assert frames[1].getpixel(sample_pixel) == midpoint
+
+
 # -- list + filters ---------------------------------------------------------------
 
 
@@ -182,9 +285,27 @@ def test_list_scenes_filters_and_order(tmp_path):
         assert [s["scene_id"] for s in public] == [lunch["scene_id"]]
 
         limited = client.get("/v1/scenes", params={"limit": 2}).json()["scenes"]
-        assert [s["captured_at"] for s in limited] == [at(0), at(1)]
+        assert [s["captured_at"] for s in limited] == [at(1), at(9)]
 
         assert client.get("/v1/scenes", params={"visibility": "secret"}).status_code == 422
+
+
+def test_list_scenes_limit_keeps_new_live_scenes_visible(tmp_path):
+    lib = SceneLibrary(tmp_path / "lib")
+    base = datetime(2026, 6, 12, 9, 0, tzinfo=timezone.utc)
+    for index in range(65):
+        lib.store(
+            make_sink_scene(
+                session_id="demo",
+                captured_at=(base + timedelta(seconds=index)).isoformat(),
+            )
+        )
+
+    with TestClient(build_engine_app(library=lib)) as client:
+        scenes = client.get("/v1/scenes", params={"limit": 60}).json()["scenes"]
+
+    assert len(scenes) == 60
+    assert [scene["seq"] for scene in scenes] == list(range(5, 65))
 
 
 # -- visibility mutations -----------------------------------------------------------

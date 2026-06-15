@@ -8,6 +8,8 @@ viewer's formatter is pinned to the same shape the contract suite enforces.
 import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from types import SimpleNamespace
+from urllib.parse import unquote
 
 import gradio as gr
 import httpx
@@ -47,6 +49,207 @@ def test_build_viewer_app_engine_mode_needs_no_live_engine(monkeypatch):
     assert isinstance(viewer.build_viewer_app(), gr.Blocks)
 
 
+def test_build_viewer_app_bucket_relay_mode_needs_no_live_engine(monkeypatch):
+    monkeypatch.delenv(viewer.ENGINE_URL_ENV, raising=False)
+    monkeypatch.setenv(viewer.RELAY_BUCKET_ENV, "build-small-hackathon/small-cuts-scenes")
+    assert isinstance(viewer.build_viewer_app(), gr.Blocks)
+
+
+def test_upload_sandbox_requires_modal_url(monkeypatch):
+    monkeypatch.setenv("SMALL_CUTS_ENABLE_UPLOAD_SANDBOX", "1")
+    monkeypatch.delenv("SMALL_CUTS_MODAL_API_URL", raising=False)
+
+    assert viewer.upload_sandbox_enabled() is False
+
+    monkeypatch.setenv("SMALL_CUTS_MODAL_API_URL", "https://example.modal.run")
+
+    assert viewer.upload_sandbox_enabled() is True
+
+
+def test_upload_requires_hf_profile():
+    with pytest.raises(gr.Error, match="Sign in"):
+        viewer._require_upload_profile(None)
+
+
+def test_upload_profile_uses_hf_username():
+    profile = SimpleNamespace(name="Alice Example", username="alice")
+
+    assert viewer._require_upload_profile(profile) == "alice"
+
+
+def test_uploaded_scene_is_preserved_in_engine_state():
+    upload_scene = {
+        "scene_id": "modal-upload-1",
+        "title": "A Finished Judge Upload",
+        "source": "upload",
+    }
+
+    state = viewer._pack_engine_ui_state(
+        scenes=[],
+        pinned_id=None,
+        current_id=None,
+        playing_id=None,
+        previous={"upload_scene": upload_scene},
+    )
+
+    assert state["upload_scene"]["scene_id"] == "modal-upload-1"
+
+
+def test_upload_video_cap_defaults_to_sixty_seconds(monkeypatch):
+    monkeypatch.delenv("SMALL_CUTS_UPLOAD_MAX_SECONDS", raising=False)
+
+    assert viewer.upload_max_seconds() == 60.0
+
+
+def test_modal_scene_can_drive_uploaded_stage():
+    scene = {
+        "scene_id": "modal-1",
+        "title": "A sentence.",
+        "narration": "A sentence.",
+        "style_key": "deadpan",
+        "created_at": "2026-06-15T12:00:00+00:00",
+        "media": {
+            "frame_url": "/gradio_api/file=/tmp/frame.jpg",
+            "clip_url": "/gradio_api/file=/tmp/clip.mp4",
+            "audio_url": "/gradio_api/file=/tmp/voice.wav",
+        },
+        "duration": 12.5,
+    }
+
+    payload = viewer.format_stage(scene)
+
+    assert payload["clip_src"].endswith("clip.mp4")
+    assert payload["audio_src"].endswith("voice.wav")
+    assert payload["duration"] == 12.5
+
+
+def test_format_stage_marks_source_icons():
+    scene = {**GOLDEN_SCENE, "source": "glasses"}
+    upload_scene = {**GOLDEN_SCENE, "source": "upload"}
+
+    glasses_payload = viewer.format_stage(scene, ENGINE_URL)
+    upload_payload = viewer.format_stage(upload_scene, ENGINE_URL)
+
+    assert glasses_payload["source_icon"] == "glasses"
+    assert upload_payload["source_icon"] == "upload"
+
+
+def test_submit_modal_upload_rejects_over_duration(monkeypatch):
+    monkeypatch.setenv("SMALL_CUTS_UPLOAD_MAX_SECONDS", "60")
+    monkeypatch.setattr(viewer, "_video_duration_s", lambda _path: 61.0)
+
+    with pytest.raises(gr.Error, match="up to 60 seconds"):
+        viewer._submit_modal_upload(
+            "clip.mp4",
+            "deadpan",
+            "",
+            viewer._pack_engine_ui_state([], None, None, None),
+            SimpleNamespace(name="Alice Example", username="alice"),
+            fake_client(lambda _request: httpx.Response(200, json={"scenes": []})),
+        )
+
+
+def test_submit_modal_upload_pins_returned_scene(monkeypatch):
+    scene = {
+        "scene_id": "modal-1",
+        "title": "A Modal Scene",
+        "narration": "The clip now has a real voice.",
+        "style_key": "deadpan",
+        "created_at": "2026-06-15T12:00:00+00:00",
+        "visibility": "public",
+        "media": {
+            "frame_url": "uploads/modal-1/media/frame.jpg",
+            "card_url": "uploads/modal-1/media/card.webp",
+            "clip_url": "uploads/modal-1/media/clip.mp4",
+            "audio_url": "uploads/modal-1/media/voice.wav",
+        },
+        "duration": 7.5,
+        "source": "upload",
+    }
+    calls = []
+
+    class FakeModalUploadClient:
+        def submit_video(self, video_path, *, uploader_hf_username, style_key, scene_hint):
+            calls.append((video_path, uploader_hf_username, style_key, scene_hint))
+            return scene
+
+    class FakeMediaClient:
+        base_url = ""
+
+        def media_url(self, path):
+            return f"/gradio_api/file=/tmp/{Path(path).name}" if path else None
+
+    monkeypatch.setattr(viewer, "_video_duration_s", lambda _path: 7.5)
+    monkeypatch.setattr(viewer, "_modal_upload_client", lambda: FakeModalUploadClient())
+
+    header, stage, feed, audio, shelf, state, visibility = viewer._submit_modal_upload(
+        "clip.mp4",
+        "deadpan",
+        "show the ending",
+        viewer._pack_engine_ui_state([], None, None, None),
+        SimpleNamespace(name="Alice Example", username="alice"),
+        FakeMediaClient(),
+    )
+
+    assert calls == [("clip.mp4", "alice", "deadpan", "show the ending")]
+    assert "A Modal Scene" in header
+    assert "clip.mp4" in stage
+    assert "sc-ico-upload" in stage
+    assert "real voice" in feed
+    assert "voice.wav" in audio
+    assert shelf == [
+        ("/gradio_api/file=/tmp/frame.jpg", f"{viewer.UPLOAD_SHELF_PREFIX}A Modal Scene")
+    ]
+    assert state["upload_scene"]["scene_id"] == "modal-1"
+    assert state["current_id"] == "modal-1"
+    assert state["playing_id"] == "modal-1"
+    assert visibility["value"] == "public"
+
+
+def test_bucket_scene_client_reads_manifest_and_caches_media(tmp_path, monkeypatch):
+    class FakeBucketFs:
+        def __init__(self, files):
+            self.files = files
+            self.seen = []
+
+        def cat(self, path):
+            self.seen.append(path)
+            return self.files[path]
+
+    media = {
+        "frame_url": "media/9f1c7e4a/frame.jpg",
+        "card_url": "media/9f1c7e4a/card.webp",
+        "audio_url": "media/9f1c7e4a/voice.wav",
+        "clip_url": "media/9f1c7e4a/clip.mp4",
+    }
+    scene = {**GOLDEN_SCENE, "media": media}
+    root = "hf://buckets/build-small-hackathon/small-cuts-scenes/relay"
+    fake_fs = FakeBucketFs(
+        {
+            f"{root}/manifest.json": json.dumps({"scenes": [scene]}).encode(),
+            f"{root}/media/9f1c7e4a/frame.jpg": b"frame",
+            f"{root}/media/9f1c7e4a/card.webp": b"card",
+            f"{root}/media/9f1c7e4a/voice.wav": b"voice",
+            f"{root}/media/9f1c7e4a/clip.mp4": b"clip",
+        }
+    )
+    monkeypatch.setattr(viewer.gr, "set_static_paths", lambda _paths: None)
+
+    client = viewer.BucketSceneClient(
+        "build-small-hackathon/small-cuts-scenes",
+        prefix="relay",
+        fs=fake_fs,
+        cache_dir=tmp_path,
+    )
+
+    (hydrated,) = client.list_scenes()
+    frame_url = hydrated["media"]["frame_url"]
+    assert frame_url.startswith("/gradio_api/file=")
+    assert Path(unquote(frame_url.removeprefix("/gradio_api/file="))).read_bytes() == b"frame"
+    assert (tmp_path / "media/9f1c7e4a/voice.wav").read_bytes() == b"voice"
+    assert f"{root}/manifest.json" in fake_fs.seen
+
+
 # -- scene-poll formatter --------------------------------------------------------------
 
 
@@ -74,6 +277,7 @@ def test_format_stage_no_scene_is_off_air():
     assert payload["live"] is False
     assert payload["frame_src"] is None
     assert payload["scene_id"] is None
+    assert payload["source_icon"] is None
 
 
 def test_stage_html_escapes_caption_and_has_no_rec_chip():
@@ -82,6 +286,57 @@ def test_stage_html_escapes_caption_and_has_no_rec_chip():
     assert "&lt;script&gt;" in out
     # the stage no longer carries a REC chip — live/finished state lives in the header
     assert "REC" not in out
+
+
+def test_stage_html_shows_source_badges():
+    glasses = viewer.render_stage_html(
+        "http://x/f.jpg", "caption", live=False, source_icon="glasses"
+    )
+    upload = viewer.render_stage_html("http://x/f.jpg", "caption", live=False, source_icon="upload")
+
+    assert "sc-source-badge" in glasses
+    assert "sc-ico-glasses" in glasses
+    assert "Glasses capture" in glasses
+    assert "sc-source-badge" in upload
+    assert "sc-ico-upload" in upload
+    assert "Space upload" in upload
+
+    assert "sc-source-badge" not in viewer.render_stage_html(
+        "http://x/f.jpg", "caption", live=False, source_icon=None
+    )
+
+
+def test_shelf_items_marks_source_tiles():
+    class FakeMediaClient:
+        def media_url(self, path):
+            return f"/media/{path}" if path else None
+
+    glasses_scene = {
+        **GOLDEN_SCENE,
+        "source": "glasses",
+        "title": "A Glasses Scene",
+        "media": {"frame_url": "frame.jpg"},
+    }
+    upload_scene = {
+        **GOLDEN_SCENE,
+        "source": "upload",
+        "title": "An Upload Scene",
+        "media": {"frame_url": "upload.jpg"},
+    }
+
+    items = viewer.shelf_items([glasses_scene, upload_scene], FakeMediaClient())
+
+    assert items[0] == ("/media/frame.jpg", f"{viewer.GLASSES_SHELF_PREFIX}A Glasses Scene")
+    assert items[1] == ("/media/upload.jpg", f"{viewer.UPLOAD_SHELF_PREFIX}An Upload Scene")
+
+
+def test_playback_js_uses_trusted_dom_click_for_audio():
+    # Browser audio user activation is tied to the real click call stack. Routing play through
+    # gr.Button.click(js=...) can run too late and trigger NotAllowedError on the Space.
+    assert "closest('.sc-play-btn')" in viewer.PLAYBACK_SYNC_JS
+    assert "pointerdown" in viewer.PLAYBACK_SYNC_JS
+    assert "audio.play()" in viewer.PLAYBACK_SYNC_JS
+    assert "audio play blocked" in viewer.PLAYBACK_SYNC_JS
 
 
 def test_header_live_reads_happening_now_else_title():
@@ -138,7 +393,7 @@ def test_poll_engine_renders_the_whole_page():
     # audio is now the hidden master-clock <audio> element carrying the served voice URL
     assert "<audio" in audio and 'id="sc-voice"' in audio
     assert f"{ENGINE_URL}/media/9f1c7e4a/voice.wav" in audio
-    assert shelf == [(f"{ENGINE_URL}/media/9f1c7e4a/card.webp", "The Bicycle Is Mustard Yellow")]
+    assert shelf == [(f"{ENGINE_URL}/media/9f1c7e4a/frame.jpg", "The Bicycle Is Mustard Yellow")]
     assert scenes == [GOLDEN_SCENE]
     assert current == GOLDEN_SCENE["scene_id"]
     assert playing == GOLDEN_SCENE["scene_id"]
@@ -170,6 +425,60 @@ def test_poll_engine_same_audio_not_restarted():
     audio, shelf = outputs[3], outputs[4]
     assert audio == gr.skip()  # already playing this scene: no restart
     assert shelf == gr.skip()  # shelf unchanged: no gallery re-render
+
+
+def test_poll_engine_announces_new_live_without_interrupting_current_scene():
+    older = {
+        **GOLDEN_SCENE,
+        "scene_id": "older",
+        "title": "The Door Waits Politely",
+        "created_at": (CREATED_AT - timedelta(seconds=20)).isoformat(),
+        "media": {
+            **GOLDEN_SCENE["media"],
+            "frame_url": "/media/older/frame.jpg",
+            "audio_url": "/media/older/voice.wav",
+        },
+    }
+    newer = {
+        **GOLDEN_SCENE,
+        "scene_id": "newer",
+        "title": "The Street Becomes Evidence",
+        "created_at": CREATED_AT.isoformat(),
+        "media": {
+            **GOLDEN_SCENE["media"],
+            "frame_url": "/media/newer/frame.jpg",
+            "audio_url": "/media/newer/voice.wav",
+        },
+    }
+
+    def handler(request):
+        return httpx.Response(200, json={"scenes": [older, newer]})
+
+    header, stage, _feed, audio, _shelf, _scenes, current, playing, _vis = viewer.poll_engine(
+        fake_client(handler),
+        [older],
+        pinned_id=None,
+        playing_id=older["scene_id"],
+        current_id=older["scene_id"],
+        now=CREATED_AT + timedelta(seconds=5),
+    )
+
+    assert "New cut available" in header
+    assert "Tap to watch" in header
+    assert f"{ENGINE_URL}/media/older/frame.jpg" in stage
+    assert f"{ENGINE_URL}/media/newer/frame.jpg" not in stage
+    assert audio == gr.skip()
+    assert current == older["scene_id"]
+    assert playing == older["scene_id"]
+
+
+def test_step_index_wraps_library_edges():
+    scenes = [{"scene_id": "a"}, {"scene_id": "b"}, {"scene_id": "c"}]
+
+    assert viewer._stepped_scene(scenes, "a", -1)["scene_id"] == "c"
+    assert viewer._stepped_scene(scenes, "c", 1)["scene_id"] == "a"
+    assert viewer._stepped_scene(scenes, None, 1)["scene_id"] == "a"
+    assert viewer._stepped_scene(scenes, None, -1)["scene_id"] == "b"
 
 
 def test_poll_engine_unreachable_engine_degrades_to_signal_lost():
@@ -206,11 +515,41 @@ def test_go_live_handler_stages_a_scene(monkeypatch):
     assert pinned is None
 
 
+def test_local_scene_thumbnail_uses_stage_frame_not_title_card():
+    frame = make_image(color=(10, 220, 120))
+    card = make_image(width=1280, height=720, color=(220, 10, 10))
+
+    scene = viewer.make_local_scene(frame, card, "The title card stays elsewhere.", "deadpan")
+
+    color = scene["card_thumb"].resize((1, 1)).getpixel((0, 0))
+    assert color[1] > color[0]
+    assert color[1] > color[2]
+
+
 def test_go_live_handler_without_moment_still_narrates(monkeypatch):
     monkeypatch.delenv("SMALL_CUTS_BACKEND", raising=False)
     *_page, scenes, _pinned = viewer._go_live_handler(None, None, "deadpan", "", [])
     assert len(scenes) == 1
     assert "scene" in scenes[0]["narration"].lower()  # the empty-stage easter egg
+
+
+def test_go_live_handler_video_uses_key_frame(monkeypatch):
+    monkeypatch.delenv("SMALL_CUTS_BACKEND", raising=False)
+    key_frame = make_image(color=(10, 220, 120))
+    captured = {}
+
+    monkeypatch.setattr(viewer, "sample_frames", lambda _path: [make_image(), key_frame])
+    monkeypatch.setattr(viewer, "pick_key_frame", lambda frames: frames[-1])
+
+    def fake_narrate_core(frame, style_key, scene_hint, empty_caption):
+        captured["frame"] = frame
+        return make_image(width=1280, height=720), "The frame has been chosen deliberately."
+
+    monkeypatch.setattr(viewer, "_narrate_core", fake_narrate_core)
+
+    viewer._go_live_handler(None, "clip.mp4", "deadpan", "", [])
+
+    assert captured["frame"] is key_frame
 
 
 def test_go_live_handler_appends_to_session_shelf(monkeypatch):
@@ -239,6 +578,32 @@ def test_voice_handler_prefers_pinned_scene(monkeypatch):
     assert viewer._current_scene([first, second], "a") is first
     assert viewer._current_scene([first, second], None) is second
     assert viewer._current_scene([first, second], "missing") is second
+
+
+def test_scene_actions_are_scoped_to_current_scene():
+    liked, reported = {"a"}, {"b"}
+
+    assert viewer._scene_action_classes("a", liked, reported) == (
+        ["sc-icbtn", "sc-ico-like-filled", "sc-like-btn"],
+        ["sc-icbtn", "sc-ico-flag", "sc-report-btn"],
+    )
+    assert viewer._scene_action_classes("b", liked, reported) == (
+        ["sc-icbtn", "sc-ico-like", "sc-like-btn"],
+        ["sc-icbtn", "sc-ico-flag-filled", "sc-report-btn"],
+    )
+
+
+def test_scene_action_toggles_target_only_current_scene():
+    liked, reported = set(), set()
+
+    liked, like_update = viewer._toggle_scene_like("a", liked, reported)
+    assert liked == {"a"}
+    assert "sc-ico-like-filled" in like_update["elem_classes"]
+
+    reported, report_update = viewer._toggle_scene_report("b", liked, reported)
+    assert reported == {"b"}
+    assert "sc-ico-flag-filled" in report_update["elem_classes"]
+    assert "sc-ico-like-filled" not in report_update["elem_classes"]
 
 
 # -- review-hardening regressions (cross-family Codex+GLM review, 2026-06-14) ----------

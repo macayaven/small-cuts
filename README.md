@@ -11,7 +11,9 @@ license: mit
 short_description: A deadpan narrator for your life, from small open models.
 tags:
   - track:wood
+  - achievement:offgrid
   - achievement:offbrand
+  - achievement:llama
   - achievement:fieldnotes
 ---
 
@@ -34,34 +36,39 @@ This is the **challenger submission** for the
 **June 15, 2026, 23:59 UTC**), the strategic successor to the original
 *Director's Cut* project.
 
-## The soul of it — the real-time loop
+## The soul of it — the Action-to-Cut loop
 
 Small Cuts was born wearing glasses. The intended experience is a **live loop**:
 
 ```
-Ray-Ban Meta glasses  ──video+audio──▶  home engine (small VLM + TTS)  ──▶  narration in your ear
+Ray-Ban Meta glasses  ──image frames──▶  home engine (small VLM + TTS)  ──▶  narration in your ear
                                               │
                                               └──── finished cuts ────▶  the Space (watch · library)
 ```
 
-You walk through a moment; the narrator speaks it back to you, **chunk by chunk**, in
-near-real-time — each line short enough to land while the moment is still *recent past*,
-never racing ahead of what just happened. Within a single clip the narrator remembers what
-it already said (intra-clip coherence), so the clip reads as one continuous wry little story.
+You walk through a moment, tap **Action!**, then tap **Cut!** when the scene has a readable
+beat. The narrator watches a selected first-person frame and speaks one grounded, deadpan line
+back in your ear while the moment is still *recent past*. The finished cut then lands in the
+Space as a short POV clip with synced captions, title, voice, and library thumbnail.
 
-**One pipeline, two surfaces:** the same narration plays *in your ear* live, and lands in the
-**Space** below as a finished cut you can re-watch — with film-style subtitles that crawl in
-sync with the voice — and publish to a library.
+**One completed-cut experience, multiple inputs:** from the Space's point of view, glasses cuts
+and authenticated browser uploads resolve to the same artifact shape: a finished video, generated
+title, generated narration, Kokoro voice, synced captions, and a library tile. Glasses remain the
+private wearer path; browser uploads are a judge-verifiable path with no glasses or iOS required.
 
 ## What's in this Space
 
 The Space is the **view platform + library** half of the loop — a small streaming-channel UI:
 
-- **A live stage** with the current moment, ●REC chip, and **movie-style subtitles** (short
+- **A live stage** with the current moment and **movie-style subtitles** (short
   phrase-sized lines over a constant dark bar, advancing with the voice-over).
-- **Voice-over on by default**, with the player's own volume/mute and a "report this clip" control.
-- **A hero library** of real Ray-Ban Meta glasses moments, seeded so the channel is never empty.
-- **"Try it"** — a tucked-away sandbox (open only on request) to narrate your *own* short video.
+- **Voice-over replay**, with a compact custom player whose video, sound, captions, and progress
+  share the same audio clock.
+- **A public library** of real Ray-Ban Meta glasses moments, generated through the same local
+  engine path so the channel is never empty. The source clips and mark points are curated; the
+  visible titles, narration, voice, thumbnails, and clips are produced by Small Cuts.
+- **"Try it"** — a tucked-away, HF-login upload drawer that sends your short video to a private
+  Modal post-cut service, then replays the generated cut in the same theater.
 
 ## How it was built
 
@@ -69,12 +76,14 @@ The Space is the **view platform + library** half of the loop — a small stream
 |---|---|---|
 | Narrator (VLM) | `Qwen/Qwen3-VL-8B-Instruct` | Strong grounded captioning at 8B — well under 32B |
 | Voice (TTS) | **Kokoro** (24 kHz) | Tiny, expressive, open; one signature deadpan delivery |
-| Space runtime | Gradio 6 on **ZeroGPU**, self-contained | The judged canvas; no external APIs at runtime |
-| Real-time engine | FastAPI WS home node, **llama.cpp** option | The live in-ear loop + demo video |
+| Space runtime | Gradio 6 on CPU | Public theater + library; uploads call Modal instead of warming models |
+| Judge upload service | Modal GPU app (`small-cuts-postcut`) | Finished-video verification path with real Qwen + Kokoro output |
+| Local live engine | FastAPI WS home node, **llama.cpp** | The in-ear loop + demo video; no cloud LLM/TTS API |
 | Capture | iOS app for Ray-Ban Meta glasses (`ios/SmallCuts/`) | First-person moments, the way it's meant to be lived |
 
-Implementation is a cross-model team effort: **Claude (Opus)** orchestrates, **Codex (GPT-5.x)**
-implements, with **GLM** review and a **Gemini** eval judge.
+Built by **Carlos Crespo Macaya** as architect and lead. Development was accelerated with an
+AI toolchain: Claude (Opus) for design critique, Codex (GPT-5.x) for paired implementation,
+GLM for review, and Gemini for eval, all directed by Carlos.
 
 ## Hackathon compliance
 
@@ -82,18 +91,19 @@ implements, with **GLM** review and a **Gemini** eval judge.
 |---|---|
 | Gradio app hosted as a Space under the org | The app **is** the product — this Space |
 | Every model < 32B | 8B VLM narrator + small Kokoro TTS, all open weights |
-| Demo video | Filmed POV with Ray-Ban Meta glasses → narrated by the app *(link below)* |
-| Social post | Linked from this README *(link below)* |
+| Demo video | Filmed POV with Ray-Ban Meta glasses → narrated by the app *(pending final link below)* |
+| Social post | Linked from this README *(pending final link below)* |
 | Track 2 — **Thousand Token Wood** (`track:wood`) | Whimsical, delightful, AI-load-bearing, original |
+| Off the Grid (`achievement:offgrid`) | Live inference/TTS runs on local hardware; public Space reads finished cuts only |
+| Llama (`achievement:llama`) | The live engine runs through `llama.cpp` |
 
 - 📹 **Demo video:** _TODO — add public link before submission_
 - 📣 **Social post:** _TODO — add link before submission_
 - 📝 **Field notes:** [hf.co/blog/macayaven/small-cuts-field-notes](https://huggingface.co/blog/macayaven/small-cuts-field-notes)
 
-**Bonus quests claimed:** Off-Brand (`offbrand`, custom cinematic frontend) · Field Notes
-(`fieldnotes`, the write-up above). **Under review** (see maintainers' notes): `offgrid`
-(the deadline build is self-contained — no cloud APIs at runtime), `llama` (llama.cpp home
-engine), and the OpenAI / Modal sponsor prizes.
+**Bonus quests claimed:** Off-Brand (`offbrand`, custom cinematic frontend) · Off the Grid
+(`offgrid`, local small-model engine for the live loop) · Llama (`llama`, llama.cpp) · Field
+Notes (`fieldnotes`, the write-up above).
 
 ## Quick start
 
@@ -110,13 +120,20 @@ SMALL_CUTS_BACKEND=transformers uv run --no-sync python app.py
 # run the real-time engine (needs `brew install llama.cpp`)
 SMALL_CUTS_BACKEND=llama_cpp SMALL_CUTS_TTS_BACKEND=kokoro uv run python -m small_cuts.engine
 
+# run the hybrid relay + Modal upload Space locally (token comes from your local secret env)
+SMALL_CUTS_RELAY_BUCKET=build-small-hackathon/small-cuts-scenes \
+SMALL_CUTS_RELAY_PREFIX=relay \
+SMALL_CUTS_ENABLE_UPLOAD_SANDBOX=1 \
+SMALL_CUTS_MODAL_API_URL=https://macayaven--small-cuts-postcut-api.modal.run \
+uv run --no-sync python app.py
+
 # the gate (mirrors CI exactly)
 uv run ruff check . && uv run ruff format --check . && uv run pytest
 ```
 
 ## Repository map
 
-- `app.py` — Hugging Face Space entrypoint (Gradio, ZeroGPU)
+- `app.py` — Hugging Face Space entrypoint (Gradio CPU viewer/library)
 - `src/small_cuts/` — the product: `viewer.py` (streaming viewer), `narrator.py` (VLM backends),
   `tts.py` (Kokoro), `styles.py` (grounded prompt), `engine/` (real-time home node), `seed_media/`
 - `ios/SmallCuts/` — the Ray-Ban Meta glasses capture app

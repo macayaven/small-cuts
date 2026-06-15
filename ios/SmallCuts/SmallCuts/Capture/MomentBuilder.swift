@@ -86,6 +86,9 @@ struct MomentBuilder {
     static let contractVersion = "1.1.0"
     static let maxFrameSide: CGFloat = 1024
     static let jpegQuality: CGFloat = 0.9
+    static let supplementalMaxFrameSide: CGFloat = 640
+    static let supplementalJpegQuality: CGFloat = 0.72
+    static let maxFramesPerMoment = 24
 
     let sessionId: String
     var styleKey: String
@@ -117,9 +120,12 @@ struct MomentBuilder {
         scores: GateScores,
         device: DeviceContext,
         sentAt: Date = Date(),
-        encoded: EncodedFrame? = nil
+        encoded: EncodedFrame? = nil,
+        supplementalFrames: [EncodedFrame] = []
     ) -> (momentId: String, envelope: [String: Any])? {
-        guard let encoded = encoded ?? Self.encodeFrame(frame.image) else { return nil }
+        guard let encoded = encoded ?? Self.encodeFrame(frame.image, tsOffsetMs: 0) else {
+            return nil
+        }
 
         let momentId = UUID().uuidString.lowercased()
         var context: [String: Any] = [
@@ -132,19 +138,17 @@ struct MomentBuilder {
             context["battery_pct"] = battery
         }
 
+        let frames = ([encoded] + supplementalFrames)
+            .prefix(Self.maxFramesPerMoment)
+            .map { $0.envelopePayload }
+
         let envelope: [String: Any] = [
             "contract_version": Self.contractVersion,
             "moment_id": momentId,
             "session_id": sessionId,
             "captured_at": ContractDates.format(frame.capturedAt),
             "sent_at": ContractDates.format(sentAt),
-            "frames": [
-                [
-                    "jpeg_b64": encoded.jpegBase64,
-                    "width": encoded.width,
-                    "height": encoded.height,
-                ]
-            ],
+            "frames": Array(frames),
             "gate": [
                 "scene_change_score": min(1.0, max(0.0, scores.sceneChangeScore)),
                 "trigger": scores.trigger.rawValue,
@@ -165,11 +169,28 @@ struct MomentBuilder {
         let jpegBase64: String
         let width: Int
         let height: Int
+        let tsOffsetMs: Int?
+
+        var envelopePayload: [String: Any] {
+            var payload: [String: Any] = [
+                "jpeg_b64": jpegBase64,
+                "width": width,
+                "height": height,
+            ]
+            if let tsOffsetMs {
+                payload["ts_offset_ms"] = tsOffsetMs
+            }
+            return payload
+        }
     }
 
-    /// Downscale so the longest side ≤ 1024 px (contract cap, in *pixels* —
-    /// renders at scale 1), then JPEG at 0.9.
-    static func encodeFrame(_ image: UIImage) -> EncodedFrame? {
+    /// Downscale so the longest side respects the contract cap, then JPEG encode.
+    static func encodeFrame(
+        _ image: UIImage,
+        tsOffsetMs: Int? = nil,
+        maxFrameSide: CGFloat = Self.maxFrameSide,
+        jpegQuality: CGFloat = Self.jpegQuality
+    ) -> EncodedFrame? {
         let pixelWidth = image.size.width * image.scale
         let pixelHeight = image.size.height * image.scale
         guard pixelWidth > 0, pixelHeight > 0 else { return nil }
@@ -191,7 +212,20 @@ struct MomentBuilder {
         return EncodedFrame(
             jpegBase64: jpeg.base64EncodedString(),
             width: Int(target.width),
-            height: Int(target.height)
+            height: Int(target.height),
+            tsOffsetMs: tsOffsetMs
+        )
+    }
+
+    /// Supplemental frames only feed the public POV clip. Keep the selected
+    /// narration frame high quality; make these lighter to protect upload
+    /// latency and memory during the glasses demo.
+    static func encodeSupplementalFrame(_ image: UIImage, tsOffsetMs: Int) -> EncodedFrame? {
+        encodeFrame(
+            image,
+            tsOffsetMs: tsOffsetMs,
+            maxFrameSide: supplementalMaxFrameSide,
+            jpegQuality: supplementalJpegQuality
         )
     }
 }

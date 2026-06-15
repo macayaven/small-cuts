@@ -6,7 +6,7 @@ import gradio as gr
 import numpy as np
 from PIL import Image
 
-from .frames import pick_frame, sample_frames
+from .frames import pick_key_frame, sample_frames
 from .narrator import get_backend, narrate
 from .styles import DEFAULT_STYLE_KEY, style_choices
 from .theme import build_theme
@@ -71,7 +71,7 @@ def _narrate_handler(
 def _narrate_video_handler(
     video_path: str | None, style_key: str, scene_hint: str
 ) -> tuple[Image.Image, str]:
-    frame = pick_frame(sample_frames(video_path)) if video_path else None
+    frame = pick_key_frame(sample_frames(video_path)) if video_path else None
     return _narrate_core(
         frame,
         style_key,

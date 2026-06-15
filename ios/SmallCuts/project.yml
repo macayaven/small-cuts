@@ -5,6 +5,11 @@ options:
     iOS: "17.0"
   createIntermediateGroups: true
 
+settings:
+  ENABLE_USER_SCRIPT_SANDBOXING: "YES"
+  LOCALIZATION_PREFERS_STRING_CATALOGS: "YES"
+  ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS: "YES"
+
 packages:
   # Mirrors AeroWing's reference (remote pin, not the local clone — the local
   # repo's HEAD has no Package.swift; only release tags ship the SPM manifest).
@@ -31,6 +36,18 @@ targets:
         NSBluetoothPeripheralUsageDescription: "Small Cuts uses Bluetooth to discover and stream video from your Meta Ray-Ban glasses."
         NSCameraUsageDescription: "Small Cuts streams the camera on your Meta Ray-Ban glasses to capture moments."
         NSLocalNetworkUsageDescription: "Small Cuts uses the local network to establish a high-bandwidth transport with your Meta Ray-Ban glasses."
+        # Demo transport: the capture/write path is a private Tailnet WebSocket
+        # to the Mac Studio engine. Keep ATS open only for local networking and
+        # the Mac Studio MagicDNS host; the public viewer path remains HTTPS.
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+          NSExceptionDomains:
+            mac-studio.tail48bab7.ts.net:
+              NSExceptionAllowsInsecureHTTPLoads: true
+              NSIncludesSubdomains: false
+            mac-studio:
+              NSExceptionAllowsInsecureHTTPLoads: true
+              NSIncludesSubdomains: false
         NSBonjourServices:
           - "_meta-wearables._tcp"
           - "_meta-wearables._udp"
@@ -72,10 +89,13 @@ targets:
       - package: meta-wearables-dat-ios
         product: MWDATMockDevice
     settings:
+      ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
       PRODUCT_BUNDLE_IDENTIFIER: com.macayaven.smallcuts
       CODE_SIGN_STYLE: Automatic
       ENABLE_PREVIEWS: YES
       SWIFT_VERSION: "5.0"
+      SWIFT_EMIT_LOC_STRINGS: "YES"
+      STRING_CATALOG_GENERATE_SYMBOLS: "YES"
       TARGETED_DEVICE_FAMILY: "1"
       MARKETING_VERSION: 0.1.0
       CURRENT_PROJECT_VERSION: 1
@@ -92,6 +112,8 @@ targets:
         product: MWDATCore
     settings:
       SWIFT_VERSION: "5.0"
+      SWIFT_EMIT_LOC_STRINGS: "YES"
+      STRING_CATALOG_GENERATE_SYMBOLS: "YES"
       GENERATE_INFOPLIST_FILE: YES
 
 schemes:

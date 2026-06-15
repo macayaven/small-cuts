@@ -20,7 +20,10 @@ import threading
 from pathlib import Path
 from typing import Any
 
+from PIL import Image
+
 from small_cuts import narrator, tts
+from small_cuts.frames import pick_key_frame
 from small_cuts.title_card import derive_title, render_title_card
 
 from .session import CONTRACT_VERSION, _wav_bytes
@@ -28,7 +31,15 @@ from .session import CONTRACT_VERSION, _wav_bytes
 DEFAULT_ROOT = "~/.small-cuts/library"
 OWNER = "carlos"  # v1 engines are single-user; the field is reserved for multi-user
 VISIBILITIES = ("private", "shared", "public")
-MEDIA_FILES = ("frame.jpg", "card.webp", "voice.wav")
+MEDIA_FILES = ("frame.jpg", "card.webp", "voice.wav", "clip.mp4")
+CLIP_MP4_FPS = 12
+CLIP_BLEND_STEPS = 1
+H264_MIN_DIMENSION = 2
+POSTER_JPEG_QUALITY = 90
+RGB_MODE = "RGB"
+VIDEO_PIXEL_FORMAT = "yuv420p"
+PRIMARY_VIDEO_CODEC = "libx264"
+FALLBACK_VIDEO_CODEC = "h264"
 
 _SCHEMA = """\
 CREATE TABLE IF NOT EXISTS scenes (
@@ -122,11 +133,21 @@ class SceneLibrary:
         scene_id: str = scene["scene_id"]
         narration: str = scene["narration"]
         style_key: str = scene["style_key"]
-        title = derive_title(narration)
+        title = _stored_title(scene.get("title"), narration)
 
         scene_dir = self.media_dir / scene_id
         scene_dir.mkdir(parents=True, exist_ok=True)
-        scene["image"].convert("RGB").save(scene_dir / "frame.jpg", "JPEG", quality=90)
+        clip_frames = scene.get("clip_frames") or []
+        poster = pick_key_frame(clip_frames) if clip_frames else scene["image"]
+        poster.convert(RGB_MODE).save(scene_dir / "frame.jpg", "JPEG", quality=POSTER_JPEG_QUALITY)
+        if len(clip_frames) >= 2:
+            try:
+                _write_clip_mp4(scene_dir / "clip.mp4", clip_frames)
+            except Exception as exc:
+                print(
+                    f"small_cuts.engine: clip write failed for scene {scene_id}: {exc!r}",
+                    file=sys.stderr,
+                )
         render_title_card(title, style_key).save(scene_dir / "card.webp", "WEBP")
         (scene_dir / "voice.wav").write_bytes(_wav_bytes(scene["audio"], scene["sample_rate"]))
 
@@ -167,6 +188,13 @@ class SceneLibrary:
     def to_narrated_scene(self, row: sqlite3.Row) -> dict[str, Any]:
         """Contract-valid NarratedScene (1.1.0) for one stored row."""
         scene_id = row["scene_id"]
+        media = {
+            "frame_url": f"/media/{scene_id}/frame.jpg",
+            "card_url": f"/media/{scene_id}/card.webp",
+            "audio_url": f"/media/{scene_id}/voice.wav",
+        }
+        if (self.media_dir / scene_id / "clip.mp4").is_file():
+            media["clip_url"] = f"/media/{scene_id}/clip.mp4"
         return {
             "contract_version": CONTRACT_VERSION,
             "scene_id": scene_id,
@@ -180,11 +208,7 @@ class SceneLibrary:
             "visibility": row["visibility"],
             "seq": row["seq"],
             "owner": row["owner"],
-            "media": {
-                "frame_url": f"/media/{scene_id}/frame.jpg",
-                "card_url": f"/media/{scene_id}/card.webp",
-                "audio_url": f"/media/{scene_id}/voice.wav",
-            },
+            "media": media,
             "engine": json.loads(row["engine"]),
         }
 
@@ -194,7 +218,7 @@ class SceneLibrary:
         visibility: str | None = None,
         limit: int = 100,
     ) -> list[dict[str, Any]]:
-        """Scenes ordered by `captured_at` — chronology, not arrival (D8 reorders)."""
+        """Newest bounded window, returned in scene chronology for the viewer."""
         clauses, params = [], []
         if session_id is not None:
             clauses.append("session_id = ?")
@@ -203,7 +227,11 @@ class SceneLibrary:
             clauses.append("visibility = ?")
             params.append(visibility)
         where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
-        query = f"SELECT * FROM scenes{where} ORDER BY captured_at, seq LIMIT ?"
+        query = (
+            "SELECT * FROM ("
+            f"SELECT * FROM scenes{where} ORDER BY seq DESC LIMIT ?"
+            ") ORDER BY captured_at, seq"
+        )
         with self._lock:
             rows = self._db.execute(query, (*params, limit)).fetchall()
         return [self.to_narrated_scene(row) for row in rows]
@@ -257,3 +285,72 @@ class SceneLibrary:
     def close(self) -> None:
         with self._lock:
             self._db.close()
+
+
+def _write_clip_mp4(
+    path: Path,
+    frames: list[Image.Image],
+    fps: int = CLIP_MP4_FPS,
+    blend_steps: int = CLIP_BLEND_STEPS,
+) -> None:
+    """Render a small browser-playable MP4 from sampled POV frames."""
+    import av
+
+    rgb_frames = [frame.convert(RGB_MODE) for frame in frames]
+    width, height = rgb_frames[0].size
+    # H.264/yuv420p expects even dimensions. Preserve portrait aspect and only
+    # shave one pixel if needed; capture frames are already downscaled upstream.
+    width = max(H264_MIN_DIMENSION, width - (width % 2))
+    height = max(H264_MIN_DIMENSION, height - (height % 2))
+    encode_frames = _smooth_clip_frames(rgb_frames, blend_steps=blend_steps, size=(width, height))
+
+    container = av.open(str(path), "w")
+    try:
+        stream = container.add_stream(PRIMARY_VIDEO_CODEC, rate=fps)
+    except Exception:
+        stream = container.add_stream(FALLBACK_VIDEO_CODEC, rate=fps)
+    stream.width = width
+    stream.height = height
+    stream.pix_fmt = VIDEO_PIXEL_FORMAT
+
+    try:
+        for image in encode_frames:
+            frame = av.VideoFrame.from_image(image)
+            for packet in stream.encode(frame):
+                container.mux(packet)
+        for packet in stream.encode():
+            container.mux(packet)
+    finally:
+        container.close()
+
+
+def _smooth_clip_frames(
+    frames: list[Image.Image],
+    blend_steps: int = CLIP_BLEND_STEPS,
+    size: tuple[int, int] | None = None,
+) -> list[Image.Image]:
+    """Insert tiny cross-dissolve frames so sampled POV clips do not hard-cut."""
+    if not frames:
+        return []
+    prepared = []
+    for image in frames:
+        image = image.convert(RGB_MODE)
+        if size is not None and image.size != size:
+            image = image.resize(size, Image.Resampling.LANCZOS)
+        prepared.append(image)
+    if blend_steps <= 0 or len(prepared) < 2:
+        return prepared
+
+    smoothed = [prepared[0]]
+    for previous, current in zip(prepared, prepared[1:], strict=False):
+        for step in range(1, blend_steps + 1):
+            alpha = step / (blend_steps + 1)
+            smoothed.append(Image.blend(previous, current, alpha))
+        smoothed.append(current)
+    return smoothed
+
+
+def _stored_title(raw_title: object, narration: str) -> str:
+    if isinstance(raw_title, str) and raw_title.strip():
+        return derive_title(raw_title, max_len=80)
+    return derive_title(narration, max_len=80)

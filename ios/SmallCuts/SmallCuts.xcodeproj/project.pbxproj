@@ -21,8 +21,10 @@
 		63EE090BBD8E4B7CF087814E /* MWDATCore in Frameworks */ = {isa = PBXBuildFile; productRef = 8EB1B404036BFCCD7FF57C42 /* MWDATCore */; };
 		64D7D6D46F6F430FEFEEA44D /* GlassesSessionControllerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D6F4BA9FB54217A991614C5 /* GlassesSessionControllerTests.swift */; };
 		6A353C2C02C64E9657BE367A /* EngineSessionClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31D0A790E69CD08267B72A35 /* EngineSessionClientTests.swift */; };
+		703135456BB79B8001542E79 /* FrameClipBufferTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E262AFA4D31BA9A26300C4F /* FrameClipBufferTests.swift */; };
 		7D5139A6D35FD05E744D4CC6 /* VoicePlayerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E9DDEF68041739F02721A89 /* VoicePlayerTests.swift */; };
 		83BDD19F1BBE8BF51058B7C7 /* CaptureCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A19AF4945B8733E10DFFDF16 /* CaptureCoordinator.swift */; };
+		86BAB5F5E30B29CA1E224BE7 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 2D6BE093CF28744F83747D0D /* Assets.xcassets */; };
 		871AB1F5FE0814DB70F255F6 /* SimulatedFrameSourceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CAC173A75920D39B139375BE /* SimulatedFrameSourceTests.swift */; };
 		AE9E22DC2E5DFD257EAC7118 /* WearablesConfigurator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73F07BCAAC50D048B18EEB5D /* WearablesConfigurator.swift */; };
 		C7DEA84FCDEF285AA62199C8 /* MWDATCore in Frameworks */ = {isa = PBXBuildFile; productRef = D51F7BE88A42D5D452245433 /* MWDATCore */; };
@@ -30,6 +32,8 @@
 		CE6036643BF4E487664F792C /* SimulatedFrameSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9EA3C204376F28F59E8B5592 /* SimulatedFrameSource.swift */; };
 		DE5D309947DC38633D58E171 /* FrameSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B69B2753ECED62682B756E4 /* FrameSource.swift */; };
 		E3C04106A0F64F24B5A89BE6 /* MWDATCamera in Frameworks */ = {isa = PBXBuildFile; productRef = 7479F73A35459057695F9DCB /* MWDATCamera */; };
+		E60B04C3FE401D1E5DBDDFCD /* FrameClipBuffer.swift in Sources */ = {isa = PBXBuildFile; fileRef = C818AD89BAE56F391C773BA2 /* FrameClipBuffer.swift */; };
+		E87D86D828BEC1C5771BF906 /* CaptureCoordinatorTakeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F031EBD0C12A47A5919A9D4 /* CaptureCoordinatorTakeTests.swift */; };
 		EE17CB9889FAFF62B6F77ECE /* EngineSessionClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5910940C59EA51CEC91C7620 /* EngineSessionClient.swift */; };
 		EE971BCEF016CCE69A07E8BA /* MockWearables.swift in Sources */ = {isa = PBXBuildFile; fileRef = 583D4D6DCDF90B7420BE0024 /* MockWearables.swift */; };
 		EEDB9A7934E9685829CBDF2F /* EngineLoopSmokeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3143196467D93336B0F1931D /* EngineLoopSmokeTests.swift */; };
@@ -49,9 +53,11 @@
 		0CA6E6EA32023B901FF0F493 /* MomentBuilderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MomentBuilderTests.swift; sourceTree = "<group>"; };
 		107424152F0CCCDC3612560C /* SmallCutsTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = SmallCutsTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		23376BABE4247CA323AE33CA /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		2D6BE093CF28744F83747D0D /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		3143196467D93336B0F1931D /* EngineLoopSmokeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EngineLoopSmokeTests.swift; sourceTree = "<group>"; };
 		31D0A790E69CD08267B72A35 /* EngineSessionClientTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EngineSessionClientTests.swift; sourceTree = "<group>"; };
 		41132D629FB9E5F256BD6898 /* VoicePlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoicePlayer.swift; sourceTree = "<group>"; };
+		4E262AFA4D31BA9A26300C4F /* FrameClipBufferTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrameClipBufferTests.swift; sourceTree = "<group>"; };
 		4F8660E1026A341E86A1D628 /* MomentBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MomentBuilder.swift; sourceTree = "<group>"; };
 		583D4D6DCDF90B7420BE0024 /* MockWearables.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MockWearables.swift; sourceTree = "<group>"; };
 		5910940C59EA51CEC91C7620 /* EngineSessionClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EngineSessionClient.swift; sourceTree = "<group>"; };
@@ -63,11 +69,13 @@
 		747311FFFF3EBBE08579B573 /* SceneGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneGate.swift; sourceTree = "<group>"; };
 		79916A519E7962A3ECB160A8 /* MockGlassesDebugController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MockGlassesDebugController.swift; sourceTree = "<group>"; };
 		880FCDD4CBC896280003B194 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		8F031EBD0C12A47A5919A9D4 /* CaptureCoordinatorTakeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureCoordinatorTakeTests.swift; sourceTree = "<group>"; };
 		9E9DDEF68041739F02721A89 /* VoicePlayerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoicePlayerTests.swift; sourceTree = "<group>"; };
 		9EA3C204376F28F59E8B5592 /* SimulatedFrameSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SimulatedFrameSource.swift; sourceTree = "<group>"; };
 		A19AF4945B8733E10DFFDF16 /* CaptureCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureCoordinator.swift; sourceTree = "<group>"; };
 		B67D11D918137710F02749FD /* GlassesSessionController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlassesSessionController.swift; sourceTree = "<group>"; };
 		BE8D5D8A9097ADC2053624BC /* SmallCuts.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = SmallCuts.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		C818AD89BAE56F391C773BA2 /* FrameClipBuffer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrameClipBuffer.swift; sourceTree = "<group>"; };
 		CAC173A75920D39B139375BE /* SimulatedFrameSourceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SimulatedFrameSourceTests.swift; sourceTree = "<group>"; };
 		D267B2131EEBEDFE059D72D0 /* GlassesFrameSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlassesFrameSource.swift; sourceTree = "<group>"; };
 		D8BE8EFE87FBAEB667D037D5 /* SmallCutsApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmallCutsApp.swift; sourceTree = "<group>"; };
@@ -123,6 +131,7 @@
 		5C63CE7EE96872F97D943402 /* SmallCuts */ = {
 			isa = PBXGroup;
 			children = (
+				2D6BE093CF28744F83747D0D /* Assets.xcassets */,
 				23376BABE4247CA323AE33CA /* Info.plist */,
 				495B7F71D609ABA69A38283D /* App */,
 				C2CE144CCFD547185132F16F /* Capture */,
@@ -154,8 +163,10 @@
 		9CC680D0C1B6A66AF32B5E28 /* SmallCutsTests */ = {
 			isa = PBXGroup;
 			children = (
+				8F031EBD0C12A47A5919A9D4 /* CaptureCoordinatorTakeTests.swift */,
 				3143196467D93336B0F1931D /* EngineLoopSmokeTests.swift */,
 				31D0A790E69CD08267B72A35 /* EngineSessionClientTests.swift */,
+				4E262AFA4D31BA9A26300C4F /* FrameClipBufferTests.swift */,
 				5D6F4BA9FB54217A991614C5 /* GlassesSessionControllerTests.swift */,
 				583D4D6DCDF90B7420BE0024 /* MockWearables.swift */,
 				0CA6E6EA32023B901FF0F493 /* MomentBuilderTests.swift */,
@@ -180,6 +191,7 @@
 			isa = PBXGroup;
 			children = (
 				A19AF4945B8733E10DFFDF16 /* CaptureCoordinator.swift */,
+				C818AD89BAE56F391C773BA2 /* FrameClipBuffer.swift */,
 				6B69B2753ECED62682B756E4 /* FrameSource.swift */,
 				D267B2131EEBEDFE059D72D0 /* GlassesFrameSource.swift */,
 				4F8660E1026A341E86A1D628 /* MomentBuilder.swift */,
@@ -206,6 +218,7 @@
 			buildConfigurationList = 8E46504E73C893C920440678 /* Build configuration list for PBXNativeTarget "SmallCuts" */;
 			buildPhases = (
 				A13F20900B3DD5AAEDC88600 /* Sources */,
+				614A294B13925AA1DFA1FC94 /* Resources */,
 				5C4ED02C922A1B6F6AA59907 /* Frameworks */,
 			);
 			buildRules = (
@@ -279,6 +292,17 @@
 		};
 /* End PBXProject section */
 
+/* Begin PBXResourcesBuildPhase section */
+		614A294B13925AA1DFA1FC94 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				86BAB5F5E30B29CA1E224BE7 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
 /* Begin PBXSourcesBuildPhase section */
 		A13F20900B3DD5AAEDC88600 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
@@ -287,6 +311,7 @@
 				83BDD19F1BBE8BF51058B7C7 /* CaptureCoordinator.swift in Sources */,
 				4401870527E956B28E828322 /* ContentView.swift in Sources */,
 				EE17CB9889FAFF62B6F77ECE /* EngineSessionClient.swift in Sources */,
+				E60B04C3FE401D1E5DBDDFCD /* FrameClipBuffer.swift in Sources */,
 				DE5D309947DC38633D58E171 /* FrameSource.swift in Sources */,
 				3B5C74042F368D706AF4C90F /* GlassesFrameSource.swift in Sources */,
 				4B05C3B208C934BB3F25415D /* GlassesSessionController.swift in Sources */,
@@ -304,8 +329,10 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				E87D86D828BEC1C5771BF906 /* CaptureCoordinatorTakeTests.swift in Sources */,
 				EEDB9A7934E9685829CBDF2F /* EngineLoopSmokeTests.swift in Sources */,
 				6A353C2C02C64E9657BE367A /* EngineSessionClientTests.swift in Sources */,
+				703135456BB79B8001542E79 /* FrameClipBufferTests.swift in Sources */,
 				64D7D6D46F6F430FEFEEA44D /* GlassesSessionControllerTests.swift in Sources */,
 				EE971BCEF016CCE69A07E8BA /* MockWearables.swift in Sources */,
 				3FD6C8F9CF4814EA79057F31 /* MomentBuilderTests.swift in Sources */,
@@ -331,6 +358,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
 				CLANG_ANALYZER_NONNULL = YES;
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
@@ -364,6 +392,7 @@
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_NO_COMMON_BLOCKS = YES;
@@ -379,6 +408,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
@@ -394,6 +424,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
 				CLANG_ANALYZER_NONNULL = YES;
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
@@ -427,6 +458,7 @@
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
 				GCC_NO_COMMON_BLOCKS = YES;
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
@@ -436,6 +468,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -463,6 +496,8 @@
 				MARKETING_VERSION = 0.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.macayaven.smallcuts;
 				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 1;
 			};
@@ -485,6 +520,8 @@
 				MARKETING_VERSION = 0.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.macayaven.smallcuts;
 				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 1;
 			};
@@ -503,6 +540,8 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.macayaven.SmallCutsTests;
 				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/SmallCuts.app/SmallCuts";
@@ -522,6 +561,8 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.macayaven.SmallCutsTests;
 				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/SmallCuts.app/SmallCuts";

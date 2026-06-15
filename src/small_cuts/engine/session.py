@@ -49,6 +49,7 @@ def _validator(name: str) -> jsonschema.Draft202012Validator:
 
 _MOMENT = _validator("moment.schema.json")
 _SCENE_AUDIO = _validator("scene-audio.schema.json")
+_BACKGROUND_STORAGE_TASKS: set[asyncio.Task[None]] = set()
 
 
 def _noop_sink(scene: dict[str, Any]) -> None:
@@ -105,6 +106,12 @@ def _log_worker_failure(task: asyncio.Task) -> None:
     exc = task.exception()
     if exc is not None:
         print(f"small_cuts.engine: session worker task crashed: {exc!r}", file=sys.stderr)
+
+
+def _retain_background_storage(task: asyncio.Task[None]) -> None:
+    """Keep shielded scene storage alive after the client WebSocket is gone."""
+    _BACKGROUND_STORAGE_TASKS.add(task)
+    task.add_done_callback(_BACKGROUND_STORAGE_TASKS.discard)
 
 
 class SessionRunner:
@@ -235,17 +242,57 @@ class SessionRunner:
             await self._send_error(moment_id, stage, exc, code=code, retryable=retryable)
             return
 
+        storage_task = asyncio.create_task(
+            self._finish_scene_storage(
+                envelope=envelope,
+                image=image,
+                scene_audio=payload,
+                narration_text=narration.text,
+                title=narration.title,
+                speech=speech,
+                style_key=style_key,
+                queue_ms=queue_ms,
+                narration_ms=narration_ms,
+                tts_ms=tts_ms,
+            )
+        )
+        _retain_background_storage(storage_task)
+        try:
+            await asyncio.shield(storage_task)
+        except asyncio.CancelledError:
+            storage_task.add_done_callback(_log_worker_failure)
+            raise
+
+    async def _finish_scene_storage(
+        self,
+        *,
+        envelope: dict[str, Any],
+        image: Image.Image,
+        scene_audio: dict[str, Any],
+        narration_text: str,
+        title: str,
+        speech: tts.Speech,
+        style_key: str,
+        queue_ms: int,
+        narration_ms: int,
+        tts_ms: int,
+    ) -> None:
+        clip_frames = await asyncio.to_thread(
+            _decode_clip_frames_for_storage, envelope, image, scene_audio["scene_id"]
+        )
         await self._hand_to_sink(
             self._state.sink,
             {
-                "scene_id": payload["scene_id"],
-                "moment_id": moment_id,
+                "scene_id": scene_audio["scene_id"],
+                "moment_id": envelope["moment_id"],
                 "session_id": envelope["session_id"],
                 "captured_at": envelope["captured_at"],
-                "created_at": payload["created_at"],
+                "created_at": scene_audio["created_at"],
                 "style_key": style_key,
-                "narration": narration.text,
+                "title": title,
+                "narration": narration_text,
                 "image": image,
+                "clip_frames": clip_frames,
                 "audio": speech.audio,
                 "sample_rate": speech.sample_rate,
                 "latency_ms": {
@@ -328,25 +375,61 @@ class SessionRunner:
 def _decode_and_narrate(
     envelope: dict[str, Any], style_key: str, scene_hint: str
 ) -> tuple[Image.Image, narrator.Narration]:
-    """Decode + narrate in one worker-thread hop; decode is CPU-bound too."""
+    """Decode the selected frame + narrate it in one worker-thread hop."""
     try:
-        image = _decode_first_frame(envelope)
+        selected = _decode_frame(envelope["frames"][0])
+        _validate_frame_size(selected)
+    except _ValidationFailure:
+        raise
     except Exception as exc:
         raise _ValidationFailure("frame_decode_failed", f"undecodable frame: {exc}") from exc
+    return (
+        selected,
+        narrator.narrate(selected, style_key=style_key, scene_hint=scene_hint),
+    )
+
+
+def _decode_frame(frame: dict[str, Any]) -> Image.Image:
+    data = base64.b64decode(frame["jpeg_b64"])
+    image = Image.open(io.BytesIO(data))
+    image.load()
+    return image
+
+
+def _validate_frame_size(image: Image.Image) -> None:
     longest = max(image.size)
-    if longest > MAX_FRAME_SIDE:  # the declared width/height passed schema; trust pixels, not JSON
+    if longest > MAX_FRAME_SIDE:
         raise _ValidationFailure(
             "frame_exceeds_cap",
             f"decoded longest side {longest} px exceeds the {MAX_FRAME_SIDE} px contract cap",
         )
-    return image, narrator.narrate(image, style_key=style_key, scene_hint=scene_hint)
 
 
-def _decode_first_frame(envelope: dict[str, Any]) -> Image.Image:
-    data = base64.b64decode(envelope["frames"][0]["jpeg_b64"])
-    image = Image.open(io.BytesIO(data))
-    image.load()
-    return image
+def _decode_clip_frames(envelope: dict[str, Any], selected: Image.Image) -> list[Image.Image]:
+    decoded: list[tuple[int, int, Image.Image]] = [
+        (int(envelope["frames"][0].get("ts_offset_ms", 0)), 0, selected)
+    ]
+    for index, frame in enumerate(envelope["frames"][1:], start=1):
+        image = _decode_frame(frame)
+        _validate_frame_size(image)
+        decoded.append((int(frame.get("ts_offset_ms", index)), index, image))
+    return [image for _, _, image in sorted(decoded, key=lambda item: (item[0], item[1]))]
+
+
+def _decode_clip_frames_for_storage(
+    envelope: dict[str, Any], selected: Image.Image, scene_id: str
+) -> list[Image.Image]:
+    """Decode viewer-only supplemental frames after SceneAudio is already sent."""
+    if len(envelope["frames"]) < 2:
+        return [selected]
+    try:
+        return _decode_clip_frames(envelope, selected)
+    except Exception as exc:
+        print(
+            f"small_cuts.engine: clip frame decode failed for scene {scene_id}: {exc!r}",
+            file=sys.stderr,
+        )
+        return [selected]
 
 
 def _wav_bytes(audio: np.ndarray, sample_rate: int) -> bytes:

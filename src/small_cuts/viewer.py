@@ -5,7 +5,7 @@ One page, two operating modes decided at build time by ``SMALL_CUTS_ENGINE_URL``
 - **Engine mode** (env set): polls the home-node engine's scene library
   (``GET /v1/scenes``) every couple of seconds and replays it as a live
   channel — newest scene on the 9:16 stage, narration lines in a chat-style
-  feed, library shelf as a VOD rail, visibility PATCHed back to the engine.
+  feed, and library shelf as a VOD rail.
 - **Upload mode** (env unset — the hackathon Space): the same chrome, fed by
   the local pipeline from ``ui.py``. A "go live" dropzone under the chat feed
   narrates a moment straight onto the stage; scenes accumulate in session
@@ -21,6 +21,7 @@ import base64
 import html
 import io
 import os
+import sys
 import tempfile
 import uuid
 import warnings
@@ -35,7 +36,19 @@ from PIL import Image
 
 from . import demo_seed
 from ._icons import ICON_CSS
-from .frames import pick_frame, sample_frames
+from .frames import pick_key_frame, sample_frames
+from .hf_relay import (
+    DEFAULT_RELAY_PREFIX,
+    MEDIA_KEYS,
+    RELAY_BUCKET_ENV,
+    RELAY_PREFIX_ENV,
+    BucketRelayError,
+)
+from .hf_relay import (
+    BucketSceneClient as _BucketSceneClient,
+)
+from .modal_upload import ModalUploadClient, ModalUploadError
+from .observability import capture_exception
 from .styles import DEFAULT_STYLE_KEY, STYLES
 from .title_card import derive_title
 from .tts import speak
@@ -43,6 +56,10 @@ from .ui import THEME as THEME  # re-export: app.py launches the viewer with the
 from .ui import TITLE, _gpu, _narrate_core, _speak_handler
 
 ENGINE_URL_ENV = "SMALL_CUTS_ENGINE_URL"
+MODAL_API_URL_ENV = "SMALL_CUTS_MODAL_API_URL"
+MODAL_API_TOKEN_ENV = "SMALL_CUTS_MODAL_API_TOKEN"
+UPLOAD_SANDBOX_ENV = "SMALL_CUTS_ENABLE_UPLOAD_SANDBOX"
+UPLOAD_MAX_SECONDS_ENV = "SMALL_CUTS_UPLOAD_MAX_SECONDS"
 # The narrator-as-chat feed is dropped from the default layout (single centered column);
 # flip this on to revive it (a future "see transcription" surface for non-live clips).
 SHOW_FEED = os.environ.get("SMALL_CUTS_SHOW_FEED", "").strip().lower() not in (
@@ -57,6 +74,17 @@ FEED_LIMIT = 12
 SHELF_LIMIT = 60
 HTTP_TIMEOUT_S = 5.0
 VISIBILITIES = ("private", "shared", "public")
+_KEEP_UPLOAD_SCENE = object()
+SOURCE_ICON_LABELS = {
+    "glasses": "Glasses capture",
+    "upload": "Space upload",
+}
+GLASSES_SHELF_PREFIX = "\u2063sc-glasses\u2063"
+UPLOAD_SHELF_PREFIX = "\u2063sc-upload\u2063"
+_SOURCE_SHELF_PREFIXES = {
+    "glasses": GLASSES_SHELF_PREFIX,
+    "upload": UPLOAD_SHELF_PREFIX,
+}
 
 EMPTY_STAGE_CAPTION = (
     "The narrator clears his throat, looks at the empty screen, and waits. "
@@ -114,6 +142,8 @@ footer { display: none !important; }
 .sc-header-title { font-family: 'Spectral', serif; font-size: 1.35rem; color: #E8E4D8; }
 .sc-header-channel { font-family: 'IBM Plex Mono', monospace; font-size: .78rem; color: #D4AF37;
   letter-spacing: .08em; text-transform: uppercase; }
+.sc-live-hint { display: inline-block; margin-left: 8px; font-family: 'IBM Plex Mono', monospace;
+  font-size: .72rem; letter-spacing: .08em; color: #D4AF37; text-transform: uppercase; }
 .sc-live-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%;
   background: #D4AF37; margin-right: 9px; vertical-align: middle;
   animation: sc-pulse 1.4s ease-in-out infinite; }
@@ -125,6 +155,15 @@ footer { display: none !important; }
   width: 100%; height: 100%; object-fit: cover; display: block; }
 .sc-stage-empty { width: 100%; height: 100%; display: flex; align-items: center;
   justify-content: center; font-size: 3rem; opacity: .35; }
+.sc-source-badge { position: absolute; top: 10px; left: 10px; z-index: 4;
+  width: 30px; height: 30px; display: inline-flex; align-items: center;
+  justify-content: center; border-radius: 999px; color: #f3efe4;
+  background: rgba(8,8,10,.68); border: 1px solid rgba(243,239,228,.24);
+  box-shadow: 0 3px 12px rgba(0,0,0,.22); backdrop-filter: blur(7px); }
+.sc-source-badge-icon { width: 17px; height: 17px; background: currentColor;
+  -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat;
+  -webkit-mask-position: center; mask-position: center;
+  -webkit-mask-size: contain; mask-size: contain; }
 .sc-subtitle { position: absolute; left: 50%; transform: translateX(-50%); bottom: 26px;
   width: min(92%, 600px); min-height: 2.7em; display: flex; align-items: center;
   justify-content: center; text-align: center; background: rgba(8,8,10,.72);
@@ -163,6 +202,23 @@ footer { display: none !important; }
 .sc-dropzone-label { font-family: 'IBM Plex Mono', monospace; font-size: .72rem;
   letter-spacing: .14em; color: #8a8894; text-transform: uppercase; }
 .sc-shelf { background: transparent !important; border: none !important; }
+.sc-shelf .thumbnail-item { position: relative; }
+.sc-shelf .thumbnail-item:has(img[alt^="\\002063sc-glasses\\002063"])::before,
+.sc-shelf .thumbnail-item:has(img[alt^="\\002063sc-upload\\002063"])::before {
+  content: ""; position: absolute; top: 6px; left: 6px; width: 24px; height: 24px;
+  border-radius: 999px; background: rgba(8,8,10,.68);
+  border: 1px solid rgba(243,239,228,.22); z-index: 3; backdrop-filter: blur(6px);
+  box-shadow: 0 2px 8px rgba(0,0,0,.2); }
+.sc-shelf .thumbnail-item:has(img[alt^="\\002063sc-glasses\\002063"])::after,
+.sc-shelf .thumbnail-item:has(img[alt^="\\002063sc-upload\\002063"])::after {
+  content: ""; position: absolute; top: 11px; left: 11px; width: 14px; height: 14px;
+  background: #f3efe4; z-index: 4; -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat;
+  -webkit-mask-position: center; mask-position: center;
+  -webkit-mask-size: contain; mask-size: contain; }
+.sc-shelf .thumbnail-item:has(img[alt^="\\002063sc-glasses\\002063"])::after {
+  -webkit-mask-image: var(--sc-ico-glasses-mask); mask-image: var(--sc-ico-glasses-mask); }
+.sc-shelf .thumbnail-item:has(img[alt^="\\002063sc-upload\\002063"])::after {
+  -webkit-mask-image: var(--sc-ico-upload-mask); mask-image: var(--sc-ico-upload-mask); }
 
 /* --- Review-2 relayout: single centered column, control pill, masked icons --- */
 .sc-topbar { display: flex; align-items: flex-start; gap: 12px; }
@@ -189,7 +245,8 @@ footer { display: none !important; }
 .sc-icbtn:hover { background-color: #fff5d5 !important; }
 .sc-upload { width: 36px !important; height: 36px !important;
   -webkit-mask-size: 24px; mask-size: 24px; background-color: #8a8894 !important; }
-.sc-ico-like-filled.sc-icbtn { background-color: #D4AF37 !important; }
+.sc-ico-like-filled.sc-icbtn, .sc-ico-flag-filled.sc-icbtn {
+  background-color: #D4AF37 !important; }
 /* custom file-backed player (Review-3): the master clock is a hidden <audio id="sc-voice"> in
    .sc-audio-host. gr.Audio can't serve as the clock — it plays via wavesurfer, leaving its own
    <audio> element empty/unreadable. The pill's play/pause + volume drive #sc-voice via JS. */
@@ -275,11 +332,54 @@ VIEWER_CSS += ICON_CSS
 # -- scene formatting (pure, both modes) -------------------------------------------
 
 
+def _truthy_env(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in ("1", "true", "yes")
+
+
+def upload_sandbox_enabled() -> bool:
+    """Relay-mode judge uploads are enabled only when Modal is explicitly configured."""
+    return _truthy_env(UPLOAD_SANDBOX_ENV) and bool(os.environ.get(MODAL_API_URL_ENV, "").strip())
+
+
+def upload_max_seconds() -> float:
+    raw = os.environ.get(UPLOAD_MAX_SECONDS_ENV, "60").strip()
+    try:
+        return max(1.0, float(raw))
+    except ValueError:
+        return 60.0
+
+
+def _require_upload_profile(profile: gr.OAuthProfile | None) -> str:
+    username = (
+        getattr(profile, "username", None)
+        or (profile.get("preferred_username") if isinstance(profile, dict) else None)
+        or getattr(profile, "name", None)
+    )
+    if profile is None or not username:
+        raise gr.Error("Sign in with Hugging Face to upload a cut.")
+    return str(username)
+
+
+def _modal_upload_client() -> ModalUploadClient:
+    base_url = os.environ.get(MODAL_API_URL_ENV, "").strip()
+    token = os.environ.get(MODAL_API_TOKEN_ENV, "").strip()
+    if not base_url or not token:
+        raise gr.Error("Modal upload is not configured.")
+    return ModalUploadClient(base_url, token)
+
+
 def _style_label(style_key: str) -> str:
     style = STYLES.get(style_key)
     if style is not None:
         return style.label
     return style_key or "off air"
+
+
+def _source_icon(scene: dict[str, Any] | None) -> str | None:
+    if not scene:
+        return None
+    source = scene.get("source_icon") or scene.get("source")
+    return source if isinstance(source, str) and source in SOURCE_ICON_LABELS else None
 
 
 def _parse_ts(value: str | None) -> datetime | None:
@@ -327,6 +427,7 @@ def format_stage(
             "duration": None,
             "live": False,
             "visibility": None,
+            "source_icon": None,
         }
     base = engine_url.rstrip("/")
 
@@ -347,6 +448,7 @@ def format_stage(
         "duration": scene.get("duration"),
         "live": is_fresh(scene.get("created_at"), now=now),
         "visibility": scene.get("visibility"),
+        "source_icon": _source_icon(scene),
     }
 
 
@@ -378,6 +480,7 @@ def render_stage_html(
     live: bool,
     clip_src: str | None = None,
     duration: float | None = None,
+    source_icon: str | None = None,
 ) -> str:
     """The 9:16 stage: the moment (video clip or still frame) + lower-third caption.
 
@@ -406,15 +509,35 @@ def render_stage_html(
         caption_html = f'<div class="sc-subtitle" id="sc-subtitle"{dur_attr}>{spans}</div>'
     else:
         caption_html = ""
-    return f'<div class="sc-stage-shell">{body}{caption_html}</div>'
+    if source_icon in SOURCE_ICON_LABELS:
+        label = html.escape(SOURCE_ICON_LABELS[source_icon], quote=True)
+        icon = html.escape(source_icon, quote=True)
+        badge_html = (
+            f'<span class="sc-source-badge sc-source-{icon}" aria-label="{label}" '
+            f'title="{label}"><span class="sc-source-badge-icon sc-ico-{icon}"></span></span>'
+        )
+    else:
+        badge_html = ""
+    return f'<div class="sc-stage-shell">{badge_html}{body}{caption_html}</div>'
 
 
-def render_header_html(title: str, style_label: str, live: bool) -> str:
+def render_header_html(
+    title: str,
+    style_label: str,
+    live: bool,
+    notice: str | None = None,
+) -> str:
     # One unnamed signature voice — the channel is Small Cuts, not a per-cut director.
     # style_label is retained in the call signature for future per-owner channels.
     # Live capture reads "Happening now"; a finished cut shows its auto-generated title.
     state = "live" if live else "standby"
-    headline = '<span class="sc-live-dot"></span>Happening now' if live else html.escape(title)
+    if notice:
+        headline = (
+            f'<span class="sc-live-dot"></span>{html.escape(notice)}'
+            '<span class="sc-live-hint">Tap to watch</span>'
+        )
+    else:
+        headline = '<span class="sc-live-dot"></span>Happening now' if live else html.escape(title)
     return (
         f'<div class="sc-header sc-{state}">'
         f'<span class="sc-header-title">{headline}</span>'
@@ -464,9 +587,9 @@ class EngineClient:
         self._client = client or httpx.Client(timeout=HTTP_TIMEOUT_S)
 
     def list_scenes(self, limit: int = SHELF_LIMIT) -> list[dict[str, Any]]:
-        response = self._client.get(f"{self.base_url}/v1/scenes", params={"limit": limit})
+        response = self._client.get(f"{self.base_url}/v1/scenes")
         response.raise_for_status()
-        return response.json()["scenes"]
+        return response.json()["scenes"][-limit:]
 
     def set_visibility(self, scene_id: str, visibility: str) -> dict[str, Any]:
         response = self._client.patch(
@@ -481,22 +604,53 @@ class EngineClient:
         return path if path.startswith("http") else f"{self.base_url}{path}"
 
 
-def shelf_items(scenes: list[dict[str, Any]], client: EngineClient) -> list[tuple[str, str]]:
-    """Gallery payload: card.webp thumbnails captioned with the scene title."""
+class BucketSceneClient(_BucketSceneClient):
+    """Bucket relay client wired to Gradio's static file serving."""
+
+    def __init__(self, *args, **kwargs) -> None:
+        kwargs.setdefault("register_static_paths", gr.set_static_paths)
+        super().__init__(*args, **kwargs)
+
+
+def shelf_items(
+    scenes: list[dict[str, Any]], client: EngineClient | BucketSceneClient
+) -> list[tuple[str, str]]:
+    """Gallery payload: POV frame thumbnails captioned with the generated scene title."""
     items = []
     for scene in scenes:
         media = scene.get("media") or {}
-        src = client.media_url(media.get("card_url") or media.get("frame_url"))
+        src = client.media_url(media.get("frame_url") or media.get("card_url"))
         if src:
-            items.append((src, scene.get("title", "")))
+            items.append((src, _shelf_caption(scene)))
     return items
 
 
+def _shelf_caption(scene: dict[str, Any]) -> str:
+    title = scene.get("title", "")
+    source_icon = _source_icon(scene)
+    return f"{_SOURCE_SHELF_PREFIXES.get(source_icon, '')}{title}"
+
+
+def _scene_with_media_urls(
+    scene: dict[str, Any], client: EngineClient | BucketSceneClient
+) -> dict[str, Any]:
+    hydrated = {**scene}
+    media = scene.get("media")
+    if not isinstance(media, dict):
+        hydrated["media"] = {}
+        return hydrated
+    hydrated["media"] = {**media}
+    for key in MEDIA_KEYS:
+        hydrated["media"][key] = client.media_url(media.get(key))
+    return hydrated
+
+
 def poll_engine(
-    client: EngineClient,
+    client: EngineClient | BucketSceneClient,
     scenes_prev: list[dict[str, Any]],
     pinned_id: str | None,
     playing_id: str | None,
+    current_id: str | None = None,
     now: datetime | None = None,
 ) -> tuple[Any, ...]:
     """One timer tick: GET /v1/scenes -> header, stage, feed, audio, shelf, states.
@@ -507,8 +661,18 @@ def poll_engine(
     """
     try:
         scenes = client.list_scenes(limit=SHELF_LIMIT)
-    except (httpx.HTTPError, KeyError, ValueError):
-        header = render_header_html("Signal lost — engine unreachable", "off air", live=False)
+    except (httpx.HTTPError, BucketRelayError, KeyError, ValueError) as exc:
+        capture_exception(exc)
+        kind = type(exc).__name__
+        print(
+            f"small_cuts.viewer: engine poll failed for {client.base_url}: {kind}: {exc!r}",
+            file=sys.stderr,
+            flush=True,
+        )
+        title = "Signal lost — engine unreachable"
+        if os.environ.get("SMALL_CUTS_DEBUG_ENGINE_ERRORS", "").strip():
+            title = f"Signal lost — {kind}: {str(exc)[:140]}"
+        header = render_header_html(title, "off air", live=False)
         return (
             header,
             gr.skip(),
@@ -528,17 +692,21 @@ def poll_engine(
     newest = scenes[-1]
     channel_live = is_fresh(newest.get("created_at"), now=now)
     by_id = {scene.get("scene_id"): scene for scene in scenes}
-    current = by_id.get(pinned_id, newest)
+    current = by_id.get(pinned_id) or by_id.get(current_id) or newest
     payload = format_stage(current, client.base_url, now=now)
     on_air = channel_live and current.get("scene_id") == newest.get("scene_id")
+    notice = "New cut available" if channel_live and not on_air else None
 
-    header = render_header_html(payload["title"], payload["style_label"], live=channel_live)
+    header = render_header_html(
+        payload["title"], payload["style_label"], live=channel_live, notice=notice
+    )
     stage = render_stage_html(
         payload["frame_src"],
         payload["caption"],
         live=on_air,
         clip_src=payload["clip_src"],
         duration=payload["duration"],
+        source_icon=payload["source_icon"],
     )
     feed = render_feed_html([feed_entry(scene) for scene in scenes[-FEED_LIMIT:]])
 
@@ -554,6 +722,21 @@ def poll_engine(
 
 
 # -- upload mode (the hackathon Space) -------------------------------------------------
+
+
+def _video_duration_s(video_path: str | Path) -> float | None:
+    try:
+        import av
+
+        with av.open(str(video_path)) as container:
+            if container.duration is not None:
+                return float(container.duration / 1_000_000)
+            stream = container.streams.video[0] if container.streams.video else None
+            if stream and stream.duration is not None and stream.time_base is not None:
+                return float(stream.duration * stream.time_base)
+    except Exception as exc:
+        capture_exception(exc)
+    return None
 
 
 def _data_uri(image: Image.Image, max_side: int = 1080) -> str:
@@ -572,6 +755,8 @@ def make_local_scene(
 ) -> dict[str, Any]:
     """Session-state scene for upload mode: same keys format_stage understands."""
     stage_image = frame if frame is not None else card
+    thumb = stage_image.copy()
+    thumb.thumbnail((400, 540))
     return {
         "scene_id": f"local-{uuid.uuid4().hex[:12]}",
         "title": derive_title(narration),
@@ -579,12 +764,12 @@ def make_local_scene(
         "style_key": style_key,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "frame_src": _data_uri(stage_image),
-        "card_thumb": card.resize((480, 270)),
+        "card_thumb": thumb,
     }
 
 
 def local_shelf_items(scenes: list[dict[str, Any]]) -> list[tuple[Image.Image, str]]:
-    return [(scene["card_thumb"], scene.get("title", "")) for scene in scenes]
+    return [(scene["card_thumb"], _shelf_caption(scene)) for scene in scenes]
 
 
 @_gpu()
@@ -604,7 +789,7 @@ def _go_live_handler(
     frame = image
     empty_caption = EMPTY_STAGE_CAPTION
     if frame is None and video_path:
-        frame = pick_frame(sample_frames(video_path))
+        frame = pick_key_frame(sample_frames(video_path))
         empty_caption = EMPTY_VIDEO_CAPTION
     card, narration = _narrate_core(frame, style_key, scene_hint or "", empty_caption)
     scene = make_local_scene(frame, card, narration, style_key)
@@ -614,7 +799,8 @@ def _go_live_handler(
         speech = speak(narration)
         scene["duration"] = len(speech.audio) / speech.sample_rate if speech.sample_rate else None
         scene["audio_src"] = _write_voice(speech.audio, speech.sample_rate, scene["scene_id"])
-    except Exception:
+    except Exception as exc:
+        capture_exception(exc)
         scene["audio_src"] = None
     scenes = [*(scenes or []), scene][-SHELF_LIMIT:]
     payload = format_stage(scene)
@@ -628,6 +814,7 @@ def _go_live_handler(
             live=False,
             clip_src=payload["clip_src"],
             duration=payload["duration"],
+            source_icon=payload["source_icon"],
         ),
         render_feed_html([feed_entry(s) for s in scenes[-FEED_LIMIT:]]),
         local_shelf_items(scenes),
@@ -642,6 +829,156 @@ def _current_scene(scenes: list[dict[str, Any]], pinned_id: str | None) -> dict[
         return None
     by_id = {scene.get("scene_id"): scene for scene in scenes}
     return by_id.get(pinned_id, scenes[-1])
+
+
+def _stepped_scene(
+    scenes: list[dict[str, Any]], current_id: str | None, delta: int
+) -> dict[str, Any] | None:
+    if not scenes:
+        return None
+    ids = [scene.get("scene_id") for scene in scenes]
+    idx = ids.index(current_id) if current_id in ids else len(scenes) - 1
+    return scenes[(idx + delta) % len(scenes)]
+
+
+def _is_gradio_update(value: Any) -> bool:
+    return isinstance(value, dict) and value.get("__type__") == "update"
+
+
+def _engine_ui_state(value: Any) -> dict[str, Any]:
+    data = value if isinstance(value, dict) else {}
+    scenes = data.get("scenes")
+    upload_scene = data.get("upload_scene")
+    return {
+        "scenes": scenes if isinstance(scenes, list) else [],
+        "pinned_id": data.get("pinned_id"),
+        "current_id": data.get("current_id"),
+        "playing_id": data.get("playing_id"),
+        "upload_scene": upload_scene if isinstance(upload_scene, dict) else None,
+    }
+
+
+def _pack_engine_ui_state(
+    scenes: Any,
+    pinned_id: str | None,
+    current_id: Any,
+    playing_id: Any,
+    previous: dict[str, Any] | None = None,
+    upload_scene: Any = _KEEP_UPLOAD_SCENE,
+) -> dict[str, Any]:
+    prev = _engine_ui_state(previous)
+    return {
+        "scenes": prev["scenes"] if _is_gradio_update(scenes) else scenes,
+        "pinned_id": pinned_id,
+        "current_id": prev["current_id"] if _is_gradio_update(current_id) else current_id,
+        "playing_id": prev["playing_id"] if _is_gradio_update(playing_id) else playing_id,
+        "upload_scene": prev["upload_scene"]
+        if upload_scene is _KEEP_UPLOAD_SCENE
+        else upload_scene,
+    }
+
+
+def _submit_modal_upload(
+    video_path: str | None,
+    style_key: str,
+    scene_hint: str,
+    state: Any,
+    profile: gr.OAuthProfile | None,
+    media_client: EngineClient | BucketSceneClient,
+) -> tuple[Any, ...]:
+    if not video_path:
+        raise gr.Error("Upload a video clip first.")
+
+    duration = _video_duration_s(video_path)
+    max_seconds = upload_max_seconds()
+    if duration is not None and duration > max_seconds + 0.25:
+        raise gr.Error(f"Please upload a clip up to {max_seconds:.0f} seconds.")
+
+    uploader = _require_upload_profile(profile)
+    try:
+        raw_scene = _modal_upload_client().submit_video(
+            video_path,
+            uploader_hf_username=uploader,
+            style_key=style_key,
+            scene_hint=scene_hint,
+        )
+    except (ModalUploadError, httpx.HTTPError) as exc:
+        raise gr.Error(f"Modal upload failed: {exc}") from exc
+
+    scene = _scene_with_media_urls(raw_scene, media_client)
+    current_state = _engine_ui_state(state)
+    scenes = [*current_state["scenes"], scene][-SHELF_LIMIT:]
+    payload = format_stage(scene)
+    scene_id = payload["scene_id"]
+    return (
+        render_header_html(payload["title"], payload["style_label"], live=False),
+        render_stage_html(
+            payload["frame_src"],
+            payload["caption"],
+            live=False,
+            clip_src=payload["clip_src"],
+            duration=payload["duration"],
+            source_icon=payload["source_icon"],
+        ),
+        render_feed_html([feed_entry(s) for s in scenes[-FEED_LIMIT:]]),
+        _audio_html(payload["audio_src"]) if payload["audio_src"] else gr.skip(),
+        shelf_items(scenes, media_client),
+        _pack_engine_ui_state(
+            scenes,
+            scene_id,
+            scene_id,
+            scene_id,
+            previous=current_state,
+            upload_scene=scene,
+        ),
+        gr.update(value=payload["visibility"]) if payload["visibility"] else gr.skip(),
+    )
+
+
+def _as_id_set(value: Any) -> set[str]:
+    if not value:
+        return set()
+    return {str(item) for item in value if item}
+
+
+def _scene_id(scene: dict[str, Any] | None) -> str | None:
+    value = scene.get("scene_id") if scene else None
+    return str(value) if value else None
+
+
+def _scene_action_classes(
+    scene_id: str | None, liked_ids: Any, reported_ids: Any
+) -> tuple[list[str], list[str]]:
+    liked = bool(scene_id) and scene_id in _as_id_set(liked_ids)
+    reported = bool(scene_id) and scene_id in _as_id_set(reported_ids)
+    return (
+        ["sc-icbtn", "sc-ico-like-filled" if liked else "sc-ico-like", "sc-like-btn"],
+        ["sc-icbtn", "sc-ico-flag-filled" if reported else "sc-ico-flag", "sc-report-btn"],
+    )
+
+
+def _scene_action_updates(scene_id: str | None, liked_ids: Any, reported_ids: Any) -> tuple:
+    like_classes, report_classes = _scene_action_classes(scene_id, liked_ids, reported_ids)
+    return gr.update(elem_classes=like_classes), gr.update(elem_classes=report_classes)
+
+
+def _toggle_scene_like(scene_id: str | None, liked_ids: Any, reported_ids: Any) -> tuple:
+    liked = _as_id_set(liked_ids)
+    if scene_id:
+        if scene_id in liked:
+            liked.remove(scene_id)
+        else:
+            liked.add(scene_id)
+    like_update, _report_update = _scene_action_updates(scene_id, liked, reported_ids)
+    return liked, like_update
+
+
+def _toggle_scene_report(scene_id: str | None, liked_ids: Any, reported_ids: Any) -> tuple:
+    reported = _as_id_set(reported_ids)
+    if scene_id:
+        reported.add(scene_id)
+    _like_update, report_update = _scene_action_updates(scene_id, liked_ids, reported)
+    return reported, report_update
 
 
 def _voice_handler(scenes: list[dict[str, Any]], pinned_id: str | None):
@@ -795,6 +1132,49 @@ PLAYBACK_SYNC_JS = """
     }
   }, true);
 
+  // play/pause must be bound directly to the trusted DOM gesture. A gr.Button.click(js=...)
+  // callback runs through Gradio's event layer, which can lose browser user activation and
+  // make audio.play() fail with NotAllowedError even though the user tapped the button. Touch
+  // devices get pointerdown; mouse/keyboard use click. The guard prevents touch pointerdown's
+  // follow-up click from immediately pausing the scene.
+  const togglePlayback = (e) => {
+    const playBtn = e.target.closest && e.target.closest('.sc-play-btn');
+    if (!playBtn) return;
+    const audio = document.querySelector('#sc-voice');
+    const video = document.querySelector('.sc-stage-shell video');
+
+    if (!audio || !audio.getAttribute('src')) {
+      if (!video) return;
+      if (video.paused) video.play().catch(() => {});
+      else video.pause();
+      return;
+    }
+
+    if (audio.paused) {
+      if (video && isFinite(video.duration) && video.duration > 0) {
+        try { video.currentTime = audio.currentTime % video.duration; } catch (err) {}
+      }
+      audio.play().catch((err) => {
+        console.warn('small_cuts.viewer: audio play blocked', err);
+      });
+      if (video) video.play().catch(() => {});
+    } else {
+      audio.pause();
+      if (video) video.pause();
+    }
+  };
+  document.addEventListener('pointerdown', (e) => {
+    if (e.pointerType === 'mouse') return;
+    if (!(e.target.closest && e.target.closest('.sc-play-btn'))) return;
+    window.__scLastTouchPlayAt = Date.now();
+    togglePlayback(e);
+  }, true);
+  document.addEventListener('click', (e) => {
+    if (!(e.target.closest && e.target.closest('.sc-play-btn'))) return;
+    if (Date.now() - (window.__scLastTouchPlayAt || 0) < 500) return;
+    togglePlayback(e);
+  }, true);
+
   window.__scClock = setInterval(() => {
     const audio = document.querySelector('#sc-voice');   // our own master clock <audio>
     const video = document.querySelector('.sc-stage-shell video');
@@ -834,8 +1214,17 @@ PLAYBACK_SYNC_JS = """
 def build_viewer_app() -> gr.Blocks:
     """The P1 viewer page. Mode is decided once, at build time, from the env."""
     engine_url = os.environ.get(ENGINE_URL_ENV, "").strip()
-    client = EngineClient(engine_url) if engine_url else None
+    relay_bucket = os.environ.get(RELAY_BUCKET_ENV, "").strip()
+    relay_prefix = os.environ.get(RELAY_PREFIX_ENV, DEFAULT_RELAY_PREFIX).strip()
+    if engine_url:
+        client: EngineClient | BucketSceneClient | None = EngineClient(engine_url)
+    elif relay_bucket:
+        client = BucketSceneClient(relay_bucket, prefix=relay_prefix or DEFAULT_RELAY_PREFIX)
+    else:
+        client = None
     seed = _seed_scenes() if client is None else []
+    upload_sandbox = upload_sandbox_enabled()
+    upload_enabled = client is None or upload_sandbox
 
     if client:
         boot_header = render_header_html("Tuning the antenna…", "standby", live=False)
@@ -850,6 +1239,7 @@ def build_viewer_app() -> gr.Blocks:
             live=False,
             clip_src=boot["clip_src"],
             duration=boot["duration"],
+            source_icon=boot["source_icon"],
         )
         boot_audio = _audio_html(boot["audio_src"])
 
@@ -861,10 +1251,12 @@ def build_viewer_app() -> gr.Blocks:
         blocks = gr.Blocks(title=TITLE, css=VIEWER_CSS)
 
     with blocks as demo:
-        scenes_state = gr.State(seed)
+        scenes_state = gr.State(
+            _pack_engine_ui_state([], None, None, None) if client is not None else seed
+        )
         pinned_state = gr.State(None)  # scene_id pinned from the shelf, None = follow live
-        current_state = gr.State(None)  # scene_id currently on stage (visibility target)
-        playing_state = gr.State(None)  # scene_id loaded in the audio player
+        liked_state = gr.State(set())  # upload-mode session-local likes, keyed by scene_id
+        reported_state = gr.State(set())  # upload-mode session-local reports, keyed by scene_id
 
         with gr.Row(elem_classes="sc-topbar"):
             gr.HTML(
@@ -874,7 +1266,9 @@ def build_viewer_app() -> gr.Blocks:
                 "ear lands here as a cut you can keep.</span></div>",
                 padding=False,
             )
-            if client is None:
+            if upload_sandbox:
+                gr.LoginButton("Sign in", logout_value="Signed in ({})", size="sm")
+            if upload_enabled:
                 upload_btn = gr.Button("", elem_classes=["sc-icbtn", "sc-upload", "sc-ico-upload"])
         # Theater layout (Review-3): stage + controls on the left, the library as a side rail on
         # the right. Fills the width and keeps everything in one viewport (no main scroll); the
@@ -898,9 +1292,7 @@ def build_viewer_app() -> gr.Blocks:
                     # scene), driven by these controls + PLAYBACK_SYNC_JS. Boots PAUSED; the play
                     # tap is the one user gesture that starts audio+video+captions as a unit.
                     rewind_btn = gr.Button("", elem_classes=["sc-icbtn", "sc-ico-rewind"])
-                    play_btn = gr.Button(
-                        "", elem_classes=["sc-icbtn", "sc-ico-play", "sc-play-btn"]
-                    )
+                    gr.Button("", elem_classes=["sc-icbtn", "sc-ico-play", "sc-play-btn"])
                     gr.HTML(
                         '<span class="sc-vol-ctl">'
                         '<input type="range" class="sc-vol" min="0" max="1" step="0.05" '
@@ -915,25 +1307,28 @@ def build_viewer_app() -> gr.Blocks:
                         like_btn = gr.Button(
                             "", elem_classes=["sc-icbtn", "sc-ico-like", "sc-like-btn"]
                         )
-                        report_btn = gr.Button("", elem_classes=["sc-icbtn", "sc-ico-flag"])
+                        report_btn = gr.Button(
+                            "", elem_classes=["sc-icbtn", "sc-ico-flag", "sc-report-btn"]
+                        )
                     # hidden master-clock <audio> host (re-rendered on each scene change)
                     audio = gr.HTML(boot_audio, elem_classes="sc-audio-host", padding=False)
-                # the play tap toggles the voice clock — a real user gesture, so sound is allowed
-                play_btn.click(
-                    fn=None,
-                    js="() => { const a = document.querySelector('#sc-voice');"
-                    " if (a) { a.paused ? a.play() : a.pause(); } }",
-                )
-                if client is None:
+                # The play tap is handled by PLAYBACK_SYNC_JS as a delegated DOM click so the
+                # browser keeps user activation for audio.play().
+                if upload_enabled:
                     # one signature voice — no director menu; voice-over is on by default
                     style = gr.State(DEFAULT_STYLE_KEY)
-                else:
+                if client is not None:
+                    visibility_controls = os.environ.get(
+                        "SMALL_CUTS_ENABLE_VISIBILITY_CONTROLS", ""
+                    ).strip().lower() in ("1", "true", "yes")
                     with gr.Row(elem_classes="sc-meta"):
                         visibility = gr.Radio(
                             choices=list(VISIBILITIES),
                             value="private",
                             label="share",
                             show_label=False,
+                            visible=visibility_controls,
+                            interactive=visibility_controls,
                         )
                 feed = gr.HTML(
                     render_feed_html([feed_entry(s) for s in seed[-FEED_LIMIT:]]),
@@ -941,7 +1336,7 @@ def build_viewer_app() -> gr.Blocks:
                     padding=False,
                     visible=SHOW_FEED,
                 )
-                if client is None:
+                if upload_enabled:
                     # The upload sandbox opens on demand from the top-right icon — off the main
                     # view, video-only (the product narrates video, not stills).
                     image_none = gr.State(None)
@@ -975,22 +1370,83 @@ def build_viewer_app() -> gr.Blocks:
         # "Back to live" is now the (clickable) header; this button stays for its un-pin /
         # re-follow-live wiring but is hidden via CSS and triggered by the header click in JS.
         live_btn = gr.Button("⟲ Back to live", elem_classes=["sc-live-btn"])
-        if client is None:
+        if upload_enabled:
             upload_btn.click(lambda: gr.update(open=True, visible=True), outputs=[tryit_panel])
-            like_btn.click(
-                lambda: gr.Info("Liked — thanks; likes help surface good cuts."),
-                js=(
-                    "() => { const b = document.querySelector('.sc-like-btn'); if (b) {"
-                    " b.classList.toggle('sc-ico-like');"
-                    " b.classList.toggle('sc-ico-like-filled'); } }"
-                ),
-            )
 
         if client is not None:
             engine = client  # narrow the type for the closures below
 
-            def _tick(scenes_prev, pinned_id, playing_id):
-                return poll_engine(engine, scenes_prev or [], pinned_id, playing_id)
+            if upload_sandbox:
+
+                def _go_modal_upload_ui(
+                    video_path,
+                    style_key,
+                    scene_hint,
+                    state,
+                    profile: gr.OAuthProfile | None,
+                ):
+                    return _submit_modal_upload(
+                        video_path,
+                        style_key,
+                        scene_hint,
+                        state,
+                        profile,
+                        engine,
+                    )
+
+                go.click(
+                    _go_modal_upload_ui,
+                    inputs=[drop_video, style, hint, scenes_state],
+                    outputs=[
+                        header,
+                        stage,
+                        feed,
+                        audio,
+                        shelf,
+                        scenes_state,
+                        visibility,
+                    ],
+                )
+
+            def _tick(state):
+                state = _engine_ui_state(state)
+                (
+                    header_update,
+                    stage_update,
+                    feed_update,
+                    audio_update,
+                    shelf_update,
+                    scenes,
+                    current_id,
+                    playing_id,
+                    visibility_update,
+                ) = poll_engine(
+                    engine,
+                    state["scenes"],
+                    state["pinned_id"],
+                    state["playing_id"],
+                    current_id=state["current_id"],
+                )
+                if state["upload_scene"] is not None:
+                    header_update = gr.skip()
+                    stage_update = gr.skip()
+                    audio_update = gr.skip()
+                    playing_id = state["playing_id"]
+                return (
+                    header_update,
+                    stage_update,
+                    feed_update,
+                    audio_update,
+                    shelf_update,
+                    _pack_engine_ui_state(
+                        scenes,
+                        state["pinned_id"],
+                        current_id,
+                        playing_id,
+                        previous=state,
+                    ),
+                    visibility_update,
+                )
 
             poll_outputs = [
                 header,
@@ -999,19 +1455,20 @@ def build_viewer_app() -> gr.Blocks:
                 audio,
                 shelf,
                 scenes_state,
-                current_state,
-                playing_state,
                 visibility,
             ]
             timer = gr.Timer(POLL_SECONDS)
             timer.tick(
-                _tick, inputs=[scenes_state, pinned_state, playing_state], outputs=poll_outputs
+                _tick,
+                inputs=[scenes_state],
+                outputs=poll_outputs,
             )
 
-            def _on_select(evt: gr.SelectData, scenes):
-                scenes = scenes or []
+            def _on_select(evt: gr.SelectData, state):
+                state = _engine_ui_state(state)
+                scenes = state["scenes"]
                 if not scenes:
-                    return (gr.skip(),) * 7
+                    return (gr.skip(),) * 5
                 scene = scenes[_clamp_index(evt.index, len(scenes))]
                 payload = format_stage(scene, engine.base_url)
                 return (
@@ -1022,11 +1479,17 @@ def build_viewer_app() -> gr.Blocks:
                         payload["live"],
                         clip_src=payload["clip_src"],
                         duration=payload["duration"],
+                        source_icon=payload["source_icon"],
                     ),
                     _audio_html(payload["audio_src"]) if payload["audio_src"] else gr.skip(),
-                    payload["scene_id"],
-                    payload["scene_id"],
-                    payload["scene_id"],
+                    _pack_engine_ui_state(
+                        scenes,
+                        payload["scene_id"],
+                        payload["scene_id"],
+                        payload["scene_id"],
+                        previous=state,
+                        upload_scene=None,
+                    ),
                     gr.update(value=payload["visibility"]) if payload["visibility"] else gr.skip(),
                 )
 
@@ -1037,22 +1500,18 @@ def build_viewer_app() -> gr.Blocks:
                     header,
                     stage,
                     audio,
-                    pinned_state,
-                    current_state,
-                    playing_state,
+                    scenes_state,
                     visibility,
                 ],
             )
 
-            def _step_engine(delta, scenes, pinned_id):
+            def _step_engine(delta, state):
                 # rewind/forward step clip-to-clip over the library (never intra-clip)
-                scenes = scenes or []
-                if not scenes:
-                    return (gr.skip(),) * 7
-                ids = [s.get("scene_id") for s in scenes]
-                idx = ids.index(pinned_id) if pinned_id in ids else len(scenes) - 1
-                idx = max(0, min(idx + delta, len(scenes) - 1))
-                scene = scenes[idx]
+                state = _engine_ui_state(state)
+                scenes = state["scenes"]
+                scene = _stepped_scene(scenes, state["pinned_id"], delta)
+                if scene is None:
+                    return (gr.skip(),) * 5
                 payload = format_stage(scene, engine.base_url)
                 return (
                     render_header_html(payload["title"], payload["style_label"], payload["live"]),
@@ -1062,11 +1521,52 @@ def build_viewer_app() -> gr.Blocks:
                         payload["live"],
                         clip_src=payload["clip_src"],
                         duration=payload["duration"],
+                        source_icon=payload["source_icon"],
                     ),
                     _audio_html(payload["audio_src"]) if payload["audio_src"] else gr.skip(),
-                    payload["scene_id"],
-                    payload["scene_id"],
-                    payload["scene_id"],
+                    _pack_engine_ui_state(
+                        scenes,
+                        payload["scene_id"],
+                        payload["scene_id"],
+                        payload["scene_id"],
+                        previous=state,
+                        upload_scene=None,
+                    ),
+                    gr.update(value=payload["visibility"]) if payload["visibility"] else gr.skip(),
+                )
+
+            def _back_to_live_engine(state):
+                state = _engine_ui_state(state)
+                scenes = state["scenes"]
+                scene = scenes[-1] if scenes else None
+                payload = format_stage(scene, engine.base_url)
+                playing_id = state["playing_id"]
+                if payload["audio_src"] and payload["scene_id"] != playing_id:
+                    audio_update, playing_id = (
+                        _audio_html(payload["audio_src"]),
+                        payload["scene_id"],
+                    )
+                else:
+                    audio_update = gr.skip()
+                return (
+                    render_header_html(payload["title"], payload["style_label"], payload["live"]),
+                    render_stage_html(
+                        payload["frame_src"],
+                        payload["caption"],
+                        payload["live"],
+                        clip_src=payload["clip_src"],
+                        duration=payload["duration"],
+                        source_icon=payload["source_icon"],
+                    ),
+                    audio_update,
+                    _pack_engine_ui_state(
+                        scenes,
+                        None,
+                        payload["scene_id"],
+                        playing_id,
+                        previous=state,
+                        upload_scene=None,
+                    ),
                     gr.update(value=payload["visibility"]) if payload["visibility"] else gr.skip(),
                 )
 
@@ -1074,40 +1574,46 @@ def build_viewer_app() -> gr.Blocks:
                 header,
                 stage,
                 audio,
-                pinned_state,
-                current_state,
-                playing_state,
+                scenes_state,
                 visibility,
             ]
             rewind_btn.click(
-                lambda s, p: _step_engine(-1, s, p),
-                inputs=[scenes_state, pinned_state],
+                lambda state: _step_engine(-1, state),
+                inputs=[scenes_state],
                 outputs=step_outputs_e,
             )
             forward_btn.click(
-                lambda s, p: _step_engine(1, s, p),
-                inputs=[scenes_state, pinned_state],
+                lambda state: _step_engine(1, state),
+                inputs=[scenes_state],
                 outputs=step_outputs_e,
             )
 
-            def _on_visibility(value, current_id):
-                if not current_id or value not in VISIBILITIES:
+            def _on_visibility(value, state):
+                current_id = _engine_ui_state(state)["current_id"]
+                if not visibility_controls or not current_id or value not in VISIBILITIES:
                     return
                 try:
                     engine.set_visibility(current_id, value)
                 except httpx.HTTPError as exc:
                     raise gr.Error(f"Could not update visibility: {exc}") from exc
 
-            visibility.input(_on_visibility, inputs=[visibility, current_state])
-            live_btn.click(lambda: None, outputs=[pinned_state])  # next tick re-follows live
+            visibility.input(_on_visibility, inputs=[visibility, scenes_state])
+            live_btn.click(
+                _back_to_live_engine,
+                inputs=[scenes_state],
+                outputs=step_outputs_e,
+            )
         else:
 
-            def _on_local_select(evt: gr.SelectData, scenes):
+            def _on_local_select(evt: gr.SelectData, scenes, liked_ids, reported_ids):
                 scenes = scenes or []
                 if not scenes:
-                    return gr.skip(), gr.skip(), gr.skip(), gr.skip()
+                    return (gr.skip(),) * 6
                 scene = scenes[_clamp_index(evt.index, len(scenes))]
                 payload = format_stage(scene)
+                like_update, report_update = _scene_action_updates(
+                    payload["scene_id"], liked_ids, reported_ids
+                )
                 return (
                     render_header_html(payload["title"], payload["style_label"], payload["live"]),
                     render_stage_html(
@@ -1116,15 +1622,21 @@ def build_viewer_app() -> gr.Blocks:
                         payload["live"],
                         clip_src=payload["clip_src"],
                         duration=payload["duration"],
+                        source_icon=payload["source_icon"],
                     ),
                     _audio_html(payload["audio_src"]),
                     payload["scene_id"],
+                    like_update,
+                    report_update,
                 )
 
-            def _back_to_live(scenes):
+            def _back_to_live(scenes, liked_ids, reported_ids):
                 scenes = scenes or []
                 scene = scenes[-1] if scenes else None
                 payload = format_stage(scene)
+                like_update, report_update = _scene_action_updates(
+                    payload["scene_id"], liked_ids, reported_ids
+                )
                 return (
                     render_header_html(payload["title"], payload["style_label"], payload["live"]),
                     render_stage_html(
@@ -1133,21 +1645,24 @@ def build_viewer_app() -> gr.Blocks:
                         payload["live"],
                         clip_src=payload["clip_src"],
                         duration=payload["duration"],
+                        source_icon=payload["source_icon"],
                     ),
                     _audio_html(payload["audio_src"]),
                     None,
+                    like_update,
+                    report_update,
                 )
 
-            def _step_local(delta, scenes, pinned_id):
+            def _step_local(delta, scenes, pinned_id, liked_ids, reported_ids):
                 # rewind/forward step clip-to-clip over the session library (never intra-clip)
                 scenes = scenes or []
-                if not scenes:
-                    return gr.skip(), gr.skip(), gr.skip(), gr.skip()
-                ids = [s.get("scene_id") for s in scenes]
-                idx = ids.index(pinned_id) if pinned_id in ids else len(scenes) - 1
-                idx = max(0, min(idx + delta, len(scenes) - 1))
-                scene = scenes[idx]
+                scene = _stepped_scene(scenes, pinned_id, delta)
+                if scene is None:
+                    return (gr.skip(),) * 6
                 payload = format_stage(scene)
+                like_update, report_update = _scene_action_updates(
+                    payload["scene_id"], liked_ids, reported_ids
+                )
                 return (
                     render_header_html(payload["title"], payload["style_label"], payload["live"]),
                     render_stage_html(
@@ -1156,36 +1671,104 @@ def build_viewer_app() -> gr.Blocks:
                         payload["live"],
                         clip_src=payload["clip_src"],
                         duration=payload["duration"],
+                        source_icon=payload["source_icon"],
                     ),
                     _audio_html(payload["audio_src"]),
                     scene["scene_id"],
+                    like_update,
+                    report_update,
                 )
 
-            go_inputs = [image_none, drop_video, style, hint, scenes_state]
-            go_outputs = [header, stage, feed, shelf, audio, scenes_state, pinned_state]
+            def _go_live_ui(
+                image, video_path, style_key, scene_hint, scenes, liked_ids, reported_ids
+            ):
+                outputs = _go_live_handler(image, video_path, style_key, scene_hint, scenes)
+                scene_id = _scene_id((outputs[5] or [])[-1]) if outputs[5] else None
+                like_update, report_update = _scene_action_updates(
+                    scene_id, liked_ids, reported_ids
+                )
+                return (*outputs, like_update, report_update)
+
+            def _like_current(scenes, pinned_id, liked_ids, reported_ids):
+                scene_id = _scene_id(_current_scene(scenes or [], pinned_id))
+                liked, like_update = _toggle_scene_like(scene_id, liked_ids, reported_ids)
+                if scene_id:
+                    message = (
+                        "Liked — thanks; likes help surface good cuts."
+                        if scene_id in liked
+                        else "Like removed."
+                    )
+                    gr.Info(message)
+                return liked, like_update
+
+            def _report_current(scenes, pinned_id, liked_ids, reported_ids):
+                scene_id = _scene_id(_current_scene(scenes or [], pinned_id))
+                before = _as_id_set(reported_ids)
+                reported, report_update = _toggle_scene_report(scene_id, liked_ids, reported_ids)
+                if scene_id:
+                    gr.Info(
+                        "Reported — thanks; we'll review this clip."
+                        if scene_id not in before
+                        else "Already reported — thanks."
+                    )
+                return reported, report_update
+
+            go_inputs = [
+                image_none,
+                drop_video,
+                style,
+                hint,
+                scenes_state,
+                liked_state,
+                reported_state,
+            ]
+            go_outputs = [
+                header,
+                stage,
+                feed,
+                shelf,
+                audio,
+                scenes_state,
+                pinned_state,
+                like_btn,
+                report_btn,
+            ]
             # Narration fires only on the explicit button — binding drop_video.change too
             # would double-narrate (and double the TTS work) the moment a file lands.
-            go.click(_go_live_handler, inputs=go_inputs, outputs=go_outputs)
-            report_btn.click(lambda: gr.Info("Reported — thanks; we'll review this clip."))
+            go.click(_go_live_ui, inputs=go_inputs, outputs=go_outputs)
+            like_btn.click(
+                _like_current,
+                inputs=[scenes_state, pinned_state, liked_state, reported_state],
+                outputs=[liked_state, like_btn],
+            )
+            report_btn.click(
+                _report_current,
+                inputs=[scenes_state, pinned_state, liked_state, reported_state],
+                outputs=[reported_state, report_btn],
+            )
             shelf.select(
                 _on_local_select,
-                inputs=[scenes_state],
-                outputs=[header, stage, audio, pinned_state],
+                inputs=[scenes_state, liked_state, reported_state],
+                outputs=[header, stage, audio, pinned_state, like_btn, report_btn],
             )
             live_btn.click(
                 _back_to_live,
-                inputs=[scenes_state],
-                outputs=[header, stage, audio, pinned_state],
+                inputs=[scenes_state, liked_state, reported_state],
+                outputs=[header, stage, audio, pinned_state, like_btn, report_btn],
             )
-            step_outputs = [header, stage, audio, pinned_state]
+            step_outputs = [header, stage, audio, pinned_state, like_btn, report_btn]
             rewind_btn.click(
-                lambda s, p: _step_local(-1, s, p),
-                inputs=[scenes_state, pinned_state],
+                lambda scenes, pinned, liked, reported: _step_local(
+                    -1, scenes, pinned, liked, reported
+                ),
+                inputs=[scenes_state, pinned_state, liked_state, reported_state],
                 outputs=step_outputs,
             )
             forward_btn.click(
-                lambda s, p: _step_local(1, s, p),
-                inputs=[scenes_state, pinned_state],
+                lambda scenes, pinned, liked, reported: _step_local(
+                    1, scenes, pinned, liked, reported
+                ),
+                inputs=[scenes_state, pinned_state, liked_state, reported_state],
                 outputs=step_outputs,
             )
 

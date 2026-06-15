@@ -7,6 +7,7 @@ import base64
 import io
 import json
 import threading
+import time
 import uuid
 import wave
 from datetime import datetime, timedelta
@@ -22,6 +23,7 @@ from fastapi.testclient import TestClient  # noqa: E402
 from PIL import Image  # noqa: E402
 
 from small_cuts.engine import build_engine_app  # noqa: E402
+from small_cuts.engine import session as engine_session  # noqa: E402
 from small_cuts.narrator import Narration  # noqa: E402
 from small_cuts.styles import DEFAULT_STYLE_KEY  # noqa: E402
 from test_contracts import GOLDEN  # noqa: E402
@@ -41,6 +43,9 @@ def mock_backends(monkeypatch, tmp_path):
     monkeypatch.setenv("SMALL_CUTS_TTS_BACKEND", "mock")
     # build_engine_app() now persists scenes to a SceneLibrary; keep it off $HOME.
     monkeypatch.setenv("SMALL_CUTS_LIBRARY_DIR", str(tmp_path / "library"))
+    engine_session._BACKGROUND_STORAGE_TASKS.clear()
+    yield
+    engine_session._BACKGROUND_STORAGE_TASKS.clear()
 
 
 def make_envelope(**overrides) -> dict:
@@ -108,6 +113,39 @@ def test_valid_envelope_acked_and_narrated():
         # Busy status surfaced while the moment was in flight, idle after.
         reader.next(lambda f: f.get("kind") == "status" and f["status"]["busy"] is False)
         assert any(s["busy"] for s in reader.statuses())
+
+
+def test_disconnect_after_scene_audio_still_publishes_scene(monkeypatch):
+    original_decode = engine_session._decode_clip_frames_for_storage
+    entered_storage = threading.Event()
+    release_storage = threading.Event()
+
+    def slow_decode(*args, **kwargs):
+        entered_storage.set()
+        assert release_storage.wait(2)
+        return original_decode(*args, **kwargs)
+
+    monkeypatch.setattr(engine_session, "_decode_clip_frames_for_storage", slow_decode)
+    envelope = make_envelope()
+    with TestClient(build_engine_app()) as client:
+        with client.websocket_connect("/v1/session") as ws:
+            reader = Reader(ws)
+            ws.send_text(json.dumps(envelope))
+            audio = reader.next_scene_audio()
+            assert entered_storage.wait(2)
+            assert engine_session._BACKGROUND_STORAGE_TASKS
+
+        assert engine_session._BACKGROUND_STORAGE_TASKS
+        release_storage.set()
+        for _ in range(20):
+            scenes = client.get("/v1/scenes").json()["scenes"]
+            if scenes and not engine_session._BACKGROUND_STORAGE_TASKS:
+                break
+            time.sleep(0.05)
+        assert len(scenes) == 1
+        assert scenes[0]["scene_id"] == audio["scene_id"]
+        assert scenes[0]["moment_id"] == envelope["moment_id"]
+        assert not engine_session._BACKGROUND_STORAGE_TASKS
 
 
 def test_invalid_envelope_rejected_with_detail():
@@ -381,12 +419,104 @@ def test_sink_receives_scene_dict():
     assert scene["created_at"] == audio_frame["created_at"]
     assert scene["style_key"] == envelope["context"]["style_key"]
     assert scene["narration"] == audio_frame["narration"]
+    assert scene["title"]
     assert isinstance(scene["image"], Image.Image)
     assert isinstance(scene["audio"], np.ndarray)
     assert scene["sample_rate"] == audio_frame["sample_rate"]
     latency = scene["latency_ms"]
     assert set(latency) == {"queue", "narration", "tts", "total"}
     assert all(isinstance(v, int) and v >= 0 for v in latency.values())
+
+
+def test_sink_receives_generated_title(monkeypatch):
+    scenes: list[dict] = []
+
+    def titled_narrate(image, style_key=DEFAULT_STYLE_KEY, scene_hint="", backend=None):
+        return Narration(
+            text="The hallway chooses stillness.",
+            title="The Hallway Chooses Stillness",
+            style_key=style_key,
+            backend="mock",
+            model_id="m",
+            latency_s=0.0,
+        )
+
+    monkeypatch.setattr("small_cuts.narrator.narrate", titled_narrate)
+    envelope = make_envelope()
+    with (
+        TestClient(build_engine_app(scene_sink=scenes.append)) as client,
+        client.websocket_connect("/v1/session") as ws,
+    ):
+        reader = Reader(ws)
+        ws.send_text(json.dumps(envelope))
+        reader.next_scene_audio()
+        reader.next(lambda f: f.get("kind") == "status" and f["status"]["busy"] is False)
+
+    assert scenes[0]["title"] == "The Hallway Chooses Stillness"
+
+
+def test_sink_receives_clip_frames_sorted_by_timestamp_offset():
+    def jpeg_b64(color):
+        buffer = io.BytesIO()
+        Image.new("RGB", (8, 8), color).save(buffer, "JPEG")
+        return base64.b64encode(buffer.getvalue()).decode()
+
+    scenes: list[dict] = []
+    envelope = make_envelope()
+    selected = envelope["frames"][0]
+    selected["ts_offset_ms"] = 0
+    selected["jpeg_b64"] = jpeg_b64((255, 0, 0))
+    envelope["frames"] = [
+        selected,
+        {"jpeg_b64": jpeg_b64((0, 0, 255)), "width": 8, "height": 8, "ts_offset_ms": -2000},
+        {"jpeg_b64": jpeg_b64((0, 255, 0)), "width": 8, "height": 8, "ts_offset_ms": -1000},
+    ]
+    with (
+        TestClient(build_engine_app(scene_sink=scenes.append)) as client,
+        client.websocket_connect("/v1/session") as ws,
+    ):
+        reader = Reader(ws)
+        ws.send_text(json.dumps(envelope))
+        reader.next_scene_audio()
+        reader.next(lambda f: f.get("kind") == "status" and f["status"]["busy"] is False)
+
+    assert len(scenes) == 1
+    clip_frames = scenes[0]["clip_frames"]
+    assert len(clip_frames) == 3
+    assert [frame.getpixel((0, 0)) for frame in clip_frames] == [
+        pytest.approx((0, 0, 255), abs=10),
+        pytest.approx((0, 255, 0), abs=10),
+        pytest.approx((255, 0, 0), abs=10),
+    ]
+
+
+def test_bad_supplemental_clip_frame_does_not_block_scene_audio(capsys):
+    scenes: list[dict] = []
+    envelope = make_envelope()
+    selected = envelope["frames"][0]
+    selected["ts_offset_ms"] = 0
+    envelope["frames"] = [
+        selected,
+        {
+            "jpeg_b64": base64.b64encode(b"not a jpeg").decode(),
+            "width": 8,
+            "height": 8,
+            "ts_offset_ms": -1000,
+        },
+    ]
+    with (
+        TestClient(build_engine_app(scene_sink=scenes.append)) as client,
+        client.websocket_connect("/v1/session") as ws,
+    ):
+        reader = Reader(ws)
+        ws.send_text(json.dumps(envelope))
+        audio_frame = reader.next_scene_audio()
+        reader.next(lambda f: f.get("kind") == "status" and f["status"]["busy"] is False)
+
+    assert audio_frame["moment_id"] == envelope["moment_id"]
+    assert len(scenes) == 1
+    assert scenes[0]["clip_frames"] == [scenes[0]["image"]]
+    assert "clip frame decode failed" in capsys.readouterr().err
 
 
 def test_style_and_hint_wiring(monkeypatch):

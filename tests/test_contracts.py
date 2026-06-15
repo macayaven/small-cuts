@@ -98,6 +98,25 @@ def test_moment_frame_size_capped():
         jsonschema.validate(oversized, schema)
 
 
+def test_moment_frame_count_allows_smoother_demo_clip_window():
+    schema = json.loads((CONTRACTS / "moment.schema.json").read_text())
+    sample = json.loads(json.dumps(GOLDEN["moment.schema.json"]))
+    sample["frames"] = [{**sample["frames"][0], "ts_offset_ms": index * 166} for index in range(24)]
+
+    jsonschema.validate(sample, schema)
+
+
+def test_moment_frame_count_still_has_a_hard_cap():
+    schema = json.loads((CONTRACTS / "moment.schema.json").read_text())
+    oversized = json.loads(json.dumps(GOLDEN["moment.schema.json"]))
+    oversized["frames"] = [
+        {**oversized["frames"][0], "ts_offset_ms": index * 166} for index in range(25)
+    ]
+
+    with pytest.raises(jsonschema.ValidationError):
+        jsonschema.validate(oversized, schema)
+
+
 CONTROL_VARIANTS = [
     {
         "contract_version": "1.1.0",

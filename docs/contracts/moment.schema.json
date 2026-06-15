@@ -32,8 +32,8 @@
     "frames": {
       "type": "array",
       "minItems": 1,
-      "maxItems": 4,
-      "description": "Representative frames, best first. JPEG, longest side <= 1024 px (verified Qwen-VL vision-token constraint).",
+      "maxItems": 24,
+      "description": "Selected narration frame first, followed by optional timestamped supplemental JPEG frames for a short just-happened POV clip. Longest decoded side must be <= 1024 px.",
       "items": {
         "type": "object",
         "required": [

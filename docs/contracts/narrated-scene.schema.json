@@ -45,7 +45,7 @@
     "title": {
       "type": "string",
       "maxLength": 80,
-      "description": "derive_title output - the slate/thumbnail text."
+      "description": "Model-generated short title for the slate/thumbnail text; engines may fall back to derive_title for legacy or malformed model output."
     },
     "narration": {
       "type": "string",
@@ -81,7 +81,7 @@
         "clip_url": {
           "type": "string",
           "format": "uri-reference",
-          "description": "Source video segment when the capture app uploaded one (library revisit/share)."
+          "description": "Short viewer clip for library revisit/share, either uploaded or assembled by the engine from timestamped capture frames."
         }
       }
     },

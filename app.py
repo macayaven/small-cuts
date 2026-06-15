@@ -11,32 +11,59 @@ backends eagerly so visitors never pay the model-load cost per click:
 """
 
 import os
+import sys
+import warnings
+from pathlib import Path
+
+from starlette.exceptions import StarletteDeprecationWarning
+
+ROOT = Path(__file__).resolve().parent
+SRC = ROOT / "src"
+if str(SRC) not in sys.path:
+    sys.path.insert(0, str(SRC))
+
+warnings.filterwarnings(
+    "ignore",
+    message=r".*HTTP_422_UNPROCESSABLE_ENTITY.*HTTP_422_UNPROCESSABLE_CONTENT.*",
+    category=StarletteDeprecationWarning,
+)
 
 ON_SPACE = bool(os.environ.get("SPACE_ID"))
+ENGINE_MODE = bool(os.environ.get("SMALL_CUTS_ENGINE_URL", "").strip())
+
+from small_cuts.hf_relay import RELAY_BUCKET_ENV  # noqa: E402
+
+RELAY_MODE = bool(os.environ.get(RELAY_BUCKET_ENV, "").strip())
+MODAL_UPLOAD_MODE = bool(os.environ.get("SMALL_CUTS_MODAL_API_URL", "").strip())
+VIEWER_ONLY_MODE = ENGINE_MODE or RELAY_MODE or MODAL_UPLOAD_MODE
+NEEDS_LOCAL_INFERENCE = not VIEWER_ONLY_MODE
 
 try:
     import spaces  # noqa: F401  (must precede torch imports for ZeroGPU)
 except ImportError:  # local dev / CI: no ZeroGPU
     spaces = None
 
-if ON_SPACE:
+if ON_SPACE and NEEDS_LOCAL_INFERENCE:
     os.environ.setdefault("SMALL_CUTS_BACKEND", "transformers")
     os.environ.setdefault("SMALL_CUTS_TTS_BACKEND", "kokoro")
 
 from small_cuts import narrator  # noqa: E402
+from small_cuts.observability import init_sentry  # noqa: E402
 from small_cuts.viewer import THEME, build_viewer_app  # noqa: E402
+
+init_sentry()
 
 # Eager load: download + pack weights at startup, not on the first click.
 # The @spaces.GPU mark lives on the viewer's go-live handler (via ui._gpu;
 # ZeroGPU's startup scan only finds GPU functions on what Gradio binds).
-_backend = narrator.get_backend()
-if spaces is not None and _backend.name == "transformers":
-    _backend._load()
+if NEEDS_LOCAL_INFERENCE:
+    _backend = narrator.get_backend()
+    if spaces is not None and _backend.name == "transformers":
+        _backend._load()
 
-# The Space never runs engine mode: SMALL_CUTS_ENGINE_URL is only set on a
-# viewer machine next to a home-node engine. Here the viewer builds in
-# upload mode, feeding the stage from the local pipeline. No main-process
-# TTS pre-warm: kokoro's torch use must stay inside @spaces.GPU workers.
+# In engine mode the Space is only a public reader for a private home-node engine, so it must not
+# warm local model weights or expose upload narration controls. No main-process TTS pre-warm:
+# kokoro's torch use must stay inside @spaces.GPU workers.
 demo = build_viewer_app()
 
 if __name__ == "__main__":

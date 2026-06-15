@@ -14,6 +14,7 @@ from __future__ import annotations
 import atexit
 import base64
 import io
+import json
 import os
 import shutil
 import socket
@@ -29,6 +30,7 @@ import httpx
 from PIL import Image
 
 from .styles import DEFAULT_STYLE_KEY, STYLES, build_messages
+from .title_card import derive_title
 
 # M1 final pick (docs/eval/run-006-scored.md): beats Qwen2.5-VL-7B head-to-head
 # for BOTH judges (Codex 7/10 vs 0/10, Gemini 9/10 vs 0/10 images passing).
@@ -47,6 +49,7 @@ class Narration:
     backend: str
     model_id: str
     latency_s: float
+    title: str = ""
 
 
 class Backend(Protocol):
@@ -74,10 +77,11 @@ class MockBackend:
         light = "well-lit" if brightness > 127 else "dimly lit"
         shape = "wide" if image.width >= image.height else "tall"
         hint = f" {scene_hint.strip()}" if scene_hint.strip() else ""
-        return (
+        narration = (
             f"[{style.label}] The frame is {shape} and {light}, and the narrator has "
             f"seen it all before.{hint} What happens next was, frankly, inevitable."
         )
+        return json.dumps({"title": derive_title(narration), "narration": narration})
 
 
 class TransformersBackend:
@@ -424,11 +428,55 @@ def narrate(
         raise ValueError(f"Unknown style {style_key!r}")
     backend = backend or get_backend()
     start = time.perf_counter()
-    text = backend.generate(image, style_key, scene_hint)
+    raw = backend.generate(image, style_key, scene_hint)
+    title, text = _parse_generation(raw)
     return Narration(
         text=text,
         style_key=style_key,
         backend=backend.name,
         model_id=backend.model_id,
         latency_s=time.perf_counter() - start,
+        title=title,
     )
+
+
+def _parse_generation(raw: str) -> tuple[str, str]:
+    """Return (title, narration), tolerating legacy plain-text model output."""
+    text = raw.strip()
+    if not text:
+        return "Untitled Scene", ""
+    parsed = _json_object_from_model(text)
+    if parsed is not None:
+        narration = str(parsed.get("narration", "")).strip()
+        title = _clean_title(str(parsed.get("title", "")).strip(), fallback=narration)
+        if narration:
+            return title, narration
+    return derive_title(text), text
+
+
+def _json_object_from_model(text: str) -> dict | None:
+    candidates = [text]
+    if text.startswith("```"):
+        stripped = text.strip("`").strip()
+        if stripped.lower().startswith("json"):
+            stripped = stripped[4:].strip()
+        candidates.append(stripped)
+    first = text.find("{")
+    last = text.rfind("}")
+    if first != -1 and last > first:
+        candidates.append(text[first : last + 1])
+    for candidate in candidates:
+        try:
+            value = json.loads(candidate)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(value, dict):
+            return value
+    return None
+
+
+def _clean_title(title: str, fallback: str) -> str:
+    title = " ".join(title.replace("\n", " ").split())
+    if not title:
+        return derive_title(fallback)
+    return derive_title(title, max_len=80)

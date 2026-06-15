@@ -1,6 +1,6 @@
 # SmallCuts — Device Runbook (live test)
 
-> **Cold-start tip:** the first narration after engine boot takes ~17 s (llama-server spawn + model load). Send one throwaway moment (Simulated source, tap Mark) right after starting the engine so the live glasses test runs warm (~6 s end-to-end).
+> **Cold-start tip:** the first narration after engine boot takes ~17 s (llama-server spawn + model load). Send one throwaway moment (Admin → Source = Simulated, tap Action!, wait a few seconds, tap Cut!) right after starting the engine so the live glasses test runs warm (~6 s end-to-end).
 
 App: SmallCuts (`com.macayaven.smallcuts`, XcodeGen) · Phone: iPhone 14 Pro · Glasses: Ray-Ban Meta · Engine: Mac Studio (tailnet `mac-studio`, port 8077).
 
@@ -28,23 +28,26 @@ SMALL_CUTS_BACKEND=llama_cpp SMALL_CUTS_TTS_BACKEND=kokoro uv run python -m smal
 
 - [ ] Plug in iPhone → Xcode → scheme SmallCuts → destination = the phone → Run. First sideload: trust the developer cert on the phone (Settings → General → VPN & Device Management).
 - [ ] In-app engine URL: `ws://mac-studio:8077` (the default). That hostname is **tailnet** — the iPhone must be on the tailnet via the Tailscale app. No tailnet? Use the Studio's LAN IP: `ws://<lan-ip>:8077`.
+- [ ] Open Admin only if needed: confirm the engine URL, source, style, and stats.
 - [ ] Pick a director style (deadpan / noir / nature_doc / trailer / telenovela / symmetrist).
-- [ ] **Source = Simulated first.** Start it and confirm scenes come back and play — this proves the full engine round trip ON THE PHONE before glasses enter the picture.
+- [ ] **Source = Simulated first.** Tap Action!, let it roll a few seconds, tap Cut!, and confirm narration comes back — this proves the full engine round trip ON THE PHONE before glasses enter the picture.
 - [ ] Then switch Source = Glasses.
 
 ## 3. Glasses flow
 
-Tap Connect. Expected state sequence:
+Tap Action!. Expected state sequence:
 
 `Idle → Configuring SDK… → Registering with Meta AI… (deep-links to Meta AI app → approve → return to SmallCuts) → Connecting to glasses… → Streaming`
+
+After Streaming, move naturally for the take. Tap Cut! once to submit the take. The phone stops capture, keeps the engine socket open, and waits for the in-ear narration.
 
 The four classic failure modes (check in this order):
 
 | Symptom | Cause | Fix |
 | --- | --- | --- |
-| "No glasses found — pair them in the Meta AI app…" (or an SDK `noEligibleDevice` error) | Glasses Developer Mode OFF in Meta AI | **Check this FIRST.** Meta AI → Settings → glasses → Developer Mode ON (resets after firmware updates). Retap Connect. |
-| Registration parks (stuck in "Registering…") | Meta AI never calls back | If you cancelled inside Meta AI the app re-kicks registration by itself. Otherwise a built-in 120 s timeout fails the connect with "Registration timed out — retry" — retap Connect. |
-| `sessionAlreadyExists` | Stale leaked session | Fixed via auto-teardown — just retap Connect. |
+| "No glasses found — pair them in the Meta AI app…" (or an SDK `noEligibleDevice` error) | Glasses Developer Mode OFF in Meta AI | **Check this FIRST.** Meta AI → Settings → glasses → Developer Mode ON (resets after firmware updates). Retap Action!. |
+| Registration parks (stuck in "Registering…") | Meta AI never calls back | If you cancelled inside Meta AI the app re-kicks registration by itself. Otherwise a built-in 120 s timeout fails the connect with "Registration timed out — retry" — retap Action!. |
+| `sessionAlreadyExists` | Stale leaked session | Fixed via auto-teardown — just retap Action!. |
 | Transport failures (connects then drops, no frames) | Info.plist transport contract broken | Verify Info.plist still has: Bluetooth + camera + local-network usage strings, `NSBonjourServices` (`_meta-wearables._tcp/_udp`), `UISupportedExternalAccessoryProtocols` (`com.meta.ar.wearable`), `LSApplicationQueriesSchemes` (`fb-viewapp`). Source of truth: `project.yml`. |
 
 ## 4. Credentials fallback (only if registration fails outright)
@@ -65,7 +68,7 @@ Dev-mode credentials (`MetaAppID "0"` + empty ClientToken) should work. If regis
 - **Engine logs**: the terminal running `small_cuts.engine` on the Studio.
 - **Library** (captured moments): `~/.small-cuts/library` on the Studio.
 - **Scene viewer**: `http://mac-studio:8077/v1/scenes` — JSON snapshot of captured scenes. Live SSE stream: `http://mac-studio:8077/v1/scenes/stream` — watch scenes land in real time from anything on the tailnet (`curl -N` is the most readable client).
-- **App stats line** (`sent X · ok X · coal X · rej X · err X · played X`):
+- **Admin stats line** (`sent X · ok X · coal X · rej X · err X · played X`):
   - `sent` — moments sent to the engine
   - `ok` — accepted by the engine
   - `coal` — coalesced (queued moment dropped by the ENGINE in favor of a newer one; normal under backpressure)

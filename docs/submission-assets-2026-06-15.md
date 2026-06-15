@@ -44,8 +44,8 @@ Short description:
 - Public viewing depends on the current Cloudflare quick tunnel until the named tunnel/HF
   interaction is isolated.
 - The public library now uses engine-generated narration, so it is honest as a model-quality sample.
-  The mark point is curated per source clip, matching how a wearer would press Mark when the moment
-  is readable.
+  The take end point is curated per source clip, matching how a wearer would tap Cut! when the
+  moment is readable.
 
 ## Current Public Generated Library
 

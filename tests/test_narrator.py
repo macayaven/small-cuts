@@ -1,7 +1,10 @@
+import json
+
 import pytest
 from PIL import Image
 
 from small_cuts.narrator import MockBackend, get_backend, narrate
+from small_cuts.title_card import derive_title
 
 
 def make_image(width=64, height=48, color=(200, 200, 200)):
@@ -44,6 +47,41 @@ def test_narration_metadata():
     assert result.backend == "mock"
     assert result.latency_s >= 0
     assert "lunch" in result.text
+    assert result.title
+
+
+def test_narrate_parses_structured_model_title():
+    class StructuredBackend:
+        name = "structured"
+        model_id = "structured-0"
+
+        def generate(self, image, style_key, scene_hint):
+            return json.dumps(
+                {
+                    "title": "The Exit Sign Waits",
+                    "narration": (
+                        "The exit sign waits above the door. Nobody has committed to leaving."
+                    ),
+                }
+            )
+
+    result = narrate(make_image(), "deadpan", backend=StructuredBackend())
+
+    assert result.title == "The Exit Sign Waits"
+    assert result.text == "The exit sign waits above the door. Nobody has committed to leaving."
+
+
+def test_narrate_falls_back_to_derived_title_for_plain_text():
+    class PlainBackend:
+        name = "plain"
+        model_id = "plain-0"
+
+        def generate(self, image, style_key, scene_hint):
+            return "The lamp hums. Nothing moves."
+
+    result = narrate(make_image(), "deadpan", backend=PlainBackend())
+
+    assert result.title == derive_title(result.text)
 
 
 def test_get_backend_caches_instances(monkeypatch):

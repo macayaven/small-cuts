@@ -5,6 +5,11 @@ options:
     iOS: "17.0"
   createIntermediateGroups: true
 
+settings:
+  ENABLE_USER_SCRIPT_SANDBOXING: "YES"
+  LOCALIZATION_PREFERS_STRING_CATALOGS: "YES"
+  ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS: "YES"
+
 packages:
   # Mirrors AeroWing's reference (remote pin, not the local clone — the local
   # repo's HEAD has no Package.swift; only release tags ship the SPM manifest).
@@ -88,6 +93,8 @@ targets:
       CODE_SIGN_STYLE: Automatic
       ENABLE_PREVIEWS: YES
       SWIFT_VERSION: "5.0"
+      SWIFT_EMIT_LOC_STRINGS: "YES"
+      STRING_CATALOG_GENERATE_SYMBOLS: "YES"
       TARGETED_DEVICE_FAMILY: "1"
       MARKETING_VERSION: 0.1.0
       CURRENT_PROJECT_VERSION: 1
@@ -104,6 +111,8 @@ targets:
         product: MWDATCore
     settings:
       SWIFT_VERSION: "5.0"
+      SWIFT_EMIT_LOC_STRINGS: "YES"
+      STRING_CATALOG_GENERATE_SYMBOLS: "YES"
       GENERATE_INFOPLIST_FILE: YES
 
 schemes:

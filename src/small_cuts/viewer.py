@@ -115,6 +115,8 @@ footer { display: none !important; }
 .sc-header-title { font-family: 'Spectral', serif; font-size: 1.35rem; color: #E8E4D8; }
 .sc-header-channel { font-family: 'IBM Plex Mono', monospace; font-size: .78rem; color: #D4AF37;
   letter-spacing: .08em; text-transform: uppercase; }
+.sc-live-hint { display: inline-block; margin-left: 8px; font-family: 'IBM Plex Mono', monospace;
+  font-size: .72rem; letter-spacing: .08em; color: #D4AF37; text-transform: uppercase; }
 .sc-live-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%;
   background: #D4AF37; margin-right: 9px; vertical-align: middle;
   animation: sc-pulse 1.4s ease-in-out infinite; }
@@ -411,12 +413,23 @@ def render_stage_html(
     return f'<div class="sc-stage-shell">{body}{caption_html}</div>'
 
 
-def render_header_html(title: str, style_label: str, live: bool) -> str:
+def render_header_html(
+    title: str,
+    style_label: str,
+    live: bool,
+    notice: str | None = None,
+) -> str:
     # One unnamed signature voice — the channel is Small Cuts, not a per-cut director.
     # style_label is retained in the call signature for future per-owner channels.
     # Live capture reads "Happening now"; a finished cut shows its auto-generated title.
     state = "live" if live else "standby"
-    headline = '<span class="sc-live-dot"></span>Happening now' if live else html.escape(title)
+    if notice:
+        headline = (
+            f'<span class="sc-live-dot"></span>{html.escape(notice)}'
+            '<span class="sc-live-hint">Tap to watch</span>'
+        )
+    else:
+        headline = '<span class="sc-live-dot"></span>Happening now' if live else html.escape(title)
     return (
         f'<div class="sc-header sc-{state}">'
         f'<span class="sc-header-title">{headline}</span>'
@@ -499,6 +512,7 @@ def poll_engine(
     scenes_prev: list[dict[str, Any]],
     pinned_id: str | None,
     playing_id: str | None,
+    current_id: str | None = None,
     now: datetime | None = None,
 ) -> tuple[Any, ...]:
     """One timer tick: GET /v1/scenes -> header, stage, feed, audio, shelf, states.
@@ -539,11 +553,14 @@ def poll_engine(
     newest = scenes[-1]
     channel_live = is_fresh(newest.get("created_at"), now=now)
     by_id = {scene.get("scene_id"): scene for scene in scenes}
-    current = by_id.get(pinned_id, newest)
+    current = by_id.get(pinned_id) or by_id.get(current_id) or newest
     payload = format_stage(current, client.base_url, now=now)
     on_air = channel_live and current.get("scene_id") == newest.get("scene_id")
+    notice = "New cut available" if channel_live and not on_air else None
 
-    header = render_header_html(payload["title"], payload["style_label"], live=channel_live)
+    header = render_header_html(
+        payload["title"], payload["style_label"], live=channel_live, notice=notice
+    )
     stage = render_stage_html(
         payload["frame_src"],
         payload["caption"],
@@ -655,6 +672,16 @@ def _current_scene(scenes: list[dict[str, Any]], pinned_id: str | None) -> dict[
         return None
     by_id = {scene.get("scene_id"): scene for scene in scenes}
     return by_id.get(pinned_id, scenes[-1])
+
+
+def _stepped_scene(
+    scenes: list[dict[str, Any]], current_id: str | None, delta: int
+) -> dict[str, Any] | None:
+    if not scenes:
+        return None
+    ids = [scene.get("scene_id") for scene in scenes]
+    idx = ids.index(current_id) if current_id in ids else len(scenes) - 1
+    return scenes[(idx + delta) % len(scenes)]
 
 
 def _as_id_set(value: Any) -> set[str]:
@@ -1086,8 +1113,10 @@ def build_viewer_app() -> gr.Blocks:
         if client is not None:
             engine = client  # narrow the type for the closures below
 
-            def _tick(scenes_prev, pinned_id, playing_id):
-                return poll_engine(engine, scenes_prev or [], pinned_id, playing_id)
+            def _tick(scenes_prev, pinned_id, playing_id, current_id):
+                return poll_engine(
+                    engine, scenes_prev or [], pinned_id, playing_id, current_id=current_id
+                )
 
             poll_outputs = [
                 header,
@@ -1102,7 +1131,9 @@ def build_viewer_app() -> gr.Blocks:
             ]
             timer = gr.Timer(POLL_SECONDS)
             timer.tick(
-                _tick, inputs=[scenes_state, pinned_state, playing_state], outputs=poll_outputs
+                _tick,
+                inputs=[scenes_state, pinned_state, playing_state, current_state],
+                outputs=poll_outputs,
             )
 
             def _on_select(evt: gr.SelectData, scenes):
@@ -1144,12 +1175,9 @@ def build_viewer_app() -> gr.Blocks:
             def _step_engine(delta, scenes, pinned_id):
                 # rewind/forward step clip-to-clip over the library (never intra-clip)
                 scenes = scenes or []
-                if not scenes:
+                scene = _stepped_scene(scenes, pinned_id, delta)
+                if scene is None:
                     return (gr.skip(),) * 7
-                ids = [s.get("scene_id") for s in scenes]
-                idx = ids.index(pinned_id) if pinned_id in ids else len(scenes) - 1
-                idx = max(0, min(idx + delta, len(scenes) - 1))
-                scene = scenes[idx]
                 payload = format_stage(scene, engine.base_url)
                 return (
                     render_header_html(payload["title"], payload["style_label"], payload["live"]),
@@ -1164,6 +1192,33 @@ def build_viewer_app() -> gr.Blocks:
                     payload["scene_id"],
                     payload["scene_id"],
                     payload["scene_id"],
+                    gr.update(value=payload["visibility"]) if payload["visibility"] else gr.skip(),
+                )
+
+            def _back_to_live_engine(scenes, playing_id):
+                scenes = scenes or []
+                scene = scenes[-1] if scenes else None
+                payload = format_stage(scene, engine.base_url)
+                if payload["audio_src"] and payload["scene_id"] != playing_id:
+                    audio_update, playing_id = (
+                        _audio_html(payload["audio_src"]),
+                        payload["scene_id"],
+                    )
+                else:
+                    audio_update = gr.skip()
+                return (
+                    render_header_html(payload["title"], payload["style_label"], payload["live"]),
+                    render_stage_html(
+                        payload["frame_src"],
+                        payload["caption"],
+                        payload["live"],
+                        clip_src=payload["clip_src"],
+                        duration=payload["duration"],
+                    ),
+                    audio_update,
+                    None,
+                    payload["scene_id"],
+                    playing_id,
                     gr.update(value=payload["visibility"]) if payload["visibility"] else gr.skip(),
                 )
 
@@ -1196,7 +1251,11 @@ def build_viewer_app() -> gr.Blocks:
                     raise gr.Error(f"Could not update visibility: {exc}") from exc
 
             visibility.input(_on_visibility, inputs=[visibility, current_state])
-            live_btn.click(lambda: None, outputs=[pinned_state])  # next tick re-follows live
+            live_btn.click(
+                _back_to_live_engine,
+                inputs=[scenes_state, playing_state],
+                outputs=step_outputs_e,
+            )
         else:
 
             def _on_local_select(evt: gr.SelectData, scenes, liked_ids, reported_ids):
@@ -1248,12 +1307,9 @@ def build_viewer_app() -> gr.Blocks:
             def _step_local(delta, scenes, pinned_id, liked_ids, reported_ids):
                 # rewind/forward step clip-to-clip over the session library (never intra-clip)
                 scenes = scenes or []
-                if not scenes:
+                scene = _stepped_scene(scenes, pinned_id, delta)
+                if scene is None:
                     return (gr.skip(),) * 6
-                ids = [s.get("scene_id") for s in scenes]
-                idx = ids.index(pinned_id) if pinned_id in ids else len(scenes) - 1
-                idx = max(0, min(idx + delta, len(scenes) - 1))
-                scene = scenes[idx]
                 payload = format_stage(scene)
                 like_update, report_update = _scene_action_updates(
                     payload["scene_id"], liked_ids, reported_ids

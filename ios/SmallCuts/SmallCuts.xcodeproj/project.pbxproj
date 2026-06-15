@@ -32,6 +32,7 @@
 		DE5D309947DC38633D58E171 /* FrameSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B69B2753ECED62682B756E4 /* FrameSource.swift */; };
 		E3C04106A0F64F24B5A89BE6 /* MWDATCamera in Frameworks */ = {isa = PBXBuildFile; productRef = 7479F73A35459057695F9DCB /* MWDATCamera */; };
 		E60B04C3FE401D1E5DBDDFCD /* FrameClipBuffer.swift in Sources */ = {isa = PBXBuildFile; fileRef = C818AD89BAE56F391C773BA2 /* FrameClipBuffer.swift */; };
+		E87D86D828BEC1C5771BF906 /* CaptureCoordinatorTakeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F031EBD0C12A47A5919A9D4 /* CaptureCoordinatorTakeTests.swift */; };
 		EE17CB9889FAFF62B6F77ECE /* EngineSessionClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5910940C59EA51CEC91C7620 /* EngineSessionClient.swift */; };
 		EE971BCEF016CCE69A07E8BA /* MockWearables.swift in Sources */ = {isa = PBXBuildFile; fileRef = 583D4D6DCDF90B7420BE0024 /* MockWearables.swift */; };
 		EEDB9A7934E9685829CBDF2F /* EngineLoopSmokeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3143196467D93336B0F1931D /* EngineLoopSmokeTests.swift */; };
@@ -66,6 +67,7 @@
 		747311FFFF3EBBE08579B573 /* SceneGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneGate.swift; sourceTree = "<group>"; };
 		79916A519E7962A3ECB160A8 /* MockGlassesDebugController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MockGlassesDebugController.swift; sourceTree = "<group>"; };
 		880FCDD4CBC896280003B194 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		8F031EBD0C12A47A5919A9D4 /* CaptureCoordinatorTakeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureCoordinatorTakeTests.swift; sourceTree = "<group>"; };
 		9E9DDEF68041739F02721A89 /* VoicePlayerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoicePlayerTests.swift; sourceTree = "<group>"; };
 		9EA3C204376F28F59E8B5592 /* SimulatedFrameSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SimulatedFrameSource.swift; sourceTree = "<group>"; };
 		A19AF4945B8733E10DFFDF16 /* CaptureCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureCoordinator.swift; sourceTree = "<group>"; };
@@ -158,6 +160,7 @@
 		9CC680D0C1B6A66AF32B5E28 /* SmallCutsTests */ = {
 			isa = PBXGroup;
 			children = (
+				8F031EBD0C12A47A5919A9D4 /* CaptureCoordinatorTakeTests.swift */,
 				3143196467D93336B0F1931D /* EngineLoopSmokeTests.swift */,
 				31D0A790E69CD08267B72A35 /* EngineSessionClientTests.swift */,
 				4E262AFA4D31BA9A26300C4F /* FrameClipBufferTests.swift */,
@@ -311,6 +314,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				E87D86D828BEC1C5771BF906 /* CaptureCoordinatorTakeTests.swift in Sources */,
 				EEDB9A7934E9685829CBDF2F /* EngineLoopSmokeTests.swift in Sources */,
 				6A353C2C02C64E9657BE367A /* EngineSessionClientTests.swift in Sources */,
 				703135456BB79B8001542E79 /* FrameClipBufferTests.swift in Sources */,
@@ -339,6 +343,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
 				CLANG_ANALYZER_NONNULL = YES;
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
@@ -372,6 +377,7 @@
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_NO_COMMON_BLOCKS = YES;
@@ -387,6 +393,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
@@ -402,6 +409,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
 				CLANG_ANALYZER_NONNULL = YES;
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
@@ -435,6 +443,7 @@
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
 				GCC_NO_COMMON_BLOCKS = YES;
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
@@ -444,6 +453,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -471,6 +481,8 @@
 				MARKETING_VERSION = 0.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.macayaven.smallcuts;
 				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 1;
 			};
@@ -493,6 +505,8 @@
 				MARKETING_VERSION = 0.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.macayaven.smallcuts;
 				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 1;
 			};
@@ -511,6 +525,8 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.macayaven.SmallCutsTests;
 				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/SmallCuts.app/SmallCuts";
@@ -530,6 +546,8 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.macayaven.SmallCutsTests;
 				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/SmallCuts.app/SmallCuts";

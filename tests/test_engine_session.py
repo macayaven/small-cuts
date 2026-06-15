@@ -419,12 +419,40 @@ def test_sink_receives_scene_dict():
     assert scene["created_at"] == audio_frame["created_at"]
     assert scene["style_key"] == envelope["context"]["style_key"]
     assert scene["narration"] == audio_frame["narration"]
+    assert scene["title"]
     assert isinstance(scene["image"], Image.Image)
     assert isinstance(scene["audio"], np.ndarray)
     assert scene["sample_rate"] == audio_frame["sample_rate"]
     latency = scene["latency_ms"]
     assert set(latency) == {"queue", "narration", "tts", "total"}
     assert all(isinstance(v, int) and v >= 0 for v in latency.values())
+
+
+def test_sink_receives_generated_title(monkeypatch):
+    scenes: list[dict] = []
+
+    def titled_narrate(image, style_key=DEFAULT_STYLE_KEY, scene_hint="", backend=None):
+        return Narration(
+            text="The hallway chooses stillness.",
+            title="The Hallway Chooses Stillness",
+            style_key=style_key,
+            backend="mock",
+            model_id="m",
+            latency_s=0.0,
+        )
+
+    monkeypatch.setattr("small_cuts.narrator.narrate", titled_narrate)
+    envelope = make_envelope()
+    with (
+        TestClient(build_engine_app(scene_sink=scenes.append)) as client,
+        client.websocket_connect("/v1/session") as ws,
+    ):
+        reader = Reader(ws)
+        ws.send_text(json.dumps(envelope))
+        reader.next_scene_audio()
+        reader.next(lambda f: f.get("kind") == "status" and f["status"]["busy"] is False)
+
+    assert scenes[0]["title"] == "The Hallway Chooses Stillness"
 
 
 def test_sink_receives_clip_frames_sorted_by_timestamp_offset():

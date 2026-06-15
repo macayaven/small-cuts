@@ -77,14 +77,16 @@ This version sends image frames, not source audio. That is intentional for the h
 source sound is not needed for the narrator concept, and excluding it keeps privacy and contracts
 simpler.
 
-The current live model narrates one selected frame per moment. The viewer can show a short POV clip
-assembled from supplemental frames, but full video reasoning is a v2 direction. The next version
-should buffer a low-resolution clip directly into the Space, generate narration fragments with
-timestamps, and let the finished cut feel even closer to what the wearer experienced.
+The current live model reasons over sampled frames from an intentional Action-to-Cut take. The
+viewer can show a short POV clip assembled from those supplemental frames, but full video reasoning
+is a v2 direction. The next version should buffer a low-resolution clip directly into the Space,
+generate narration fragments with timestamps, and let the finished cut feel even closer to what the
+wearer experienced.
 
-There is also room to make title generation stronger. The current live title is deterministic and
-derived from the narration. The better version is a structured model output: short title, narration,
-caption timing, and confidence, all in one contract.
+Title generation now shares the model call with narration: the model returns a short grounded title
+and the spoken narration together, with deterministic title derivation kept as a fallback for
+malformed output. A later contract can add caption timing and confidence in the same structured
+response.
 
 ## Why this matters
 

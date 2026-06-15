@@ -15,7 +15,9 @@ SYSTEM_PROMPT = (
     "legible. Pick the one or two most telling visible details and build the "
     "narration on them — the director's style changes the TONE of your sentences, "
     "never the facts. Write 2 to 4 sentences, present tense, third person. "
-    "No preamble, no quotes, no emoji — only the narration itself."
+    "Also write a short movie-title style title grounded in the same visible facts. "
+    "Output only a compact JSON object with exactly two string keys: "
+    "`title` and `narration`. No markdown, no commentary, no emoji."
 )
 
 
@@ -127,7 +129,11 @@ def build_messages(style_key: str, scene_hint: str = "") -> list[dict]:
     )
     if scene_hint.strip():
         user_text += f"Context offered by the person living this moment: {scene_hint.strip()}\n"
-    user_text += "Now narrate the attached moment."
+    user_text += (
+        "Now title and narrate the attached moment as JSON, for example: "
+        '{"title":"The Fourth Coffee","narration":"He stirs the coffee again. '
+        'Nothing about it improves."}'
+    )
     return [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": user_text},

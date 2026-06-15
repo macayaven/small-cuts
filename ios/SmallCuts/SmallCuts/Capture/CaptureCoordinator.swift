@@ -8,6 +8,11 @@ import UIKit
 @MainActor
 final class CaptureCoordinator: ObservableObject {
 
+    enum CapturePolicy: Equatable {
+        case automatic
+        case manualTake
+    }
+
     struct Stats: Equatable {
         var sent = 0
         var accepted = 0
@@ -45,6 +50,8 @@ final class CaptureCoordinator: ObservableObject {
     @Published private(set) var caption: String?
     @Published private(set) var preview: UIImage?
     @Published private(set) var frameCount = 0
+    @Published private(set) var recordingStartedAt: Date?
+    @Published private(set) var awaitingNarration = false
     /// Mirror of `voicePlayer.state` (nested ObservableObjects don't republish).
     @Published private(set) var playback: VoicePlayer.PlaybackState = .idle
 
@@ -58,8 +65,9 @@ final class CaptureCoordinator: ObservableObject {
     private var frameTask: Task<Void, Never>?
     private var eventTask: Task<Void, Never>?
     private var lastFrame: CapturedFrame?
+    private var capturePolicy: CapturePolicy = .automatic
     private var clipBuffer = FrameClipBuffer(
-        window: 4.0,
+        window: FrameClipBuffer.liveDemoWindow,
         maxStoredFrames: FrameClipBuffer.liveDemoMaxStoredFrames,
         maxClipFrames: FrameClipBuffer.liveDemoMaxClipFrames
     )
@@ -100,7 +108,12 @@ final class CaptureCoordinator: ObservableObject {
         return base
     }
 
-    func start(source: any FrameSource, engineURL: URL, styleKey: String) async throws {
+    func start(
+        source: any FrameSource,
+        engineURL: URL,
+        styleKey: String,
+        capturePolicy: CapturePolicy = .automatic
+    ) async throws {
         guard !starting else { return } // re-entrant start (double-tap) is a no-op
         starting = true
         defer { starting = false }
@@ -110,6 +123,9 @@ final class CaptureCoordinator: ObservableObject {
         stats = Stats()
         caption = nil
         frameCount = 0
+        awaitingNarration = false
+        recordingStartedAt = Date()
+        self.capturePolicy = capturePolicy
         gate.suppressed = false
         clipBuffer.reset()
 
@@ -154,16 +170,27 @@ final class CaptureCoordinator: ObservableObject {
         lastFrame = nil
         clipBuffer.reset()
         running = false
+        recordingStartedAt = nil
+        awaitingNarration = false
+        capturePolicy = .automatic
         engineLink = .idle
     }
 
     /// User-triggered capture of whatever is currently in view.
     func fireManual() {
         guard running, let frame = lastFrame else { return }
-        let clipFrames = clipBuffer.framesForClip(endingAt: frame)
-        if case .fire(let scores) = gate.fireManually(frame) {
-            Task { await sendMoment(frame: frame, scores: scores, clipFrames: clipFrames) }
+        Task {
+            await submitUserMoment(endingAt: frame)
         }
+    }
+
+    /// Product take flow: end capture, submit the take, and keep the engine
+    /// socket alive so the in-ear narration can still return.
+    func cutTake() async {
+        guard running, let frame = lastFrame else { return }
+        let sent = await submitUserMoment(endingAt: frame)
+        awaitingNarration = sent
+        stopFrameCaptureOnly()
     }
 
     // MARK: - Pipeline
@@ -175,6 +202,7 @@ final class CaptureCoordinator: ObservableObject {
         frameCount += 1
         lastFrame = frame
         clipBuffer.record(frame)
+        guard capturePolicy == .automatic else { return }
         if case .fire(let scores) = gate.evaluate(frame) {
             await sendMoment(
                 frame: frame,
@@ -184,12 +212,23 @@ final class CaptureCoordinator: ObservableObject {
         }
     }
 
+    @discardableResult
+    private func submitUserMoment(endingAt frame: CapturedFrame) async -> Bool {
+        let clipFrames = clipBuffer.framesForClip(endingAt: frame)
+        guard case .fire(let scores) = gate.fireManually(frame) else {
+            lastError = "engine is busy; cut was not sent"
+            return false
+        }
+        return await sendMoment(frame: frame, scores: scores, clipFrames: clipFrames)
+    }
+
+    @discardableResult
     private func sendMoment(
         frame: CapturedFrame,
         scores: GateScores,
         clipFrames: [CapturedFrame]
-    ) async {
-        guard let client, builder != nil else { return }
+    ) async -> Bool {
+        guard let client, builder != nil else { return false }
         // JPEG downscale + encode is the expensive part — keep it off the
         // main actor so the UI never stalls on a fired frame.
         let selectedImage = frame.image
@@ -211,7 +250,7 @@ final class CaptureCoordinator: ObservableObject {
         }.value
         guard let encoded = encodedFrames.0 else {
             lastError = "frame JPEG encoding failed"
-            return
+            return false
         }
         // stop()/start() may have raced the encode — drop, don't cross wires.
         guard self.client === client,
@@ -222,12 +261,14 @@ final class CaptureCoordinator: ObservableObject {
                   encoded: encoded,
                   supplementalFrames: encodedFrames.1
               )
-        else { return }
+        else { return false }
         stats.sent += 1
         do {
             try await client.send(envelope: built.envelope, momentId: built.momentId)
+            return true
         } catch {
             lastError = "send failed: \(error.localizedDescription)"
+            return false
         }
     }
 
@@ -251,15 +292,28 @@ final class CaptureCoordinator: ObservableObject {
                 stats.coalesced += 1
             case .rejected:
                 stats.rejected += 1
+                awaitingNarration = false
                 lastError = "rejected: \(detail ?? "schema validation failed")"
             }
         case .status(let busy, _):
             gate.suppressed = busy // D8: hold the gate while the engine is busy
         case .error(_, let stage, let message, _):
             stats.errors += 1
+            awaitingNarration = false
             lastError = "\(stage): \(message)"
         case .sceneAudio(let message):
+            awaitingNarration = false
             voicePlayer.enqueue(message)
         }
+    }
+
+    private func stopFrameCaptureOnly() {
+        frameTask?.cancel()
+        frameTask = nil
+        source?.stop()
+        source = nil
+        clipBuffer.reset()
+        running = false
+        recordingStartedAt = nil
     }
 }

@@ -2,7 +2,8 @@ import Foundation
 
 /// Small rolling POV buffer used only to make the Space's "just happened" clip feel alive.
 struct FrameClipBuffer {
-    static let liveDemoMaxStoredFrames = 40
+    static let liveDemoWindow: TimeInterval = 30.0
+    static let liveDemoMaxStoredFrames = 240
     static let liveDemoMaxClipFrames = 24
 
     let window: TimeInterval

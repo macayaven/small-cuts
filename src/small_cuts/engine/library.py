@@ -126,7 +126,7 @@ class SceneLibrary:
         scene_id: str = scene["scene_id"]
         narration: str = scene["narration"]
         style_key: str = scene["style_key"]
-        title = derive_title(narration)
+        title = _stored_title(scene.get("title"), narration)
 
         scene_dir = self.media_dir / scene_id
         scene_dir.mkdir(parents=True, exist_ok=True)
@@ -311,3 +311,9 @@ def _write_clip_mp4(path: Path, frames: list[Image.Image], fps: int = CLIP_MP4_F
             container.mux(packet)
     finally:
         container.close()
+
+
+def _stored_title(raw_title: object, narration: str) -> str:
+    if isinstance(raw_title, str) and raw_title.strip():
+        return derive_title(raw_title, max_len=80)
+    return derive_title(narration, max_len=80)

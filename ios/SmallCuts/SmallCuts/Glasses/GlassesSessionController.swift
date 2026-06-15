@@ -172,8 +172,12 @@ final class GlassesSessionController: ObservableObject {
     private var streamStartTask: Task<Void, Never>?
     private let frameFanout = FrameFanout()
 
+    convenience init() {
+        self.init(configurator: WearablesConfigurator.shared)
+    }
+
     init(
-        configurator: WearablesConfigurator = .shared,
+        configurator: WearablesConfigurator,
         deviceWaitTimeout: TimeInterval = 5.0,
         registrationTimeout: TimeInterval = 120.0,
         wearablesProvider: @escaping @MainActor () -> any WearablesInterface = { Wearables.shared }

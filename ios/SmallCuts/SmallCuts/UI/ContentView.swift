@@ -1,9 +1,10 @@
 import SwiftUI
 
-/// Capture UI: engine + style controls, source toggle, Connect/Start/Stop,
-/// live preview, stats, narration caption. Off-Brand palette — near-black
-/// background, gold accent. The full loop (gate → envelope → engine →
-/// in-ear narration) runs in the simulator against a real local engine.
+/// Wearer-facing capture UI.
+///
+/// The main surface is intentionally only a take recorder: Action starts a
+/// POV take, Cut submits it, and narration returns through the existing engine
+/// socket. Engine configuration and traces live in the Admin section.
 struct ContentView: View {
 
     enum SourceKind: String, CaseIterable, Identifiable {
@@ -17,6 +18,7 @@ struct ContentView: View {
 
     private static let gold = Color(red: 212 / 255, green: 175 / 255, blue: 55 / 255)
     private static let background = Color(red: 0.06, green: 0.06, blue: 0.07)
+    private static let panel = Color(red: 0.10, green: 0.10, blue: 0.12)
 
     @StateObject private var controller = GlassesSessionController()
     @StateObject private var coordinator = CaptureCoordinator()
@@ -27,122 +29,107 @@ struct ContentView: View {
     @AppStorage("engineURL") private var engineURLString = "ws://mac-studio:8077"
     @AppStorage("styleKey") private var styleKey = "deadpan"
 
-    @State private var sourceKind: SourceKind = .simulated
+    @State private var sourceKind: SourceKind = .glasses
     @State private var startError: String?
+    @State private var showAdmin = false
 
     var body: some View {
-        VStack(spacing: 12) {
-            Text("SMALL CUTS")
-                .font(.system(.headline, design: .monospaced))
-                .tracking(4)
-                .foregroundStyle(Self.gold)
+        GeometryReader { proxy in
+            let metrics = layoutMetrics(for: proxy.size)
 
-            HStack(spacing: 8) {
-                Text("engine")
-                    .font(.system(.caption, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.5))
-                TextField("ws://mac-studio:8077", text: $engineURLString)
-                    .font(.system(.footnote, design: .monospaced))
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .keyboardType(.URL)
-                    .foregroundStyle(.white.opacity(0.9))
-                    .disabled(coordinator.running)
-            }
+            ScrollView {
+                VStack(spacing: metrics.spacing) {
+                    header
 
-            HStack(spacing: 8) {
-                Text("style")
-                    .font(.system(.caption, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.5))
-                Picker("Style", selection: $styleKey) {
-                    ForEach(Self.styleKeys, id: \.self) { key in
-                        Text(key).tag(key)
+                    TimelineView(.periodic(from: .now, by: 1)) { timeline in
+                        statusBlock(now: timeline.date)
                     }
+
+                    previewPane(maxHeight: metrics.previewHeight)
+
+                    captionPane
+
+                    takeControls
+
+                    adminSection
                 }
-                .pickerStyle(.menu)
-                .tint(Self.gold)
-                .disabled(coordinator.running)
-                Spacer()
+                .padding(.horizontal, 20)
+                .padding(.vertical, metrics.verticalPadding)
+                .frame(minHeight: proxy.size.height, alignment: .top)
             }
-
-            Picker("Source", selection: $sourceKind) {
-                ForEach(SourceKind.allCases) { kind in
-                    Text(kind.rawValue).tag(kind)
-                }
-            }
-            .pickerStyle(.segmented)
-            .disabled(coordinator.running)
-
-            Text(statusText)
-                .font(.system(.footnote, design: .monospaced))
-                .foregroundStyle(.white.opacity(0.85))
-                .lineLimit(2)
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-            previewPane
-
-            statsLine
-
-            captionPane
-
-            if let message = startError ?? coordinator.lastError {
-                Text(message)
-                    .font(.system(.caption2, design: .monospaced))
-                    .foregroundStyle(.red.opacity(0.9))
-                    .lineLimit(2)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-
-            HStack(spacing: 12) {
-                Button("Connect") { connectGlasses() }
-                    .buttonStyle(GoldButtonStyle(filled: false))
-                    .disabled(sourceKind != .glasses || coordinator.running || coordinator.starting)
-                Button("Start") { start() }
-                    .buttonStyle(GoldButtonStyle(filled: true))
-                    .disabled(sourceKind == .glasses || coordinator.running || coordinator.starting)
-                Button("Mark") { coordinator.fireManual() }
-                    .buttonStyle(GoldButtonStyle(filled: false))
-                    .disabled(!coordinator.running)
-                Button("Stop") { stopTapped() }
-                    .buttonStyle(GoldButtonStyle(filled: false))
-                    .disabled(stopDisabled)
-            }
-
-            #if DEBUG
-            Toggle(isOn: Binding(
-                get: { mockGlasses.isActive },
-                set: { mockGlasses.setActive($0) }
-            )) {
-                Text("Mock glasses (MockDeviceKit)")
-                    .font(.system(.footnote, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.6))
-            }
-            .tint(Self.gold)
-            #endif
+            .scrollIndicators(.hidden)
         }
-        .padding(20)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Self.background.ignoresSafeArea())
         .preferredColorScheme(.dark)
     }
 
-    private var previewPane: some View {
+    private var header: some View {
+        HStack {
+            Text("SMALL CUTS")
+                .font(.system(.title2, design: .monospaced).weight(.semibold))
+                .tracking(6)
+                .foregroundStyle(Self.gold)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+            Spacer()
+            Button {
+                showAdmin.toggle()
+            } label: {
+                Image(systemName: "gearshape")
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundStyle(Self.gold)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .accessibilityLabel("Admin")
+        }
+    }
+
+    private func statusBlock(now: Date) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(primaryStatus(now: now))
+                .font(.system(.title3, design: .monospaced).weight(.semibold))
+                .foregroundStyle(.white.opacity(0.92))
+                .lineLimit(2)
+                .minimumScaleFactor(0.75)
+            Text(detailStatus)
+                .font(.system(.caption, design: .monospaced))
+                .foregroundStyle(.white.opacity(0.55))
+                .lineLimit(2)
+                .minimumScaleFactor(0.75)
+            if let message = startError ?? coordinator.lastError {
+                Text(message)
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundStyle(.red.opacity(0.9))
+                    .lineLimit(3)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func previewPane(maxHeight: CGFloat) -> some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: 14)
                 .fill(Color.black)
-                .strokeBorder(Self.gold.opacity(0.35), lineWidth: 1)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14)
+                        .stroke(Self.gold.opacity(0.35), lineWidth: 1)
+                )
             if let preview = coordinator.preview {
                 Image(uiImage: preview)
                     .resizable()
                     .scaledToFit()
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .clipShape(RoundedRectangle(cornerRadius: 14))
             } else {
                 Text("no frames yet")
                     .font(.system(.caption, design: .monospaced))
                     .foregroundStyle(.white.opacity(0.3))
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .aspectRatio(9.0 / 16.0, contentMode: .fit)
+        .frame(maxWidth: maxHeight * 9.0 / 16.0, maxHeight: maxHeight)
         .overlay(alignment: .bottomTrailing) {
             if coordinator.frameCount > 0 {
                 Text("\(coordinator.frameCount) frames")
@@ -151,6 +138,115 @@ struct ContentView: View {
                     .padding(8)
             }
         }
+        .frame(maxWidth: .infinity)
+    }
+
+    @ViewBuilder
+    private var captionPane: some View {
+        if case .playing(let narration) = coordinator.playback {
+            Text(narration)
+                .font(.system(.footnote, design: .monospaced))
+                .foregroundStyle(Self.gold)
+                .lineLimit(4)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        } else if let caption = coordinator.caption {
+            Text(caption)
+                .font(.system(.footnote, design: .monospaced))
+                .foregroundStyle(Self.gold.opacity(0.7))
+                .lineLimit(4)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private var takeControls: some View {
+        HStack(spacing: 14) {
+            Button("Action!") { actionTapped() }
+                .buttonStyle(TakeButtonStyle(role: .action))
+                .disabled(actionDisabled)
+            Button("Cut!") { cutTapped() }
+                .buttonStyle(TakeButtonStyle(role: .cut))
+                .disabled(!coordinator.running)
+        }
+    }
+
+    private var adminSection: some View {
+        DisclosureGroup(isExpanded: $showAdmin) {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(spacing: 8) {
+                    Text("engine")
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundStyle(.white.opacity(0.5))
+                    TextField("ws://mac-studio:8077", text: $engineURLString)
+                        .font(.system(.footnote, design: .monospaced))
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .keyboardType(.URL)
+                        .foregroundStyle(.white.opacity(0.9))
+                        .disabled(coordinator.running || coordinator.starting)
+                }
+
+                HStack(spacing: 8) {
+                    Text("style")
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundStyle(.white.opacity(0.5))
+                    Picker("Style", selection: $styleKey) {
+                        ForEach(Self.styleKeys, id: \.self) { key in
+                            Text(key).tag(key)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .tint(Self.gold)
+                    .disabled(coordinator.running || coordinator.starting)
+                    Spacer()
+                }
+
+                Picker("Source", selection: $sourceKind) {
+                    ForEach(SourceKind.allCases) { kind in
+                        Text(kind.rawValue).tag(kind)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .disabled(coordinator.running || coordinator.starting)
+
+                statsLine
+
+                HStack(spacing: 12) {
+                    Button("Abort") { stopTapped() }
+                        .buttonStyle(TakeButtonStyle(role: .secondary))
+                        .disabled(stopDisabled)
+                    Button("Submit Frame") { coordinator.fireManual() }
+                        .buttonStyle(TakeButtonStyle(role: .secondary))
+                        .disabled(!coordinator.running)
+                }
+
+                #if DEBUG
+                Toggle(isOn: Binding(
+                    get: { mockGlasses.isActive },
+                    set: { mockGlasses.setActive($0) }
+                )) {
+                    Text("Mock glasses (MockDeviceKit)")
+                        .font(.system(.footnote, design: .monospaced))
+                        .foregroundStyle(.white.opacity(0.6))
+                }
+                .tint(Self.gold)
+                #endif
+            }
+            .padding(.top, 10)
+        } label: {
+            Text("Admin")
+                .font(.system(.caption, design: .monospaced).weight(.semibold))
+                .foregroundStyle(Self.gold)
+        }
+        .tint(Self.gold)
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(Self.panel)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10)
+                        .stroke(.white.opacity(0.08), lineWidth: 1)
+                )
+        )
     }
 
     private var statsLine: some View {
@@ -164,37 +260,47 @@ struct ContentView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    @ViewBuilder
-    private var captionPane: some View {
-        if case .playing(let narration) = coordinator.playback {
-            Text("▶ \(narration)")
-                .font(.system(.footnote, design: .monospaced))
-                .foregroundStyle(Self.gold)
-                .lineLimit(3)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        } else if let caption = coordinator.caption {
-            Text(caption)
-                .font(.system(.footnote, design: .monospaced))
-                .foregroundStyle(Self.gold.opacity(0.55))
-                .lineLimit(3)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
+    private var actionDisabled: Bool {
+        coordinator.running || coordinator.starting || coordinator.awaitingNarration
     }
 
-    private var statusText: String {
-        let engine = coordinator.running ? " · \(coordinator.engineLink.label)" : ""
-        switch sourceKind {
-        case .simulated:
-            return (coordinator.running ? "Simulated — streaming" : "Simulated — idle") + engine
-        case .glasses:
-            return controller.state.label + engine
+    private var detailStatus: String {
+        let source = sourceKind.rawValue.lowercased()
+        if coordinator.running || coordinator.awaitingNarration {
+            return "\(source) · \(coordinator.engineLink.label)"
         }
+        if coordinator.starting {
+            return "\(source) · preparing capture"
+        }
+        return "\(source) · \(styleKey)"
     }
 
-    /// Stop must work even with no running coordinator: a Connect-only flow
-    /// (registering/connecting/streaming) is cancelled via controller.stop().
+    private func primaryStatus(now: Date) -> String {
+        if coordinator.running {
+            if let started = coordinator.recordingStartedAt {
+                return "Rolling \(formatElapsed(from: started, now: now))"
+            }
+            return "Rolling"
+        }
+        if coordinator.awaitingNarration {
+            return "Cut sent - waiting"
+        }
+        if case .playing = coordinator.playback {
+            return "Playing in glasses"
+        }
+        if coordinator.starting {
+            return sourceKind == .glasses ? "Connecting glasses" : "Starting capture"
+        }
+        if startError != nil || coordinator.lastError != nil {
+            return "Needs attention"
+        }
+        return "Ready"
+    }
+
+    /// Stop must work even with no running coordinator: an in-flight glasses
+    /// connect is cancelled via controller.stop().
     private var stopDisabled: Bool {
-        if coordinator.running { return false }
+        if coordinator.running || coordinator.awaitingNarration { return false }
         guard sourceKind == .glasses else { return true }
         switch controller.state {
         case .idle, .error:
@@ -204,9 +310,14 @@ struct ContentView: View {
         }
     }
 
-    private func connectGlasses() {
-        startError = nil
+    private func actionTapped() {
         start()
+    }
+
+    private func cutTapped() {
+        Task {
+            await coordinator.cutTake()
+        }
     }
 
     private func stopTapped() {
@@ -238,31 +349,101 @@ struct ContentView: View {
 
         Task {
             do {
-                try await coordinator.start(source: source, engineURL: engineURL, styleKey: styleKey)
+                try await coordinator.start(
+                    source: source,
+                    engineURL: engineURL,
+                    styleKey: styleKey,
+                    capturePolicy: .manualTake
+                )
             } catch {
                 startError = error.localizedDescription
                 coordinator.stop()
             }
         }
     }
+
+    private func formatElapsed(from start: Date, now: Date) -> String {
+        let elapsed = max(0, Int(now.timeIntervalSince(start)))
+        return String(format: "%02d:%02d", elapsed / 60, elapsed % 60)
+    }
+
+    private struct LayoutMetrics {
+        let spacing: CGFloat
+        let verticalPadding: CGFloat
+        let previewHeight: CGFloat
+    }
+
+    private func layoutMetrics(for size: CGSize) -> LayoutMetrics {
+        let compact = size.height < 760
+        let previewRatio = compact ? 0.38 : 0.44
+        let previewCap: CGFloat = compact ? 300 : 390
+        return LayoutMetrics(
+            spacing: compact ? 10 : 14,
+            verticalPadding: compact ? 10 : 16,
+            previewHeight: min(size.height * previewRatio, previewCap)
+        )
+    }
 }
 
-private struct GoldButtonStyle: ButtonStyle {
-    let filled: Bool
+private struct TakeButtonStyle: ButtonStyle {
+    enum Role {
+        case action
+        case cut
+        case secondary
+    }
+
+    let role: Role
     private static let gold = Color(red: 212 / 255, green: 175 / 255, blue: 55 / 255)
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(.subheadline, design: .monospaced).weight(.semibold))
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
-            .background(
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(filled ? Self.gold : Color.clear)
-                    .strokeBorder(Self.gold, lineWidth: 1)
+            .font(font)
+            .lineLimit(1)
+            .minimumScaleFactor(0.7)
+            .frame(maxWidth: .infinity, minHeight: role == .secondary ? 42 : 62)
+            .background(background(configuration: configuration))
+            .foregroundStyle(foreground)
+            .opacity(configuration.isPressed ? 0.65 : 1.0)
+    }
+
+    private var font: Font {
+        switch role {
+        case .action, .cut:
+            return .system(.title3, design: .monospaced).weight(.bold)
+        case .secondary:
+            return .system(.subheadline, design: .monospaced).weight(.semibold)
+        }
+    }
+
+    private var fill: Color {
+        switch role {
+        case .action:
+            return Self.gold
+        case .cut:
+            return Color(red: 0.80, green: 0.22, blue: 0.22)
+        case .secondary:
+            return Color.clear
+        }
+    }
+
+    private var foreground: Color {
+        switch role {
+        case .action:
+            return .black
+        case .cut:
+            return .white
+        case .secondary:
+            return Self.gold
+        }
+    }
+
+    private func background(configuration: Configuration) -> some View {
+        RoundedRectangle(cornerRadius: 10)
+            .fill(fill)
+            .overlay(
+                RoundedRectangle(cornerRadius: 10)
+                    .stroke(role == .secondary ? Self.gold : fill.opacity(0.85), lineWidth: 1.2)
             )
-            .foregroundStyle(filled ? Color.black : Self.gold)
-            .opacity(configuration.isPressed ? 0.6 : 1.0)
     }
 }
 

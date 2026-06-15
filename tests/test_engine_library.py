@@ -146,7 +146,19 @@ def test_store_writes_clip_url_and_title_for_multiframe_scene(tmp_path):
     with TestClient(build_engine_app(library=lib)) as client:
         clip = client.get(stored["media"]["clip_url"])
         assert clip.status_code == 200
-        assert clip.content == clip_path.read_bytes()
+    assert clip.content == clip_path.read_bytes()
+
+
+def test_store_prefers_generated_title_when_present(tmp_path):
+    lib = SceneLibrary(tmp_path / "lib")
+    stored = lib.store(
+        make_sink_scene(
+            title="The Door Waits Politely",
+            narration="The door waits politely. It has done this before.",
+        )
+    )
+
+    assert stored["title"] == "The Door Waits Politely"
 
 
 def test_store_uses_key_frame_for_scene_poster(tmp_path):

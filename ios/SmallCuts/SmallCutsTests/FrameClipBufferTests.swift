@@ -16,8 +16,9 @@ final class FrameClipBufferTests: XCTestCase {
         }
     }
 
-    func test_liveDemoDefaultsKeepSmootherFourSecondClipBudget() {
-        XCTAssertEqual(FrameClipBuffer.liveDemoMaxStoredFrames, 40)
+    func test_liveDemoDefaultsKeepSmootherTakeBudget() {
+        XCTAssertEqual(FrameClipBuffer.liveDemoWindow, 30.0)
+        XCTAssertEqual(FrameClipBuffer.liveDemoMaxStoredFrames, 240)
         XCTAssertEqual(FrameClipBuffer.liveDemoMaxClipFrames, 24)
     }
 

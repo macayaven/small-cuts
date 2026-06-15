@@ -181,6 +181,60 @@ def test_poll_engine_same_audio_not_restarted():
     assert shelf == gr.skip()  # shelf unchanged: no gallery re-render
 
 
+def test_poll_engine_announces_new_live_without_interrupting_current_scene():
+    older = {
+        **GOLDEN_SCENE,
+        "scene_id": "older",
+        "title": "The Door Waits Politely",
+        "created_at": (CREATED_AT - timedelta(seconds=20)).isoformat(),
+        "media": {
+            **GOLDEN_SCENE["media"],
+            "frame_url": "/media/older/frame.jpg",
+            "audio_url": "/media/older/voice.wav",
+        },
+    }
+    newer = {
+        **GOLDEN_SCENE,
+        "scene_id": "newer",
+        "title": "The Street Becomes Evidence",
+        "created_at": CREATED_AT.isoformat(),
+        "media": {
+            **GOLDEN_SCENE["media"],
+            "frame_url": "/media/newer/frame.jpg",
+            "audio_url": "/media/newer/voice.wav",
+        },
+    }
+
+    def handler(request):
+        return httpx.Response(200, json={"scenes": [older, newer]})
+
+    header, stage, _feed, audio, _shelf, _scenes, current, playing, _vis = viewer.poll_engine(
+        fake_client(handler),
+        [older],
+        pinned_id=None,
+        playing_id=older["scene_id"],
+        current_id=older["scene_id"],
+        now=CREATED_AT + timedelta(seconds=5),
+    )
+
+    assert "New cut available" in header
+    assert "Tap to watch" in header
+    assert f"{ENGINE_URL}/media/older/frame.jpg" in stage
+    assert f"{ENGINE_URL}/media/newer/frame.jpg" not in stage
+    assert audio == gr.skip()
+    assert current == older["scene_id"]
+    assert playing == older["scene_id"]
+
+
+def test_step_index_wraps_library_edges():
+    scenes = [{"scene_id": "a"}, {"scene_id": "b"}, {"scene_id": "c"}]
+
+    assert viewer._stepped_scene(scenes, "a", -1)["scene_id"] == "c"
+    assert viewer._stepped_scene(scenes, "c", 1)["scene_id"] == "a"
+    assert viewer._stepped_scene(scenes, None, 1)["scene_id"] == "a"
+    assert viewer._stepped_scene(scenes, None, -1)["scene_id"] == "b"
+
+
 def test_poll_engine_unreachable_engine_degrades_to_signal_lost():
     def handler(request):
         raise httpx.ConnectError("engine down")

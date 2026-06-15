@@ -63,14 +63,14 @@ Target sponsor/attention prizes:
 
 - The strongest demo is not just a clever caption. It is a short lived moment where the narration feels like it noticed cause, context, and timing.
 - Use one coherent POV clip with visible motion and an obvious situation. The narrator should sound like it is interpreting the moment, not describing isolated frames.
-- For the live recording, move for at least four seconds before marking so the stored cut has enough frames for a real `clip.mp4`.
+- For the live recording, tap Action!, move for a clear take, then tap Cut! once so the stored cut has enough frames for a real `clip.mp4`.
 - Prefer a mundane but legible situation over an impressive but visually confusing one.
 
 ### Visual Polish
 
 - Library thumbnails now use a selected POV key frame instead of the title card.
 - The key-frame selector prefers exposed, contrasty, detailed, mid-clip frames. This makes the library read like a channel of just-happened clips instead of a grid of generated cards.
-- Title generation already derives a short movie-style title from the narration's first clause and remains deterministic.
+- Title generation now comes from the same structured model response as the narration, with deterministic first-clause derivation as a fallback.
 
 ## Demo Asset Plan
 

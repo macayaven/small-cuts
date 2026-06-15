@@ -123,6 +123,17 @@ def test_modal_scene_can_drive_uploaded_stage():
     assert payload["duration"] == 12.5
 
 
+def test_format_stage_marks_source_icons():
+    scene = {**GOLDEN_SCENE, "source": "glasses"}
+    upload_scene = {**GOLDEN_SCENE, "source": "upload"}
+
+    glasses_payload = viewer.format_stage(scene, ENGINE_URL)
+    upload_payload = viewer.format_stage(upload_scene, ENGINE_URL)
+
+    assert glasses_payload["source_icon"] == "glasses"
+    assert upload_payload["source_icon"] == "upload"
+
+
 def test_submit_modal_upload_rejects_over_duration(monkeypatch):
     monkeypatch.setenv("SMALL_CUTS_UPLOAD_MAX_SECONDS", "60")
     monkeypatch.setattr(viewer, "_video_duration_s", lambda _path: 61.0)
@@ -183,9 +194,12 @@ def test_submit_modal_upload_pins_returned_scene(monkeypatch):
     assert calls == [("clip.mp4", "alice", "deadpan", "show the ending")]
     assert "A Modal Scene" in header
     assert "clip.mp4" in stage
+    assert "sc-ico-upload" in stage
     assert "real voice" in feed
     assert "voice.wav" in audio
-    assert shelf == [("/gradio_api/file=/tmp/frame.jpg", "A Modal Scene")]
+    assert shelf == [
+        ("/gradio_api/file=/tmp/frame.jpg", f"{viewer.UPLOAD_SHELF_PREFIX}A Modal Scene")
+    ]
     assert state["upload_scene"]["scene_id"] == "modal-1"
     assert state["current_id"] == "modal-1"
     assert state["playing_id"] == "modal-1"
@@ -263,6 +277,7 @@ def test_format_stage_no_scene_is_off_air():
     assert payload["live"] is False
     assert payload["frame_src"] is None
     assert payload["scene_id"] is None
+    assert payload["source_icon"] is None
 
 
 def test_stage_html_escapes_caption_and_has_no_rec_chip():
@@ -271,6 +286,48 @@ def test_stage_html_escapes_caption_and_has_no_rec_chip():
     assert "&lt;script&gt;" in out
     # the stage no longer carries a REC chip — live/finished state lives in the header
     assert "REC" not in out
+
+
+def test_stage_html_shows_source_badges():
+    glasses = viewer.render_stage_html(
+        "http://x/f.jpg", "caption", live=False, source_icon="glasses"
+    )
+    upload = viewer.render_stage_html("http://x/f.jpg", "caption", live=False, source_icon="upload")
+
+    assert "sc-source-badge" in glasses
+    assert "sc-ico-glasses" in glasses
+    assert "Glasses capture" in glasses
+    assert "sc-source-badge" in upload
+    assert "sc-ico-upload" in upload
+    assert "Space upload" in upload
+
+    assert "sc-source-badge" not in viewer.render_stage_html(
+        "http://x/f.jpg", "caption", live=False, source_icon=None
+    )
+
+
+def test_shelf_items_marks_source_tiles():
+    class FakeMediaClient:
+        def media_url(self, path):
+            return f"/media/{path}" if path else None
+
+    glasses_scene = {
+        **GOLDEN_SCENE,
+        "source": "glasses",
+        "title": "A Glasses Scene",
+        "media": {"frame_url": "frame.jpg"},
+    }
+    upload_scene = {
+        **GOLDEN_SCENE,
+        "source": "upload",
+        "title": "An Upload Scene",
+        "media": {"frame_url": "upload.jpg"},
+    }
+
+    items = viewer.shelf_items([glasses_scene, upload_scene], FakeMediaClient())
+
+    assert items[0] == ("/media/frame.jpg", f"{viewer.GLASSES_SHELF_PREFIX}A Glasses Scene")
+    assert items[1] == ("/media/upload.jpg", f"{viewer.UPLOAD_SHELF_PREFIX}An Upload Scene")
 
 
 def test_playback_js_uses_trusted_dom_click_for_audio():

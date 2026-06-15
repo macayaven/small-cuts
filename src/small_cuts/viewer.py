@@ -75,6 +75,16 @@ SHELF_LIMIT = 60
 HTTP_TIMEOUT_S = 5.0
 VISIBILITIES = ("private", "shared", "public")
 _KEEP_UPLOAD_SCENE = object()
+SOURCE_ICON_LABELS = {
+    "glasses": "Glasses capture",
+    "upload": "Space upload",
+}
+GLASSES_SHELF_PREFIX = "\u2063sc-glasses\u2063"
+UPLOAD_SHELF_PREFIX = "\u2063sc-upload\u2063"
+_SOURCE_SHELF_PREFIXES = {
+    "glasses": GLASSES_SHELF_PREFIX,
+    "upload": UPLOAD_SHELF_PREFIX,
+}
 
 EMPTY_STAGE_CAPTION = (
     "The narrator clears his throat, looks at the empty screen, and waits. "
@@ -145,6 +155,15 @@ footer { display: none !important; }
   width: 100%; height: 100%; object-fit: cover; display: block; }
 .sc-stage-empty { width: 100%; height: 100%; display: flex; align-items: center;
   justify-content: center; font-size: 3rem; opacity: .35; }
+.sc-source-badge { position: absolute; top: 10px; left: 10px; z-index: 4;
+  width: 30px; height: 30px; display: inline-flex; align-items: center;
+  justify-content: center; border-radius: 999px; color: #f3efe4;
+  background: rgba(8,8,10,.68); border: 1px solid rgba(243,239,228,.24);
+  box-shadow: 0 3px 12px rgba(0,0,0,.22); backdrop-filter: blur(7px); }
+.sc-source-badge-icon { width: 17px; height: 17px; background: currentColor;
+  -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat;
+  -webkit-mask-position: center; mask-position: center;
+  -webkit-mask-size: contain; mask-size: contain; }
 .sc-subtitle { position: absolute; left: 50%; transform: translateX(-50%); bottom: 26px;
   width: min(92%, 600px); min-height: 2.7em; display: flex; align-items: center;
   justify-content: center; text-align: center; background: rgba(8,8,10,.72);
@@ -183,6 +202,23 @@ footer { display: none !important; }
 .sc-dropzone-label { font-family: 'IBM Plex Mono', monospace; font-size: .72rem;
   letter-spacing: .14em; color: #8a8894; text-transform: uppercase; }
 .sc-shelf { background: transparent !important; border: none !important; }
+.sc-shelf .thumbnail-item { position: relative; }
+.sc-shelf .thumbnail-item:has(img[alt^="\\002063sc-glasses\\002063"])::before,
+.sc-shelf .thumbnail-item:has(img[alt^="\\002063sc-upload\\002063"])::before {
+  content: ""; position: absolute; top: 6px; left: 6px; width: 24px; height: 24px;
+  border-radius: 999px; background: rgba(8,8,10,.68);
+  border: 1px solid rgba(243,239,228,.22); z-index: 3; backdrop-filter: blur(6px);
+  box-shadow: 0 2px 8px rgba(0,0,0,.2); }
+.sc-shelf .thumbnail-item:has(img[alt^="\\002063sc-glasses\\002063"])::after,
+.sc-shelf .thumbnail-item:has(img[alt^="\\002063sc-upload\\002063"])::after {
+  content: ""; position: absolute; top: 11px; left: 11px; width: 14px; height: 14px;
+  background: #f3efe4; z-index: 4; -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat;
+  -webkit-mask-position: center; mask-position: center;
+  -webkit-mask-size: contain; mask-size: contain; }
+.sc-shelf .thumbnail-item:has(img[alt^="\\002063sc-glasses\\002063"])::after {
+  -webkit-mask-image: var(--sc-ico-glasses-mask); mask-image: var(--sc-ico-glasses-mask); }
+.sc-shelf .thumbnail-item:has(img[alt^="\\002063sc-upload\\002063"])::after {
+  -webkit-mask-image: var(--sc-ico-upload-mask); mask-image: var(--sc-ico-upload-mask); }
 
 /* --- Review-2 relayout: single centered column, control pill, masked icons --- */
 .sc-topbar { display: flex; align-items: flex-start; gap: 12px; }
@@ -339,6 +375,13 @@ def _style_label(style_key: str) -> str:
     return style_key or "off air"
 
 
+def _source_icon(scene: dict[str, Any] | None) -> str | None:
+    if not scene:
+        return None
+    source = scene.get("source_icon") or scene.get("source")
+    return source if isinstance(source, str) and source in SOURCE_ICON_LABELS else None
+
+
 def _parse_ts(value: str | None) -> datetime | None:
     if not value:
         return None
@@ -384,6 +427,7 @@ def format_stage(
             "duration": None,
             "live": False,
             "visibility": None,
+            "source_icon": None,
         }
     base = engine_url.rstrip("/")
 
@@ -404,6 +448,7 @@ def format_stage(
         "duration": scene.get("duration"),
         "live": is_fresh(scene.get("created_at"), now=now),
         "visibility": scene.get("visibility"),
+        "source_icon": _source_icon(scene),
     }
 
 
@@ -435,6 +480,7 @@ def render_stage_html(
     live: bool,
     clip_src: str | None = None,
     duration: float | None = None,
+    source_icon: str | None = None,
 ) -> str:
     """The 9:16 stage: the moment (video clip or still frame) + lower-third caption.
 
@@ -463,7 +509,16 @@ def render_stage_html(
         caption_html = f'<div class="sc-subtitle" id="sc-subtitle"{dur_attr}>{spans}</div>'
     else:
         caption_html = ""
-    return f'<div class="sc-stage-shell">{body}{caption_html}</div>'
+    if source_icon in SOURCE_ICON_LABELS:
+        label = html.escape(SOURCE_ICON_LABELS[source_icon], quote=True)
+        icon = html.escape(source_icon, quote=True)
+        badge_html = (
+            f'<span class="sc-source-badge sc-source-{icon}" aria-label="{label}" '
+            f'title="{label}"><span class="sc-source-badge-icon sc-ico-{icon}"></span></span>'
+        )
+    else:
+        badge_html = ""
+    return f'<div class="sc-stage-shell">{badge_html}{body}{caption_html}</div>'
 
 
 def render_header_html(
@@ -566,8 +621,14 @@ def shelf_items(
         media = scene.get("media") or {}
         src = client.media_url(media.get("frame_url") or media.get("card_url"))
         if src:
-            items.append((src, scene.get("title", "")))
+            items.append((src, _shelf_caption(scene)))
     return items
+
+
+def _shelf_caption(scene: dict[str, Any]) -> str:
+    title = scene.get("title", "")
+    source_icon = _source_icon(scene)
+    return f"{_SOURCE_SHELF_PREFIXES.get(source_icon, '')}{title}"
 
 
 def _scene_with_media_urls(
@@ -645,6 +706,7 @@ def poll_engine(
         live=on_air,
         clip_src=payload["clip_src"],
         duration=payload["duration"],
+        source_icon=payload["source_icon"],
     )
     feed = render_feed_html([feed_entry(scene) for scene in scenes[-FEED_LIMIT:]])
 
@@ -707,7 +769,7 @@ def make_local_scene(
 
 
 def local_shelf_items(scenes: list[dict[str, Any]]) -> list[tuple[Image.Image, str]]:
-    return [(scene["card_thumb"], scene.get("title", "")) for scene in scenes]
+    return [(scene["card_thumb"], _shelf_caption(scene)) for scene in scenes]
 
 
 @_gpu()
@@ -752,6 +814,7 @@ def _go_live_handler(
             live=False,
             clip_src=payload["clip_src"],
             duration=payload["duration"],
+            source_icon=payload["source_icon"],
         ),
         render_feed_html([feed_entry(s) for s in scenes[-FEED_LIMIT:]]),
         local_shelf_items(scenes),
@@ -855,6 +918,7 @@ def _submit_modal_upload(
             live=False,
             clip_src=payload["clip_src"],
             duration=payload["duration"],
+            source_icon=payload["source_icon"],
         ),
         render_feed_html([feed_entry(s) for s in scenes[-FEED_LIMIT:]]),
         _audio_html(payload["audio_src"]) if payload["audio_src"] else gr.skip(),
@@ -1175,6 +1239,7 @@ def build_viewer_app() -> gr.Blocks:
             live=False,
             clip_src=boot["clip_src"],
             duration=boot["duration"],
+            source_icon=boot["source_icon"],
         )
         boot_audio = _audio_html(boot["audio_src"])
 
@@ -1414,6 +1479,7 @@ def build_viewer_app() -> gr.Blocks:
                         payload["live"],
                         clip_src=payload["clip_src"],
                         duration=payload["duration"],
+                        source_icon=payload["source_icon"],
                     ),
                     _audio_html(payload["audio_src"]) if payload["audio_src"] else gr.skip(),
                     _pack_engine_ui_state(
@@ -1455,6 +1521,7 @@ def build_viewer_app() -> gr.Blocks:
                         payload["live"],
                         clip_src=payload["clip_src"],
                         duration=payload["duration"],
+                        source_icon=payload["source_icon"],
                     ),
                     _audio_html(payload["audio_src"]) if payload["audio_src"] else gr.skip(),
                     _pack_engine_ui_state(
@@ -1489,6 +1556,7 @@ def build_viewer_app() -> gr.Blocks:
                         payload["live"],
                         clip_src=payload["clip_src"],
                         duration=payload["duration"],
+                        source_icon=payload["source_icon"],
                     ),
                     audio_update,
                     _pack_engine_ui_state(
@@ -1554,6 +1622,7 @@ def build_viewer_app() -> gr.Blocks:
                         payload["live"],
                         clip_src=payload["clip_src"],
                         duration=payload["duration"],
+                        source_icon=payload["source_icon"],
                     ),
                     _audio_html(payload["audio_src"]),
                     payload["scene_id"],
@@ -1576,6 +1645,7 @@ def build_viewer_app() -> gr.Blocks:
                         payload["live"],
                         clip_src=payload["clip_src"],
                         duration=payload["duration"],
+                        source_icon=payload["source_icon"],
                     ),
                     _audio_html(payload["audio_src"]),
                     None,
@@ -1601,6 +1671,7 @@ def build_viewer_app() -> gr.Blocks:
                         payload["live"],
                         clip_src=payload["clip_src"],
                         duration=payload["duration"],
+                        source_icon=payload["source_icon"],
                     ),
                     _audio_html(payload["audio_src"]),
                     scene["scene_id"],

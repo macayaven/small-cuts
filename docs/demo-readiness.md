@@ -1,6 +1,6 @@
 # Demo-Readiness Checklist
 
-Last updated: 2026-06-15 09:03 CEST.
+Last updated: 2026-06-15 10:34 CEST.
 
 ## Judged Space
 
@@ -22,16 +22,15 @@ Last updated: 2026-06-15 09:03 CEST.
   ready `clip.mp4` and `voice.wav` on desktop.
 - [x] Browser automation verifies the active Space library uses real POV `frame.jpg` thumbnails
   after the final deploy.
-- [x] Public hero library is populated with five preselected first-person glasses clips:
-  `Debugging His Own Ambition`, `He Meant to Do That`, `Just Five Minutes`,
-  `Photographs Well at Night`, and `The Stone Almost Never Reaches the Sky`.
-- [x] Public hero library serves each scene with `frame.jpg`, `card.webp`, `voice.wav`, and
-  `clip.mp4` through the Cloudflare read gate.
+- [x] Public library is populated with five preselected first-person glasses clips sent through the
+  regular `/v1/session` engine pipeline, using 24-frame key-marked moment envelopes.
+- [x] Public generated library serves each scene with `frame.jpg`, `card.webp`, `voice.wav`, and
+  24-frame / 6 fps `clip.mp4` through the Cloudflare read gate.
 - [ ] Human browser smoke: click play on the Space and confirm video, sound, captions, and progress advance together.
-- [x] Browser automation verifies the active Space renders all five hero-library titles, the
-  active Cloudflare `clip.mp4`, and a ready `voice.wav` on desktop.
+- [x] Gradio API smoke verifies the active Space `_tick` renders the latest generated title, video
+  stage, Cloudflare `clip.mp4`, ready `voice.wav`, visibility `public`, and five gallery captions.
 - [x] Mobile viewport smoke verifies no document overflow, ready `clip.mp4`/`voice.wav`, captions,
-  and the five hero-library thumbnails.
+  and the five generated library thumbnails.
 - [ ] Physical mobile smoke on iPhone Safari.
 
 ## Private Live Path
@@ -41,7 +40,7 @@ Last updated: 2026-06-15 09:03 CEST.
 - [x] Public `GET /v1/scenes` returns `200`.
 - [x] Public `GET /v1/session` returns `403`.
 - [x] Public `PATCH /v1/scenes/*` returns `403`.
-- [x] Synthetic 12-frame moment returns `ack accepted` and `SceneAudio`.
+- [x] Synthetic 24-frame moment returns `ack accepted` and `SceneAudio`.
 - [x] Synthetic scene stores both audio and `clip.mp4`.
 - [x] Real seed POV clip (`rayuela.mp4`) returns `ack accepted`, `SceneAudio`, idle status,
   and public `clip.mp4`/`voice.wav` through the read gate.
@@ -52,12 +51,20 @@ Last updated: 2026-06-15 09:03 CEST.
 - [x] Model-generated library audit populated a clean five-scene run from the preselected glasses
   clips before the hero-library switch. Quality was mixed: car-door, night-drive, and rayuela were
   usable; the desk-laptop opener was too literal because the selected frame emphasized an overlay.
+- [x] Curated hero rows were archived into SQLite table
+  `hidden_scenes_20260615_regular_pipeline_swap` and removed from the active `scenes` table, with
+  media preserved.
+- [x] The final public library now comes from session
+  `regular-pipeline-24f-keymark-glasses-20260615T083000Z`; the previous 24-frame final-frame run
+  is archived in `hidden_scenes_20260615_final_frame_24f`.
+- [x] Public media smoke confirms all five active scenes return `200` for `clip.mp4`, `voice.wav`,
+  `frame.jpg`, and `card.webp`.
 - [x] Hidden warm-up moment against the hero-root engine returned `SceneAudio` in 15.4 s on
   2026-06-15 09:09 CEST; the warm-up row/media were pruned, leaving exactly the five hero cuts
   visible through Cloudflare.
 - [x] `tmux` session `small-cuts-awake` is running `caffeinate -dimsu` to keep the Mac Studio
   awake for the live services.
-- [x] iOS simulator suite passes: 63 tests, 1 live-engine smoke skipped, 0 failures.
+- [x] iOS simulator suite passes: 64 tests, 1 live-engine smoke skipped, 0 failures.
 - [x] Opt-in Swift live-engine smoke passes against `ws://127.0.0.1:8077/v1/session`
   with real `SceneAudio` in 4.4 s.
 - [ ] Physical iPhone simulated-source smoke after reinstalling the latest app.
@@ -94,6 +101,9 @@ Last updated: 2026-06-15 09:03 CEST.
   tunnel direct smoke is `200` for reads and `403` for writes, but the HF Space stayed on
   "Signal lost" when pointed at it during this run. Keep the Space on the known-good quick tunnel
   until that Cloudflare/HF interaction is isolated.
-- The current public hero library root is `/private/tmp/small-cuts-demo-library-hero-20260615`.
-  The model-generated audit root remains available as
+- The current public library root is `/private/tmp/small-cuts-demo-library-generated-24f-20260615`.
+  A full curated-library backup exists at
+  `/private/tmp/small-cuts-demo-library-hero-20260615.pre-generated-backup-20260615T080924Z`.
+  Earlier model-generated roots remain available as
+  `/private/tmp/small-cuts-demo-library-hero-20260615` and
   `/private/tmp/small-cuts-demo-library-curated-20260615`.

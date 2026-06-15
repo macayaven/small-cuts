@@ -63,9 +63,9 @@ The Space is the **view platform + library** half of the loop — a small stream
   phrase-sized lines over a constant dark bar, advancing with the voice-over).
 - **Voice-over replay**, with a compact custom player whose video, sound, captions, and progress
   share the same audio clock.
-- **A hero library** of real Ray-Ban Meta glasses moments, seeded so the channel is never empty.
-  These cuts are human-curated from real glasses footage so first visitors see the intended
-  experience immediately; live captures write new model-generated cuts into the same theater.
+- **A public library** of real Ray-Ban Meta glasses moments, generated through the same local
+  engine path so the channel is never empty. The source clips and mark points are curated; the
+  visible titles, narration, voice, thumbnails, and clips are produced by Small Cuts.
 - **"Try it"** — a tucked-away sandbox (open only on request) to narrate your *own* short video.
 
 ## How it was built

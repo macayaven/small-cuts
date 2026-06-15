@@ -1,9 +1,9 @@
 # Submission Assets - 2026-06-15
 
-Working timestamp: 2026-06-15 07:03 UTC / 09:03 CEST.
+Working timestamp: 2026-06-15 08:34 UTC / 10:34 CEST.
 
 Deadline: 2026-06-15 23:59 UTC / 2026-06-16 01:59 CEST.
-Time remaining at this pass: about 16 hours 56 minutes.
+Time remaining at this pass: about 15 hours 25 minutes.
 Target latest demo start with six-hour buffer: 2026-06-15 17:59 UTC / 19:59 CEST.
 
 ## Final Product Submission
@@ -28,7 +28,7 @@ Short description:
 
 - It is not another chat wrapper. The product gesture is physical: look, mark, hear, replay.
 - The judged Space is polished and alive: five real first-person glasses clips now populate the
-  public hero library through the same read-gated media path as live cuts.
+  public library after being sent through the same WebSocket/read-gated media path as live cuts.
 - The architecture maps cleanly to the hackathon quests: small open models, Gradio Space, custom
   Off-Brand frontend, local/offgrid inference, and llama.cpp.
 - The demo has an obvious "show a friend" moment: ordinary life becomes a tiny film with a
@@ -43,12 +43,13 @@ Short description:
 - Browser audio cannot autoplay; the Space correctly requires a user click before sound.
 - Public viewing depends on the current Cloudflare quick tunnel until the named tunnel/HF
   interaction is isolated.
-- The strongest public library uses curated seed narrations; the real model-generated audit was
-  mixed, mainly due to weak selected frames on one clip.
+- The public library now uses engine-generated narration, so it is honest as a model-quality sample.
+  The mark point is curated per source clip, matching how a wearer would press Mark when the moment
+  is readable.
 
-## Current Public Hero Library
+## Current Public Generated Library
 
-Live root: `/private/tmp/small-cuts-demo-library-hero-20260615`
+Live root: `/private/tmp/small-cuts-demo-library-generated-24f-20260615`
 
 Public read gate:
 
@@ -60,23 +61,23 @@ Scenes visible in the Space:
 
 | Order | Title | Role |
 |---:|---|---|
-| 1 | Debugging His Own Ambition | Establishes the builder/portfolio story |
-| 2 | He Meant to Do That | Comic ordinary-life beat |
-| 3 | Just Five Minutes | Clean POV physical situation |
-| 4 | Photographs Well at Night | Barcelona / motion / atmosphere |
-| 5 | The Stone Almost Never Reaches the Sky | Strongest poetic hero cut |
+| 1 | A hand, palm up, blocks the camera's view, revealing a... | Builder/desk sample; still literal but coherent |
+| 2 | The camera lingers on a concrete alleyway at night, the... | Night urban atmosphere |
+| 3 | The car door is open, revealing a black interior and a... | Strong physical POV situation |
+| 4 | The driver grips the steering wheel with both hands, thumbs... | Motion/interior sample |
+| 5 | The yellow circle with numbers is painted on the floor... | Strongest current generated hero cut |
 
 Recommended library/thumbnail hero:
 
 ```text
-The Stone Almost Never Reaches the Sky
-scene_id: fe4483b0-4ffa-4cfb-909c-fb9b32c127db
-poster: /private/tmp/small-cuts-demo-library-hero-20260615/media/fe4483b0-4ffa-4cfb-909c-fb9b32c127db/frame.jpg
-clip: /private/tmp/small-cuts-demo-library-hero-20260615/media/fe4483b0-4ffa-4cfb-909c-fb9b32c127db/clip.mp4
+The yellow circle with numbers is painted on the floor...
+scene_id: aead3e4d-2459-4638-81b8-74abddd2a149
+poster: /private/tmp/small-cuts-demo-library-generated-24f-20260615/media/aead3e4d-2459-4638-81b8-74abddd2a149/frame.jpg
+clip: /private/tmp/small-cuts-demo-library-generated-24f-20260615/media/aead3e4d-2459-4638-81b8-74abddd2a149/clip.mp4
 ```
 
-Reason: it is visually legible, unusual, emotionally specific, and it already displays as the
-active latest cut on the Space.
+Reason: it is visually legible, currently active on the Space, uses the regular engine path, and
+has the best current generated line: "as if marking a spot for something that never happened."
 
 ## Demo Video Plan
 
@@ -157,7 +158,7 @@ Outline:
    - audio-clock-driven video/caption sync,
    - real POV thumbnails,
    - read-gated public Cloudflare endpoint,
-   - seeded hero library.
+   - model-generated public library from real glasses clips.
 7. What is next:
    - full video reasoning over buffered clips,
    - stronger title generation,
@@ -186,10 +187,11 @@ Official field guide requirements checked from `build-small-hackathon/field-guid
   `https://lincoln-greene-paragraph-tcp.trycloudflare.com`.
 - [x] HF metadata includes `track:wood`, `achievement:offgrid`, `achievement:offbrand`,
   `achievement:llama`, and `achievement:fieldnotes`.
-- [x] Cloudflare public read gate serves the five hero scenes with `clip.mp4`, `voice.wav`,
-  `frame.jpg`, and `card.webp`.
+- [x] Cloudflare public read gate serves the five key-marked generated scenes with `clip.mp4`,
+  `voice.wav`, `frame.jpg`, and `card.webp`.
 - [x] Cloudflare blocks public `/v1/session` and `PATCH /v1/scenes/*` with `403`.
-- [x] Space browser smoke passes on desktop and mobile against the hero library.
+- [x] Space Gradio `_tick` smoke returns latest video/audio/subtitle markup and all five generated
+  gallery captions.
 - [ ] Field Notes URL is public, not `401`.
 - [ ] Demo video uploaded and linked in README.
 - [ ] Social post published and linked in README.

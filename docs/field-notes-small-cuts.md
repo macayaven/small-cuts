@@ -56,18 +56,20 @@ in-ear experience.
 
 ## What the public Space shows
 
-The Space currently opens on a five-cut hero library of real first-person glasses moments:
+The Space currently opens on a five-cut generated library of real first-person glasses moments.
+Each cut was sent through the regular WebSocket path with one selected mark frame plus a short
+POV buffer:
 
-- `Debugging His Own Ambition`
-- `He Meant to Do That`
-- `Just Five Minutes`
-- `Photographs Well at Night`
-- `The Stone Almost Never Reaches the Sky`
+- `A hand, palm up, blocks the camera's view, revealing a...`
+- `The camera lingers on a concrete alleyway at night, the...`
+- `The car door is open, revealing a black interior and a...`
+- `The driver grips the steering wheel with both hands, thumbs...`
+- `The yellow circle with numbers is painted on the floor...`
 
-Those seed cuts make the channel non-empty for first-time visitors. The live demo path uses the
-same public read surface: when a new local engine scene is created, the Space polls the read gate,
-fetches the media files, and replays the just-happened cut with synced video, audio, captions, and
-title.
+Those cuts make the channel non-empty for first-time visitors without using human-written
+narration as the product sample. The live demo path uses the same public read surface: when a new
+local engine scene is created, the Space polls the read gate, fetches the media files, and replays
+the just-happened cut with synced video, audio, captions, and title.
 
 ## What is v1, and what comes next
 

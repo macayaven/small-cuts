@@ -8,6 +8,7 @@ viewer's formatter is pinned to the same shape the contract suite enforces.
 import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from urllib.parse import unquote
 
 import gradio as gr
 import httpx
@@ -45,6 +46,56 @@ def test_build_viewer_app_engine_mode_needs_no_live_engine(monkeypatch):
     # Port 9 is the discard port: any request at build time would fail loudly.
     monkeypatch.setenv(viewer.ENGINE_URL_ENV, "http://127.0.0.1:9")
     assert isinstance(viewer.build_viewer_app(), gr.Blocks)
+
+
+def test_build_viewer_app_bucket_relay_mode_needs_no_live_engine(monkeypatch):
+    monkeypatch.delenv(viewer.ENGINE_URL_ENV, raising=False)
+    monkeypatch.setenv(viewer.RELAY_BUCKET_ENV, "build-small-hackathon/small-cuts-scenes")
+    assert isinstance(viewer.build_viewer_app(), gr.Blocks)
+
+
+def test_bucket_scene_client_reads_manifest_and_caches_media(tmp_path, monkeypatch):
+    class FakeBucketFs:
+        def __init__(self, files):
+            self.files = files
+            self.seen = []
+
+        def cat(self, path):
+            self.seen.append(path)
+            return self.files[path]
+
+    media = {
+        "frame_url": "media/9f1c7e4a/frame.jpg",
+        "card_url": "media/9f1c7e4a/card.webp",
+        "audio_url": "media/9f1c7e4a/voice.wav",
+        "clip_url": "media/9f1c7e4a/clip.mp4",
+    }
+    scene = {**GOLDEN_SCENE, "media": media}
+    root = "hf://buckets/build-small-hackathon/small-cuts-scenes/relay"
+    fake_fs = FakeBucketFs(
+        {
+            f"{root}/manifest.json": json.dumps({"scenes": [scene]}).encode(),
+            f"{root}/media/9f1c7e4a/frame.jpg": b"frame",
+            f"{root}/media/9f1c7e4a/card.webp": b"card",
+            f"{root}/media/9f1c7e4a/voice.wav": b"voice",
+            f"{root}/media/9f1c7e4a/clip.mp4": b"clip",
+        }
+    )
+    monkeypatch.setattr(viewer.gr, "set_static_paths", lambda _paths: None)
+
+    client = viewer.BucketSceneClient(
+        "build-small-hackathon/small-cuts-scenes",
+        prefix="relay",
+        fs=fake_fs,
+        cache_dir=tmp_path,
+    )
+
+    (hydrated,) = client.list_scenes()
+    frame_url = hydrated["media"]["frame_url"]
+    assert frame_url.startswith("/gradio_api/file=")
+    assert Path(unquote(frame_url.removeprefix("/gradio_api/file="))).read_bytes() == b"frame"
+    assert (tmp_path / "media/9f1c7e4a/voice.wav").read_bytes() == b"voice"
+    assert f"{root}/manifest.json" in fake_fs.seen
 
 
 # -- scene-poll formatter --------------------------------------------------------------

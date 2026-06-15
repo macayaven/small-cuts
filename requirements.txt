@@ -4,4 +4,6 @@ pillow>=10.0
 pillow-heif>=0.18
 av>=12.0
 httpx>=0.27
+huggingface-hub>=1.19
+sentry-sdk>=2.0
 soundfile>=0.12

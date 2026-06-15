@@ -37,6 +37,16 @@ from PIL import Image
 from . import demo_seed
 from ._icons import ICON_CSS
 from .frames import pick_key_frame, sample_frames
+from .hf_relay import (
+    DEFAULT_RELAY_PREFIX,
+    RELAY_BUCKET_ENV,
+    RELAY_PREFIX_ENV,
+    BucketRelayError,
+)
+from .hf_relay import (
+    BucketSceneClient as _BucketSceneClient,
+)
+from .observability import capture_exception
 from .styles import DEFAULT_STYLE_KEY, STYLES
 from .title_card import derive_title
 from .tts import speak
@@ -496,7 +506,17 @@ class EngineClient:
         return path if path.startswith("http") else f"{self.base_url}{path}"
 
 
-def shelf_items(scenes: list[dict[str, Any]], client: EngineClient) -> list[tuple[str, str]]:
+class BucketSceneClient(_BucketSceneClient):
+    """Bucket relay client wired to Gradio's static file serving."""
+
+    def __init__(self, *args, **kwargs) -> None:
+        kwargs.setdefault("register_static_paths", gr.set_static_paths)
+        super().__init__(*args, **kwargs)
+
+
+def shelf_items(
+    scenes: list[dict[str, Any]], client: EngineClient | BucketSceneClient
+) -> list[tuple[str, str]]:
     """Gallery payload: POV frame thumbnails captioned with the generated scene title."""
     items = []
     for scene in scenes:
@@ -508,7 +528,7 @@ def shelf_items(scenes: list[dict[str, Any]], client: EngineClient) -> list[tupl
 
 
 def poll_engine(
-    client: EngineClient,
+    client: EngineClient | BucketSceneClient,
     scenes_prev: list[dict[str, Any]],
     pinned_id: str | None,
     playing_id: str | None,
@@ -523,7 +543,8 @@ def poll_engine(
     """
     try:
         scenes = client.list_scenes(limit=SHELF_LIMIT)
-    except (httpx.HTTPError, KeyError, ValueError) as exc:
+    except (httpx.HTTPError, BucketRelayError, KeyError, ValueError) as exc:
+        capture_exception(exc)
         kind = type(exc).__name__
         print(
             f"small_cuts.viewer: engine poll failed for {client.base_url}: {kind}: {exc!r}",
@@ -644,7 +665,8 @@ def _go_live_handler(
         speech = speak(narration)
         scene["duration"] = len(speech.audio) / speech.sample_rate if speech.sample_rate else None
         scene["audio_src"] = _write_voice(speech.audio, speech.sample_rate, scene["scene_id"])
-    except Exception:
+    except Exception as exc:
+        capture_exception(exc)
         scene["audio_src"] = None
     scenes = [*(scenes or []), scene][-SHELF_LIMIT:]
     payload = format_stage(scene)
@@ -994,7 +1016,14 @@ PLAYBACK_SYNC_JS = """
 def build_viewer_app() -> gr.Blocks:
     """The P1 viewer page. Mode is decided once, at build time, from the env."""
     engine_url = os.environ.get(ENGINE_URL_ENV, "").strip()
-    client = EngineClient(engine_url) if engine_url else None
+    relay_bucket = os.environ.get(RELAY_BUCKET_ENV, "").strip()
+    relay_prefix = os.environ.get(RELAY_PREFIX_ENV, DEFAULT_RELAY_PREFIX).strip()
+    if engine_url:
+        client: EngineClient | BucketSceneClient | None = EngineClient(engine_url)
+    elif relay_bucket:
+        client = BucketSceneClient(relay_bucket, prefix=relay_prefix or DEFAULT_RELAY_PREFIX)
+    else:
+        client = None
     seed = _seed_scenes() if client is None else []
 
     if client:

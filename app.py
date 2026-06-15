@@ -31,22 +31,30 @@ warnings.filterwarnings(
 ON_SPACE = bool(os.environ.get("SPACE_ID"))
 ENGINE_MODE = bool(os.environ.get("SMALL_CUTS_ENGINE_URL", "").strip())
 
+from small_cuts.hf_relay import RELAY_BUCKET_ENV  # noqa: E402
+
+RELAY_MODE = bool(os.environ.get(RELAY_BUCKET_ENV, "").strip())
+VIEWER_ONLY_MODE = ENGINE_MODE or RELAY_MODE
+
 try:
     import spaces  # noqa: F401  (must precede torch imports for ZeroGPU)
 except ImportError:  # local dev / CI: no ZeroGPU
     spaces = None
 
-if ON_SPACE and not ENGINE_MODE:
+if ON_SPACE and not VIEWER_ONLY_MODE:
     os.environ.setdefault("SMALL_CUTS_BACKEND", "transformers")
     os.environ.setdefault("SMALL_CUTS_TTS_BACKEND", "kokoro")
 
 from small_cuts import narrator  # noqa: E402
+from small_cuts.observability import init_sentry  # noqa: E402
 from small_cuts.viewer import THEME, build_viewer_app  # noqa: E402
+
+init_sentry()
 
 # Eager load: download + pack weights at startup, not on the first click.
 # The @spaces.GPU mark lives on the viewer's go-live handler (via ui._gpu;
 # ZeroGPU's startup scan only finds GPU functions on what Gradio binds).
-if not ENGINE_MODE:
+if not VIEWER_ONLY_MODE:
     _backend = narrator.get_backend()
     if spaces is not None and _backend.name == "transformers":
         _backend._load()

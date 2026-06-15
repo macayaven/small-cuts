@@ -9,6 +9,8 @@ dependencies = [
     "pillow>=10.0",
     "pillow-heif>=0.18",
     "av>=12.0",
+    "huggingface-hub>=1.19",
+    "sentry-sdk>=2.0",
     # core viewer dep: decodes seed durations + writes generated voice-overs (viewer.py),
     # imported at module scope — must be in the base install (and CI), not just the tts extra.
     "soundfile>=0.12",

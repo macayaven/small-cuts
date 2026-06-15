@@ -148,6 +148,8 @@ def process_cut(
     os.environ.setdefault("SMALL_CUTS_BACKEND", "transformers")
     os.environ.setdefault("SMALL_CUTS_TTS_BACKEND", "kokoro")
 
+    import shutil
+
     import soundfile as sf
     from huggingface_hub import HfApi
 
@@ -185,7 +187,12 @@ def process_cut(
     render_title_card(narration.title or narration.text, style_key=style_key).save(
         card_path, "WEBP"
     )
-    _write_clip_mp4(clip_path, frames, fps=8, blend_steps=0)
+    # Use the wearer's natural footage as the clip — not a sampled slideshow. H.264 mp4/mov/m4v
+    # play in-browser as-is; fall back to the frame slideshow only for other containers (e.g. webm).
+    if input_path.suffix.lower() in {".mp4", ".mov", ".m4v"}:
+        shutil.copyfile(input_path, clip_path)
+    else:
+        _write_clip_mp4(clip_path, frames, fps=8, blend_steps=0)
     sf.write(voice_path, speech.audio, speech.sample_rate)
 
     scene = {

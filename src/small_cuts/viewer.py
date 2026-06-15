@@ -86,8 +86,8 @@ SOURCE_ICON_LABELS = {
     "glasses": "Glasses capture",
     "upload": "Space upload",
 }
-GLASSES_SHELF_PREFIX = "\u2063sc-glasses\u2063"
-UPLOAD_SHELF_PREFIX = "\u2063sc-upload\u2063"
+GLASSES_SHELF_PREFIX = "\u2062"
+UPLOAD_SHELF_PREFIX = "\u2063"
 _SOURCE_SHELF_PREFIXES = {
     "glasses": GLASSES_SHELF_PREFIX,
     "upload": UPLOAD_SHELF_PREFIX,
@@ -210,21 +210,21 @@ footer { display: none !important; }
   letter-spacing: .14em; color: #8a8894; text-transform: uppercase; }
 .sc-shelf { background: transparent !important; border: none !important; }
 .sc-shelf .thumbnail-item { position: relative; }
-.sc-shelf .thumbnail-item:has(img[alt^="\\002063sc-glasses\\002063"])::before,
-.sc-shelf .thumbnail-item:has(img[alt^="\\002063sc-upload\\002063"])::before {
+.sc-shelf .thumbnail-item:has(img[alt^="\\002062"])::before,
+.sc-shelf .thumbnail-item:has(img[alt^="\\002063"])::before {
   content: ""; position: absolute; top: 6px; left: 6px; width: 24px; height: 24px;
   border-radius: 999px; background: rgba(8,8,10,.68);
   border: 1px solid rgba(243,239,228,.22); z-index: 3; backdrop-filter: blur(6px);
   box-shadow: 0 2px 8px rgba(0,0,0,.2); }
-.sc-shelf .thumbnail-item:has(img[alt^="\\002063sc-glasses\\002063"])::after,
-.sc-shelf .thumbnail-item:has(img[alt^="\\002063sc-upload\\002063"])::after {
+.sc-shelf .thumbnail-item:has(img[alt^="\\002062"])::after,
+.sc-shelf .thumbnail-item:has(img[alt^="\\002063"])::after {
   content: ""; position: absolute; top: 11px; left: 11px; width: 14px; height: 14px;
   background: #f3efe4; z-index: 4; -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat;
   -webkit-mask-position: center; mask-position: center;
   -webkit-mask-size: contain; mask-size: contain; }
-.sc-shelf .thumbnail-item:has(img[alt^="\\002063sc-glasses\\002063"])::after {
+.sc-shelf .thumbnail-item:has(img[alt^="\\002062"])::after {
   -webkit-mask-image: var(--sc-ico-glasses-mask); mask-image: var(--sc-ico-glasses-mask); }
-.sc-shelf .thumbnail-item:has(img[alt^="\\002063sc-upload\\002063"])::after {
+.sc-shelf .thumbnail-item:has(img[alt^="\\002063"])::after {
   -webkit-mask-image: var(--sc-ico-upload-mask); mask-image: var(--sc-ico-upload-mask); }
 
 /* --- Review-2 relayout: single centered column, control pill, masked icons --- */
@@ -392,6 +392,14 @@ footer { display: none !important; }
 #sc-upload-popover .wrap.generating, .sc-stage-block .wrap.generating,
 #sc-upload-popover .wrap.translucent, .sc-stage-block .wrap.translucent {
   opacity: 0 !important; background: transparent !important; }
+/* During generation (body gets .sc-generating from __scGenerating) the clapperboard over the
+   stage is the ONLY loader: hide Gradio's queue status + spinner on EVERY output app-wide
+   (header, feed, shelf, audio), not just the stage/popover. */
+body.sc-generating .progress-text, body.sc-generating .meta-text,
+body.sc-generating .meta-text-center, body.sc-generating .progress-bar,
+body.sc-generating .eta-bar, body.sc-generating .wrap.default { display: none !important; }
+body.sc-generating .wrap.generating, body.sc-generating .wrap.translucent {
+  opacity: 0 !important; background: transparent !important; }
 /* custom file-backed player (Review-3): the master clock is a hidden <audio id="sc-voice"> in
    .sc-audio-host. gr.Audio can't serve as the clock — it plays via wavesurfer, leaving its own
    <audio> element empty/unreadable. The pill's play/pause + volume drive #sc-voice via JS. */
@@ -513,6 +521,9 @@ def render_upload_panel_help_html(max_seconds: float | None = None) -> str:
         '<div class="sc-upload-help-title">Drop or browse your video</div>'
         '<div class="sc-upload-help-meta">'
         f"Up to {seconds:.0f} seconds · {upload_max_mb()} MB max · {UPLOAD_FORMAT_LABEL}"
+        "</div>"
+        '<div class="sc-upload-help-meta">'
+        "Private · narrated just for you, never added to the public library"
         "</div></div>"
     )
 
@@ -535,15 +546,15 @@ def render_clapperboard_svg() -> str:
         '<svg class="sc-clap" viewBox="0 0 120 96" width="96" height="78" '
         'role="img" aria-label="Generating your cut" xmlns="http://www.w3.org/2000/svg">'
         # slate body (the board itself)
-        '<rect x="6" y="30" width="108" height="58" rx="6" fill="#0d0e11" '
-        'stroke="#2A292F" stroke-width="2"/>'
-        '<g stroke="#2A292F" stroke-width="1.4" opacity=".55">'
+        '<rect x="6" y="30" width="108" height="58" rx="6" fill="#2a2b31" '
+        'stroke="#D4AF37" stroke-width="2.5"/>'
+        '<g stroke="#6b6962" stroke-width="1.4" opacity=".5">'
         '<line x1="18" y1="46" x2="102" y2="46"/><line x1="18" y1="62" x2="102" y2="62"/>'
         '<line x1="18" y1="78" x2="102" y2="78"/></g>'
         # hinged clapper arm: a stripe-edged bar pivoting about its left end (8,30)
         '<g class="sc-clap-arm">'
-        '<rect x="6" y="14" width="108" height="18" rx="3" fill="#16161c" '
-        'stroke="#2A292F" stroke-width="2"/>'
+        '<rect x="6" y="14" width="108" height="18" rx="3" fill="#1d1e24" '
+        'stroke="#D4AF37" stroke-width="2.5"/>'
         f'<g class="sc-clap-teeth" transform="translate(0 14)">{stripes}</g>'
         "</g></svg>"
     )
@@ -1564,6 +1575,7 @@ PLAYBACK_SYNC_JS = """
       if (loader) loader.remove();
     }
     window.__scGenerating = false;
+    document.body.classList.remove('sc-generating');
     if (window.__scRevealTimer) {
       clearTimeout(window.__scRevealTimer);
       window.__scRevealTimer = 0;
@@ -1585,6 +1597,7 @@ PLAYBACK_SYNC_JS = """
   document.addEventListener('click', (e) => {
     if (!(e.target.closest && e.target.closest('.sc-narrate-btn'))) return;
     window.__scGenerating = true;
+    document.body.classList.add('sc-generating');
     scMountLoader();
     if (window.__scRevealTimer) clearTimeout(window.__scRevealTimer);
     window.__scRevealTimer = setTimeout(scRevealResult, SC_REVEAL_TIMEOUT_MS);
@@ -1888,12 +1901,15 @@ def build_viewer_app() -> gr.Blocks:
                     # on soft-fail keep the user's file and what they typed.
                     video_reset = gr.update(value=None) if succeeded else gr.skip()
                     hint_reset = gr.update(value="") if succeeded else gr.skip()
+                    # Close the popover on success; keep it open on soft-fail so the user can retry.
+                    panel_reset = gr.update(visible=False) if succeeded else gr.skip()
                     return (
                         *result,
                         status,
                         gr.update(interactive=True),
                         video_reset,
                         hint_reset,
+                        panel_reset,
                     )
 
                 go.click(
@@ -1915,6 +1931,7 @@ def build_viewer_app() -> gr.Blocks:
                         go,
                         drop_video,
                         hint,
+                        upload_panel,
                     ],
                     concurrency_limit=1,
                     concurrency_id=UPLOAD_CONCURRENCY_ID,

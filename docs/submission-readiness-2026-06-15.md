@@ -25,7 +25,8 @@ Claimed achievements:
 - `achievement:offgrid` - local inference and TTS; no cloud LLM/TTS API in the live loop.
 - `achievement:offbrand` - custom cinematic viewer rather than default component chrome.
 - `achievement:llama` - local live engine goes through `llama.cpp`.
-- `achievement:fieldnotes` - field notes link is already in README.
+- `achievement:fieldnotes` - field notes link is already in README, but it must be made public
+  before final submission.
 
 Do not claim Tiny Titan, because the submission model is 8B, not <=4B.
 

@@ -74,10 +74,10 @@ testing, or the final run.
 - Keep the submitted Space on `cpu-basic` for the Modal path. The Space should not warm Qwen/Kokoro;
   it accepts uploads, requires HF login for upload only, calls Modal server-side, and renders the
   returned scene.
-- Modal upload inference should use the hackathon grant aggressively but bounded: H100 first with
-  A100-80GB and L40S fallbacks, one warm GPU container, one active buffer container, and up to four
-  GPU containers for parallel uploads. Do not use same-container GPU concurrency for Qwen/Kokoro
-  unless the model/TTS pipeline is explicitly proven thread-safe.
+- Modal upload inference is now cost-first: H100 first with A100-80GB and L40S fallbacks, zero
+  minimum containers, zero buffer containers, a 60-second idle scaledown window, and up to four GPU
+  containers for parallel uploads. Do not use same-container GPU concurrency for Qwen/Kokoro unless
+  the model/TTS pipeline is explicitly proven thread-safe.
 - Glasses-origin public clips should not go through Modal. `Action!` starts capture and `Cut!`
   finalizes the take; after the local engine has produced clip, title, narration, and speech for
   in-ear playback, the completed scene can be auto-published to the personal relay bucket by the local/admin
@@ -100,9 +100,9 @@ testing, or the final run.
   `SMALL_CUTS_MODAL_API_TOKEN`; no token values were written to repo docs.
 - [x] Private Modal app `small-cuts-postcut` deployed at
   `https://macayaven--small-cuts-postcut-api.modal.run`.
-- [x] Modal GPU policy encoded as H100 -> A100-80GB -> L40S, with
-  `min_containers=1`, `buffer_containers=1`, `max_containers=4`, and no same-container GPU
-  concurrency on the Qwen/Kokoro worker.
+- [x] Modal GPU policy encoded as H100 -> A100-80GB -> L40S, with cost-control defaults
+  `min_containers=0`, `buffer_containers=0`, `scaledown_window=60`, `max_containers=4`, and no
+  same-container GPU concurrency on the Qwen/Kokoro worker.
 - [x] Upload cap is now 60 seconds by default, with the Space-facing
   `SMALL_CUTS_UPLOAD_MAX_SECONDS` remaining the deployment override. A 61-second synthetic MP4 was
   rejected by the deployed Modal API with HTTP 422 and message

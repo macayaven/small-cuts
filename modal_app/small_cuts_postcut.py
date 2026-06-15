@@ -69,9 +69,9 @@ def _sample_interval_s(duration_s: float) -> float:
 @app.function(
     image=image,
     timeout=60,
-    min_containers=1,
-    buffer_containers=1,
-    scaledown_window=1200,
+    min_containers=0,
+    buffer_containers=0,
+    scaledown_window=60,
     secrets=[modal.Secret.from_name("small-cuts-postcut")],
 )
 @modal.concurrent(max_inputs=20, target_inputs=10)
@@ -130,10 +130,10 @@ def poll_cut(job_id: str, authorization: str | None = Header(default=None)):
     image=image,
     gpu=["H100", "A100-80GB", "L40S"],
     timeout=900,
-    min_containers=1,
-    buffer_containers=1,
+    min_containers=0,
+    buffer_containers=0,
     max_containers=4,
-    scaledown_window=1200,
+    scaledown_window=60,
     secrets=[modal.Secret.from_name("small-cuts-postcut")],
 )
 def process_cut(

@@ -1,6 +1,6 @@
 # Demo-Readiness Checklist
 
-Last updated: 2026-06-15 15:30 CEST.
+Last updated: 2026-06-15 15:58 CEST.
 
 ## Current Architecture Override - 2026-06-15
 
@@ -99,7 +99,7 @@ evidence for audit/history, but do not use it as the active deploy posture for t
 
 - [x] Full Python gate passed:
   `uv run ruff check . && uv run ruff format --check . && uv run pytest`
-  (`201 passed`, 4 warnings).
+  (`204 passed`, 4 warnings).
 - [x] Full iOS simulator gate passed with the plan command on `iPhone 17, OS=26.5`:
   `66 tests`, `1` expected live-engine smoke skipped, `0` failures.
 - [x] Local Gradio relay/upload-sandbox app launched on `http://127.0.0.1:7860` with

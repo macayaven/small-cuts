@@ -12,6 +12,7 @@ from types import SimpleNamespace
 from urllib.parse import unquote
 
 import gradio as gr
+import gradio.oauth
 import httpx
 import numpy as np
 import pytest
@@ -23,6 +24,35 @@ from test_contracts import GOLDEN
 GOLDEN_SCENE = GOLDEN["narrated-scene.schema.json"]
 ENGINE_URL = "http://engine.test:8077"
 CREATED_AT = datetime(2026, 6, 12, 9, 30, 8, tzinfo=timezone.utc)  # the golden created_at
+
+
+def mock_gradio_oauth(monkeypatch):
+    monkeypatch.setattr(
+        gradio.oauth,
+        "_get_mocked_oauth_info",
+        lambda: {
+            "access_token": "mock-oauth-token-for-ci",
+            "token_type": "bearer",
+            "expires_in": 3600,
+            "id_token": "AAAAAAAAAAAAAAAAAAAAAAAAAA",
+            "scope": "openid profile",
+            "expires_at": 9999999999,
+            "userinfo": {
+                "sub": "11111111111111111111111",
+                "name": "CI User",
+                "preferred_username": "ci-user",
+                "profile": "https://huggingface.co/ci-user",
+                "picture": "",
+                "website": "",
+                "aud": "00000000-0000-0000-0000-000000000000",
+                "auth_time": 1691672844,
+                "nonce": "aaaaaaaaaaaaaaaaaaa",
+                "iat": 1691672844,
+                "exp": 1691676444,
+                "iss": "https://huggingface.co",
+            },
+        },
+    )
 
 
 def make_image(width=64, height=48, color=(200, 200, 200)):
@@ -82,6 +112,16 @@ def test_upload_auth_state_uses_hf_username():
 
     assert viewer._upload_auth_state(profile) == {"username": "alice"}
     assert viewer._upload_auth_state(None) == {}
+
+
+def test_upload_auth_state_tolerates_unexpected_profile_shape():
+    class ExplodingProfile:
+        @property
+        def username(self):
+            raise RuntimeError("oauth session not ready")
+
+    assert viewer._upload_username(ExplodingProfile()) is None
+    assert viewer._upload_auth_state(ExplodingProfile()) == {}
 
 
 def test_uploaded_scene_is_preserved_in_engine_state():
@@ -144,16 +184,39 @@ def test_format_stage_marks_source_icons():
 def test_submit_modal_upload_rejects_over_duration(monkeypatch):
     monkeypatch.setenv("SMALL_CUTS_UPLOAD_MAX_SECONDS", "60")
     monkeypatch.setattr(viewer, "_video_duration_s", lambda _path: 61.0)
+    warnings = []
 
-    with pytest.raises(gr.Error, match="up to 60 seconds"):
-        viewer._submit_modal_upload(
-            "clip.mp4",
-            "deadpan",
-            "",
-            viewer._pack_engine_ui_state([], None, None, None),
-            SimpleNamespace(name="Alice Example", username="alice"),
-            fake_client(lambda _request: httpx.Response(200, json={"scenes": []})),
-        )
+    monkeypatch.setattr(viewer.gr, "Warning", lambda message: warnings.append(message))
+
+    outputs = viewer._submit_modal_upload(
+        "clip.mp4",
+        "deadpan",
+        "",
+        viewer._pack_engine_ui_state([], None, None, None),
+        SimpleNamespace(name="Alice Example", username="alice"),
+        fake_client(lambda _request: httpx.Response(200, json={"scenes": []})),
+    )
+
+    assert warnings == ["Please upload a clip up to 60 seconds."]
+    assert outputs[5]["scenes"] == []
+
+
+def test_submit_modal_upload_without_video_warns_instead_of_raising(monkeypatch):
+    warnings = []
+
+    monkeypatch.setattr(viewer.gr, "Warning", lambda message: warnings.append(message))
+
+    outputs = viewer._submit_modal_upload(
+        None,
+        "deadpan",
+        "",
+        viewer._pack_engine_ui_state([], None, None, None),
+        SimpleNamespace(name="Alice Example", username="alice"),
+        fake_client(lambda _request: httpx.Response(200, json={"scenes": []})),
+    )
+
+    assert warnings == ["Upload a video clip first."]
+    assert outputs[5]["scenes"] == []
 
 
 def test_submit_modal_upload_without_auth_does_not_call_modal(monkeypatch):
@@ -238,6 +301,30 @@ def test_submit_modal_upload_pins_returned_scene(monkeypatch):
     assert visibility["value"] == "public"
 
 
+def test_submit_modal_upload_modal_failure_warns_instead_of_raising(monkeypatch):
+    warnings = []
+
+    class FailingModalUploadClient:
+        def submit_video(self, video_path, *, uploader_hf_username, style_key, scene_hint):
+            raise viewer.ModalUploadError("modal unavailable")
+
+    monkeypatch.setattr(viewer, "_video_duration_s", lambda _path: 7.5)
+    monkeypatch.setattr(viewer, "_modal_upload_client", lambda: FailingModalUploadClient())
+    monkeypatch.setattr(viewer.gr, "Warning", lambda message: warnings.append(message))
+
+    outputs = viewer._submit_modal_upload(
+        "clip.mp4",
+        "deadpan",
+        "",
+        viewer._pack_engine_ui_state([], None, None, None),
+        SimpleNamespace(name="Alice Example", username="alice"),
+        fake_client(lambda _request: httpx.Response(200, json={"scenes": []})),
+    )
+
+    assert warnings == ["Modal upload failed: modal unavailable"]
+    assert outputs[5]["scenes"] == []
+
+
 def test_submit_modal_upload_uses_cached_auth_state_when_profile_missing(monkeypatch):
     scene = {
         "scene_id": "modal-2",
@@ -283,6 +370,52 @@ def test_submit_modal_upload_uses_cached_auth_state_when_profile_missing(monkeyp
 
     assert calls == [("clip.mp4", "macayaven", "deadpan", "show the ending")]
     assert state["upload_scene"]["scene_id"] == "modal-2"
+
+
+def test_upload_sandbox_bounds_queue_and_upload_concurrency(monkeypatch):
+    monkeypatch.setenv(viewer.ENGINE_URL_ENV, "http://127.0.0.1:9")
+    monkeypatch.setenv(viewer.UPLOAD_SANDBOX_ENV, "1")
+    monkeypatch.setenv(viewer.MODAL_API_URL_ENV, "https://example.modal.run")
+    mock_gradio_oauth(monkeypatch)
+
+    app = viewer.build_viewer_app()
+    upload_deps = [
+        dep
+        for dep in app.config["dependencies"]
+        if dep.get("backend_fn") and dep.get("api_name") == "_go_modal_upload_ui"
+    ]
+
+    assert len(upload_deps) == 1
+    upload_fn = app.fns[upload_deps[0]["id"]]
+    assert upload_fn.concurrency_limit == 1
+    assert upload_fn.concurrency_id == "small-cuts-modal-upload"
+    assert app._queue.max_size == 8
+
+    components_by_id = {component["id"]: component for component in app.config["components"]}
+    assert not [
+        component for component in components_by_id.values() if component["type"] == "timer"
+    ]
+
+    tick_deps = [
+        dep
+        for dep in app.config["dependencies"]
+        if dep.get("backend_fn") and dep.get("api_name") == "_tick"
+    ]
+
+    assert len(tick_deps) == 1
+    assert tick_deps[0]["queue"] is False
+    assert tick_deps[0]["api_visibility"] == "private"
+    target_id, target_event = tick_deps[0]["targets"][0]
+    assert target_event == "relay_scene"
+    assert components_by_id[target_id]["type"] == "html"
+    assert components_by_id[target_id]["props"]["elem_classes"] == ["sc-relay-events"]
+
+
+def test_relay_event_bridge_listens_for_hook_events():
+    assert "EventSource('/small-cuts/events')" in viewer.RELAY_EVENT_BRIDGE_JS
+    assert "trigger('relay_scene'" in viewer.RELAY_EVENT_BRIDGE_JS
+    assert "button.click" not in viewer.RELAY_EVENT_BRIDGE_JS
+    assert ".sc-relay-refresh" not in viewer.RELAY_EVENT_BRIDGE_JS
 
 
 def test_bucket_scene_client_reads_manifest_and_caches_media(tmp_path, monkeypatch):

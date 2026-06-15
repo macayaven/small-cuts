@@ -1,6 +1,6 @@
 # Demo-Readiness Checklist
 
-Last updated: 2026-06-15 17:36 CEST.
+Last updated: 2026-06-15 17:51 CEST.
 
 ## HF Deployment Safety Override - 2026-06-15
 
@@ -41,6 +41,16 @@ testing, or the final run.
   This local glasses-to-ear return path is non-negotiable.
 - Public Space path is post-cut: after the take is completed, publish the finished clip, generated
   title, narration, voice, thumbnail/poster, and manifest into the personal HF bucket relay.
+
+## HF Space Upload Hardening - 2026-06-15 17:51 CEST
+
+- [x] Local upload path hardening added after Claude/OpenCode/agy review: expected upload validation,
+  missing auth, and Modal failures soft-fail through `gr.Warning` while preserving the current stage.
+- [x] Upload OAuth state capture is defensive against unexpected profile/session shapes.
+- [x] Modal upload click is single-concurrency and the Gradio queue has an explicit bounded max size.
+- [ ] Not deployed or smoked on HF. `macayaven/small-cuts-dev` still needs explicit one-action
+  approval before any deploy, Dev Mode session, log read, restart, poll, or smoke test.
+
 - Test order for the final run:
   1. Short physical glasses smoke first, before populating the public library.
   2. Populate the library only from controlled, honest pipeline outputs.

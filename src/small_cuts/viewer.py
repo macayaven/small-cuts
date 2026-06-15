@@ -75,6 +75,8 @@ LIVE_WINDOW_S = 60.0  # ●REC reads LIVE when the newest scene is younger than 
 FEED_LIMIT = 12
 SHELF_LIMIT = 60
 HTTP_TIMEOUT_S = 5.0
+UPLOAD_QUEUE_MAX_SIZE = 8
+UPLOAD_CONCURRENCY_ID = "small-cuts-modal-upload"
 VISIBILITIES = ("private", "shared", "public")
 _KEEP_UPLOAD_SCENE = object()
 SOURCE_ICON_LABELS = {
@@ -355,18 +357,21 @@ def upload_max_seconds() -> float:
 def _upload_username(profile_or_state: Any) -> str | None:
     if not profile_or_state:
         return None
-    if isinstance(profile_or_state, dict):
-        username = (
-            profile_or_state.get("username")
-            or profile_or_state.get("preferred_username")
-            or profile_or_state.get("name")
-        )
-    else:
-        username = (
-            getattr(profile_or_state, "username", None)
-            or getattr(profile_or_state, "preferred_username", None)
-            or getattr(profile_or_state, "name", None)
-        )
+    try:
+        if isinstance(profile_or_state, dict):
+            username = (
+                profile_or_state.get("username")
+                or profile_or_state.get("preferred_username")
+                or profile_or_state.get("name")
+            )
+        else:
+            username = (
+                getattr(profile_or_state, "username", None)
+                or getattr(profile_or_state, "preferred_username", None)
+                or getattr(profile_or_state, "name", None)
+            )
+    except Exception:
+        return None
     if not username:
         return None
     return str(username)
@@ -388,7 +393,7 @@ def _modal_upload_client() -> ModalUploadClient:
     base_url = os.environ.get(MODAL_API_URL_ENV, "").strip()
     token = os.environ.get(MODAL_API_TOKEN_ENV, "").strip()
     if not base_url or not token:
-        raise gr.Error("Modal upload is not configured.")
+        raise ModalUploadError("Modal upload is not configured.")
     return ModalUploadClient(base_url, token)
 
 
@@ -908,6 +913,19 @@ def _pack_engine_ui_state(
     }
 
 
+def _modal_upload_warning_response(message: str, state: Any) -> tuple[Any, ...]:
+    gr.Warning(message)
+    return (
+        gr.skip(),
+        gr.skip(),
+        gr.skip(),
+        gr.skip(),
+        gr.skip(),
+        _engine_ui_state(state),
+        gr.skip(),
+    )
+
+
 def _submit_modal_upload(
     video_path: str | None,
     style_key: str,
@@ -918,25 +936,18 @@ def _submit_modal_upload(
     upload_auth_state: Any | None = None,
 ) -> tuple[Any, ...]:
     if not video_path:
-        raise gr.Error("Upload a video clip first.")
+        return _modal_upload_warning_response("Upload a video clip first.", state)
 
     duration = _video_duration_s(video_path)
     max_seconds = upload_max_seconds()
     if duration is not None and duration > max_seconds + 0.25:
-        raise gr.Error(f"Please upload a clip up to {max_seconds:.0f} seconds.")
+        return _modal_upload_warning_response(
+            f"Please upload a clip up to {max_seconds:.0f} seconds.", state
+        )
 
     uploader = _upload_username(profile) or _upload_username(upload_auth_state)
     if not uploader:
-        gr.Warning("Sign in with Hugging Face to upload a cut.")
-        return (
-            gr.skip(),
-            gr.skip(),
-            gr.skip(),
-            gr.skip(),
-            gr.skip(),
-            _engine_ui_state(state),
-            gr.skip(),
-        )
+        return _modal_upload_warning_response("Sign in with Hugging Face to upload a cut.", state)
 
     try:
         raw_scene = _modal_upload_client().submit_video(
@@ -946,7 +957,7 @@ def _submit_modal_upload(
             scene_hint=scene_hint,
         )
     except (ModalUploadError, httpx.HTTPError) as exc:
-        raise gr.Error(f"Modal upload failed: {exc}") from exc
+        return _modal_upload_warning_response(f"Modal upload failed: {exc}", state)
 
     scene = _scene_with_media_urls(raw_scene, media_client)
     current_state = _engine_ui_state(state)
@@ -1452,6 +1463,8 @@ def build_viewer_app() -> gr.Blocks:
                         scenes_state,
                         visibility,
                     ],
+                    concurrency_limit=1,
+                    concurrency_id=UPLOAD_CONCURRENCY_ID,
                 )
 
             def _tick(state):
@@ -1508,6 +1521,7 @@ def build_viewer_app() -> gr.Blocks:
                 _tick,
                 inputs=[scenes_state],
                 outputs=poll_outputs,
+                queue=False,
             )
 
             def _on_select(evt: gr.SelectData, state):
@@ -1821,4 +1835,5 @@ def build_viewer_app() -> gr.Blocks:
         if upload_sandbox:
             demo.load(_upload_auth_state, outputs=[upload_auth_state])
         demo.load(js=PLAYBACK_SYNC_JS)
+    demo.queue(max_size=UPLOAD_QUEUE_MAX_SIZE, default_concurrency_limit=1)
     return demo

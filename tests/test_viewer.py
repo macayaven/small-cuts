@@ -84,6 +84,16 @@ def test_upload_auth_state_uses_hf_username():
     assert viewer._upload_auth_state(None) == {}
 
 
+def test_upload_auth_state_tolerates_unexpected_profile_shape():
+    class ExplodingProfile:
+        @property
+        def username(self):
+            raise RuntimeError("oauth session not ready")
+
+    assert viewer._upload_username(ExplodingProfile()) is None
+    assert viewer._upload_auth_state(ExplodingProfile()) == {}
+
+
 def test_uploaded_scene_is_preserved_in_engine_state():
     upload_scene = {
         "scene_id": "modal-upload-1",
@@ -144,16 +154,39 @@ def test_format_stage_marks_source_icons():
 def test_submit_modal_upload_rejects_over_duration(monkeypatch):
     monkeypatch.setenv("SMALL_CUTS_UPLOAD_MAX_SECONDS", "60")
     monkeypatch.setattr(viewer, "_video_duration_s", lambda _path: 61.0)
+    warnings = []
 
-    with pytest.raises(gr.Error, match="up to 60 seconds"):
-        viewer._submit_modal_upload(
-            "clip.mp4",
-            "deadpan",
-            "",
-            viewer._pack_engine_ui_state([], None, None, None),
-            SimpleNamespace(name="Alice Example", username="alice"),
-            fake_client(lambda _request: httpx.Response(200, json={"scenes": []})),
-        )
+    monkeypatch.setattr(viewer.gr, "Warning", lambda message: warnings.append(message))
+
+    outputs = viewer._submit_modal_upload(
+        "clip.mp4",
+        "deadpan",
+        "",
+        viewer._pack_engine_ui_state([], None, None, None),
+        SimpleNamespace(name="Alice Example", username="alice"),
+        fake_client(lambda _request: httpx.Response(200, json={"scenes": []})),
+    )
+
+    assert warnings == ["Please upload a clip up to 60 seconds."]
+    assert outputs[5]["scenes"] == []
+
+
+def test_submit_modal_upload_without_video_warns_instead_of_raising(monkeypatch):
+    warnings = []
+
+    monkeypatch.setattr(viewer.gr, "Warning", lambda message: warnings.append(message))
+
+    outputs = viewer._submit_modal_upload(
+        None,
+        "deadpan",
+        "",
+        viewer._pack_engine_ui_state([], None, None, None),
+        SimpleNamespace(name="Alice Example", username="alice"),
+        fake_client(lambda _request: httpx.Response(200, json={"scenes": []})),
+    )
+
+    assert warnings == ["Upload a video clip first."]
+    assert outputs[5]["scenes"] == []
 
 
 def test_submit_modal_upload_without_auth_does_not_call_modal(monkeypatch):
@@ -238,6 +271,30 @@ def test_submit_modal_upload_pins_returned_scene(monkeypatch):
     assert visibility["value"] == "public"
 
 
+def test_submit_modal_upload_modal_failure_warns_instead_of_raising(monkeypatch):
+    warnings = []
+
+    class FailingModalUploadClient:
+        def submit_video(self, video_path, *, uploader_hf_username, style_key, scene_hint):
+            raise viewer.ModalUploadError("modal unavailable")
+
+    monkeypatch.setattr(viewer, "_video_duration_s", lambda _path: 7.5)
+    monkeypatch.setattr(viewer, "_modal_upload_client", lambda: FailingModalUploadClient())
+    monkeypatch.setattr(viewer.gr, "Warning", lambda message: warnings.append(message))
+
+    outputs = viewer._submit_modal_upload(
+        "clip.mp4",
+        "deadpan",
+        "",
+        viewer._pack_engine_ui_state([], None, None, None),
+        SimpleNamespace(name="Alice Example", username="alice"),
+        fake_client(lambda _request: httpx.Response(200, json={"scenes": []})),
+    )
+
+    assert warnings == ["Modal upload failed: modal unavailable"]
+    assert outputs[5]["scenes"] == []
+
+
 def test_submit_modal_upload_uses_cached_auth_state_when_profile_missing(monkeypatch):
     scene = {
         "scene_id": "modal-2",
@@ -283,6 +340,33 @@ def test_submit_modal_upload_uses_cached_auth_state_when_profile_missing(monkeyp
 
     assert calls == [("clip.mp4", "macayaven", "deadpan", "show the ending")]
     assert state["upload_scene"]["scene_id"] == "modal-2"
+
+
+def test_upload_sandbox_bounds_queue_and_upload_concurrency(monkeypatch):
+    monkeypatch.setenv(viewer.ENGINE_URL_ENV, "http://127.0.0.1:9")
+    monkeypatch.setenv(viewer.UPLOAD_SANDBOX_ENV, "1")
+    monkeypatch.setenv(viewer.MODAL_API_URL_ENV, "https://example.modal.run")
+
+    app = viewer.build_viewer_app()
+    upload_deps = [
+        dep
+        for dep in app.config["dependencies"]
+        if dep.get("backend_fn") and dep.get("api_name") == "_go_modal_upload_ui"
+    ]
+
+    assert len(upload_deps) == 1
+    upload_fn = app.fns[upload_deps[0]["id"]]
+    assert upload_fn.concurrency_limit == 1
+    assert upload_fn.concurrency_id == "small-cuts-modal-upload"
+    assert app._queue.max_size == 8
+
+    tick_deps = [
+        dep
+        for dep in app.config["dependencies"]
+        if dep.get("backend_fn") and dep.get("api_name") == "_tick"
+    ]
+    assert len(tick_deps) == 1
+    assert tick_deps[0]["queue"] is False
 
 
 def test_bucket_scene_client_reads_manifest_and_caches_media(tmp_path, monkeypatch):

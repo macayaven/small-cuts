@@ -28,6 +28,7 @@ import warnings
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import unquote
 
 import gradio as gr
 import httpx
@@ -39,6 +40,7 @@ from ._icons import ICON_CSS
 from .frames import pick_key_frame, sample_frames
 from .hf_relay import (
     DEFAULT_RELAY_PREFIX,
+    GRADIO_FILE_ROUTE,
     MEDIA_KEYS,
     RELAY_BUCKET_ENV,
     RELAY_PREFIX_ENV,
@@ -621,8 +623,14 @@ def shelf_items(
         media = scene.get("media") or {}
         src = client.media_url(media.get("frame_url") or media.get("card_url"))
         if src:
-            items.append((src, _shelf_caption(scene)))
+            items.append((_gallery_media_src(src), _shelf_caption(scene)))
     return items
+
+
+def _gallery_media_src(src: str) -> str:
+    if src.startswith(GRADIO_FILE_ROUTE):
+        return unquote(src[len(GRADIO_FILE_ROUTE) :])
+    return src
 
 
 def _shelf_caption(scene: dict[str, Any]) -> str:

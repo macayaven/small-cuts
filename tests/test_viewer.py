@@ -197,9 +197,7 @@ def test_submit_modal_upload_pins_returned_scene(monkeypatch):
     assert "sc-ico-upload" in stage
     assert "real voice" in feed
     assert "voice.wav" in audio
-    assert shelf == [
-        ("/gradio_api/file=/tmp/frame.jpg", f"{viewer.UPLOAD_SHELF_PREFIX}A Modal Scene")
-    ]
+    assert shelf == [("/tmp/frame.jpg", f"{viewer.UPLOAD_SHELF_PREFIX}A Modal Scene")]
     assert state["upload_scene"]["scene_id"] == "modal-1"
     assert state["current_id"] == "modal-1"
     assert state["playing_id"] == "modal-1"
@@ -328,6 +326,23 @@ def test_shelf_items_marks_source_tiles():
 
     assert items[0] == ("/media/frame.jpg", f"{viewer.GLASSES_SHELF_PREFIX}A Glasses Scene")
     assert items[1] == ("/media/upload.jpg", f"{viewer.UPLOAD_SHELF_PREFIX}An Upload Scene")
+
+
+def test_shelf_items_unwraps_gradio_file_routes_for_gallery(tmp_path):
+    cached = tmp_path / "relay" / "media" / "frame.jpg"
+    cached.parent.mkdir(parents=True)
+    cached.write_bytes(b"fake")
+
+    class FakeMediaClient:
+        def media_url(self, path):
+            return f"{viewer.GRADIO_FILE_ROUTE}{cached}" if path else None
+
+    (item,) = viewer.shelf_items(
+        [{**GOLDEN_SCENE, "media": {"frame_url": "frame.jpg"}}],
+        FakeMediaClient(),
+    )
+
+    assert item == (str(cached), GOLDEN_SCENE["title"])
 
 
 def test_playback_js_uses_trusted_dom_click_for_audio():

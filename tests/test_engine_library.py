@@ -22,7 +22,13 @@ from PIL import Image  # noqa: E402
 
 from small_cuts.engine import build_engine_app  # noqa: E402
 from small_cuts.engine.app import _last_event_id, scene_event_stream  # noqa: E402
-from small_cuts.engine.library import SceneLibrary  # noqa: E402
+from small_cuts.engine.library import (  # noqa: E402
+    CLIP_BLEND_STEPS,
+    CLIP_MP4_FPS,
+    RGB_MODE,
+    SceneLibrary,
+    _smooth_clip_frames,
+)
 from small_cuts.title_card import derive_title  # noqa: E402
 from test_engine_session import Reader, make_envelope  # noqa: E402
 
@@ -139,9 +145,10 @@ def test_store_writes_clip_url_and_title_for_multiframe_scene(tmp_path):
     clip_path = tmp_path / "lib" / "media" / stored["scene_id"] / "clip.mp4"
     assert clip_path.is_file()
     with av.open(str(clip_path)) as container:
-        assert float(container.streams.video[0].average_rate) == pytest.approx(6.0)
+        assert float(container.streams.video[0].average_rate) == pytest.approx(CLIP_MP4_FPS)
         frames = list(container.decode(video=0))
-    assert len(frames) >= 3
+    expected_frame_count = 3 + ((3 - 1) * CLIP_BLEND_STEPS)
+    assert len(frames) >= expected_frame_count
 
     with TestClient(build_engine_app(library=lib)) as client:
         clip = client.get(stored["media"]["clip_url"])
@@ -220,6 +227,23 @@ def test_set_visibility_rejects_unknown_value(tmp_path):
     stored = lib.store(make_sink_scene())
     with pytest.raises(ValueError):
         lib.set_visibility(stored["scene_id"], "secret")
+
+
+def test_clip_smoothing_inserts_single_micro_dissolve_between_frames():
+    sample_size = (2, 2)
+    sample_pixel = (0, 0)
+    red = (200, 0, 0)
+    blue = (0, 0, 200)
+    midpoint = (100, 0, 100)
+    first = Image.new(RGB_MODE, sample_size, red)
+    second = Image.new(RGB_MODE, sample_size, blue)
+
+    frames = _smooth_clip_frames([first, second], blend_steps=CLIP_BLEND_STEPS)
+
+    assert len(frames) == 2 + CLIP_BLEND_STEPS
+    assert frames[0].getpixel(sample_pixel) == red
+    assert frames[-1].getpixel(sample_pixel) == blue
+    assert frames[1].getpixel(sample_pixel) == midpoint
 
 
 # -- list + filters ---------------------------------------------------------------

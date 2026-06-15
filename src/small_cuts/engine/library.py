@@ -32,7 +32,14 @@ DEFAULT_ROOT = "~/.small-cuts/library"
 OWNER = "carlos"  # v1 engines are single-user; the field is reserved for multi-user
 VISIBILITIES = ("private", "shared", "public")
 MEDIA_FILES = ("frame.jpg", "card.webp", "voice.wav", "clip.mp4")
-CLIP_MP4_FPS = 6
+CLIP_MP4_FPS = 12
+CLIP_BLEND_STEPS = 1
+H264_MIN_DIMENSION = 2
+POSTER_JPEG_QUALITY = 90
+RGB_MODE = "RGB"
+VIDEO_PIXEL_FORMAT = "yuv420p"
+PRIMARY_VIDEO_CODEC = "libx264"
+FALLBACK_VIDEO_CODEC = "h264"
 
 _SCHEMA = """\
 CREATE TABLE IF NOT EXISTS scenes (
@@ -132,7 +139,7 @@ class SceneLibrary:
         scene_dir.mkdir(parents=True, exist_ok=True)
         clip_frames = scene.get("clip_frames") or []
         poster = pick_key_frame(clip_frames) if clip_frames else scene["image"]
-        poster.convert("RGB").save(scene_dir / "frame.jpg", "JPEG", quality=90)
+        poster.convert(RGB_MODE).save(scene_dir / "frame.jpg", "JPEG", quality=POSTER_JPEG_QUALITY)
         if len(clip_frames) >= 2:
             try:
                 _write_clip_mp4(scene_dir / "clip.mp4", clip_frames)
@@ -284,26 +291,27 @@ def _write_clip_mp4(path: Path, frames: list[Image.Image], fps: int = CLIP_MP4_F
     """Render a small browser-playable MP4 from sampled POV frames."""
     import av
 
-    rgb_frames = [frame.convert("RGB") for frame in frames]
+    rgb_frames = [frame.convert(RGB_MODE) for frame in frames]
     width, height = rgb_frames[0].size
     # H.264/yuv420p expects even dimensions. Preserve portrait aspect and only
     # shave one pixel if needed; capture frames are already downscaled upstream.
-    width = max(2, width - (width % 2))
-    height = max(2, height - (height % 2))
+    width = max(H264_MIN_DIMENSION, width - (width % 2))
+    height = max(H264_MIN_DIMENSION, height - (height % 2))
+    encode_frames = _smooth_clip_frames(
+        rgb_frames, blend_steps=CLIP_BLEND_STEPS, size=(width, height)
+    )
 
     container = av.open(str(path), "w")
     try:
-        stream = container.add_stream("libx264", rate=fps)
+        stream = container.add_stream(PRIMARY_VIDEO_CODEC, rate=fps)
     except Exception:
-        stream = container.add_stream("h264", rate=fps)
+        stream = container.add_stream(FALLBACK_VIDEO_CODEC, rate=fps)
     stream.width = width
     stream.height = height
-    stream.pix_fmt = "yuv420p"
+    stream.pix_fmt = VIDEO_PIXEL_FORMAT
 
     try:
-        for image in rgb_frames:
-            if image.size != (width, height):
-                image = image.resize((width, height), Image.Resampling.LANCZOS)
+        for image in encode_frames:
             frame = av.VideoFrame.from_image(image)
             for packet in stream.encode(frame):
                 container.mux(packet)
@@ -311,6 +319,32 @@ def _write_clip_mp4(path: Path, frames: list[Image.Image], fps: int = CLIP_MP4_F
             container.mux(packet)
     finally:
         container.close()
+
+
+def _smooth_clip_frames(
+    frames: list[Image.Image],
+    blend_steps: int = CLIP_BLEND_STEPS,
+    size: tuple[int, int] | None = None,
+) -> list[Image.Image]:
+    """Insert tiny cross-dissolve frames so sampled POV clips do not hard-cut."""
+    if not frames:
+        return []
+    prepared = []
+    for image in frames:
+        image = image.convert(RGB_MODE)
+        if size is not None and image.size != size:
+            image = image.resize(size, Image.Resampling.LANCZOS)
+        prepared.append(image)
+    if blend_steps <= 0 or len(prepared) < 2:
+        return prepared
+
+    smoothed = [prepared[0]]
+    for previous, current in zip(prepared, prepared[1:], strict=False):
+        for step in range(1, blend_steps + 1):
+            alpha = step / (blend_steps + 1)
+            smoothed.append(Image.blend(previous, current, alpha))
+        smoothed.append(current)
+    return smoothed
 
 
 def _stored_title(raw_title: object, narration: str) -> str:

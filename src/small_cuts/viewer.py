@@ -270,10 +270,10 @@ footer { display: none !important; }
    .disabled / [disabled]; we also dim the whole top-right cluster's icon when gated. */
 .sc-upload.sc-icbtn:disabled, .sc-upload.sc-icbtn.disabled,
 .sc-upload.sc-icbtn[disabled] {
-  opacity: .45 !important; cursor: not-allowed !important;
-  background-color: #6c6a74 !important; }
+  opacity: .55 !important; cursor: not-allowed !important;
+  background-color: #8a8894 !important; }
 .sc-upload.sc-icbtn:disabled:hover, .sc-upload.sc-icbtn.disabled:hover,
-.sc-upload.sc-icbtn[disabled]:hover { background-color: #6c6a74 !important; }
+.sc-upload.sc-icbtn[disabled]:hover { background-color: #8a8894 !important; }
 .sc-upload.sc-icbtn:not(:disabled):not(.disabled) { cursor: pointer !important; }
 .sc-header { justify-content: center; text-align: center; }
 .sc-progress { max-width: 560px; height: 4px; margin: 12px auto 2px; border-radius: 3px;
@@ -650,6 +650,7 @@ def _upload_auth_ui(profile: gr.OAuthProfile | None):
         auth_state,
         gr.update(visible=not signed_in),
         gr.update(
+            visible=True,
             interactive=signed_in,
             elem_classes=_upload_icon_classes(signed_in),
         ),

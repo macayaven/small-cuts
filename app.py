@@ -43,8 +43,11 @@ try:
 except ImportError:  # local dev / CI: no ZeroGPU
     spaces = None
 
-if ON_SPACE and NEEDS_LOCAL_INFERENCE:
-    os.environ.setdefault("SMALL_CUTS_BACKEND", "transformers")
+if NEEDS_LOCAL_INFERENCE:
+    if ON_SPACE:
+        os.environ.setdefault("SMALL_CUTS_BACKEND", "transformers")
+    else:
+        os.environ.setdefault("SMALL_CUTS_BACKEND", "llama_cpp")
     os.environ.setdefault("SMALL_CUTS_TTS_BACKEND", "kokoro")
 
 from small_cuts.observability import capture_exception, init_sentry  # noqa: E402

@@ -524,7 +524,9 @@ def test_upload_auth_ui_swaps_signin_for_upload_icon():
     assert state_out == {}
     assert signin_out == gr.update(visible=True)
     assert upload_out == gr.update(
-        interactive=False, elem_classes=["sc-icbtn", "sc-upload", "sc-ico-upload", "disabled"]
+        visible=True,
+        interactive=False,
+        elem_classes=["sc-icbtn", "sc-upload", "sc-ico-upload", "disabled"],
     )
 
     # signed IN — the sign-in container is HIDDEN (no logout affordance, so no sign-in/sign-out
@@ -536,7 +538,7 @@ def test_upload_auth_ui_swaps_signin_for_upload_icon():
     assert state == {"username": "alice"}
     assert signin_update == gr.update(visible=False)
     assert upload_update == gr.update(
-        interactive=True, elem_classes=["sc-icbtn", "sc-upload", "sc-ico-upload"]
+        visible=True, interactive=True, elem_classes=["sc-icbtn", "sc-upload", "sc-ico-upload"]
     )
 
 

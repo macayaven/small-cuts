@@ -94,6 +94,21 @@ def test_space_relay_with_modal_upload_does_not_force_local_backends(monkeypatch
     assert os.environ.get("SMALL_CUTS_TTS_BACKEND") is None
 
 
+def test_local_mode_defaults_to_real_inference_engines(monkeypatch):
+    monkeypatch.delenv("SPACE_ID", raising=False)
+    monkeypatch.delenv("SMALL_CUTS_ENGINE_URL", raising=False)
+    monkeypatch.delenv("SMALL_CUTS_RELAY_BUCKET", raising=False)
+    monkeypatch.delenv("SMALL_CUTS_MODAL_API_URL", raising=False)
+    monkeypatch.delenv("SMALL_CUTS_BACKEND", raising=False)
+    monkeypatch.delenv("SMALL_CUTS_TTS_BACKEND", raising=False)
+    monkeypatch.setitem(sys.modules, "spaces", None)
+
+    _load_app_module("_small_cuts_test_app_local_defaults")
+
+    assert os.environ.get("SMALL_CUTS_BACKEND") == "llama_cpp"
+    assert os.environ.get("SMALL_CUTS_TTS_BACKEND") == "kokoro"
+
+
 def test_app_installs_relay_hook_routes(monkeypatch):
     monkeypatch.setenv("SPACE_ID", "macayaven/small-cuts-dev")
     monkeypatch.delenv("SMALL_CUTS_ENGINE_URL", raising=False)

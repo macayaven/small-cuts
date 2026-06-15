@@ -1,6 +1,6 @@
 # Demo-Readiness Checklist
 
-Last updated: 2026-06-15 16:02 CEST.
+Last updated: 2026-06-15 16:16 CEST.
 
 ## Current Architecture Override - 2026-06-15
 
@@ -21,8 +21,8 @@ evidence for audit/history, but do not use it as the active deploy posture for t
 - The relay bucket currently has only the canary/health object; intentional library population is
   still pending.
 - Private live path remains: Ray-Ban Meta glasses -> iPhone app -> Mac Studio engine over
-  Tailnet/local network -> immediate `SceneAudio` back to the iPhone/glasses. This glasses-to-ear
-  loop is non-negotiable.
+  Tailnet/local network -> `SceneAudio` back to the iPhone/glasses after the wearer taps `Cut!`.
+  This local glasses-to-ear return path is non-negotiable.
 - Public Space path is post-cut: after the take is completed, publish the finished clip, generated
   title, narration, voice, thumbnail/poster, and manifest into the HF bucket relay.
 - Test order for the final run:
@@ -54,8 +54,9 @@ evidence for audit/history, but do not use it as the active deploy posture for t
   top-left of the Space stage/library tile.
 - Library population target: use longer, controlled, honest clip artifacts for the public relay
   library instead of the current very short 24-frame samples.
-- iOS should restore real-time wearer captions/status for the private glasses path. Do not stretch
-  the iOS/engine real-time payload just to satisfy the Space upload requirement.
+- iOS restores wearer captions/status for the private glasses path: after `Cut!`, the phone shows a
+  waiting caption, then swaps to the generated narration when `SceneAudio` arrives. This baseline is
+  live post-cut, not continuous narration while rolling.
 - `cpu-basic` remains correct for the Space if Modal handles judge-upload inference. ZeroGPU is now
   only a contingency if Modal is deliberately ruled out after a measured failure.
 
@@ -111,7 +112,8 @@ evidence for audit/history, but do not use it as the active deploy posture for t
 
 ## Judged Space
 
-- [x] Space lives at `build-small-hackathon/small-cuts` and is public.
+- [x] Historical Space `build-small-hackathon/small-cuts` is public; active final target is
+  `build-small-hackathon/small-cuts-live` per the architecture override above.
 - [x] Space runs on `cpu-basic` as a viewer/library, not as the inference host.
 - [x] `SMALL_CUTS_ENGINE_URL` points at the public read gate.
 - [x] Active Space endpoint uses the known-good quick tunnel:
@@ -181,8 +183,8 @@ evidence for audit/history, but do not use it as the active deploy posture for t
 - [x] Relay publisher dry-run against `http://127.0.0.1:8077` with
   `--include-private --source glasses` staged one scene locally and wrote `source="glasses"` plus
   `source_icon="glasses"` into the staged manifest without syncing the HF bucket.
-- [ ] Launching the installed iPhone app is pending an unlocked device; `devicectl` launch was
-  denied by SpringBoard because the phone was locked.
+- [x] Manual physical app launch happened after install; observed behavior is live post-cut:
+  narration returns after `Cut!`, not continuously while rolling.
 - [ ] Physical iPhone simulated-source smoke after reinstalling the latest app.
 - [ ] Physical Ray-Ban Meta glasses smoke: in-ear narration returns while the Space receives the same cut.
 
@@ -211,6 +213,8 @@ evidence for audit/history, but do not use it as the active deploy posture for t
 ## Known Constraints
 
 - Capture is image-frame only for this version; source audio is intentionally not part of the payload.
+- The current iOS capture path is `Action!` -> `Cut!` -> local narration return. True rolling
+  micro-segment narration with chronological continuity metadata is planned next.
 - The Space is the public viewer, while local hardware runs the live small-model inference/TTS path.
 - Browser autoplay with sound is intentionally not promised; sound starts from the explicit play gesture.
 - Cloudflare quick-tunnel hostnames are ephemeral. The named `small-cuts.carloscrespomacaya.com`

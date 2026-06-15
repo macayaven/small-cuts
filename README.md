@@ -36,7 +36,7 @@ This is the **challenger submission** for the
 **June 15, 2026, 23:59 UTC**), the strategic successor to the original
 *Director's Cut* project.
 
-## The soul of it — the live loop
+## The soul of it — the Action-to-Cut loop
 
 Small Cuts was born wearing glasses. The intended experience is a **live loop**:
 
@@ -46,14 +46,15 @@ Ray-Ban Meta glasses  ──image frames──▶  home engine (small VLM + TTS)
                                               └──── finished cuts ────▶  the Space (watch · library)
 ```
 
-You walk through a moment; the narrator watches a selected first-person frame and speaks
-one grounded, deadpan line back in your ear while the moment is still *recent past*. The
-finished cut then lands in the Space as a short POV clip with synced captions, title, voice,
-and library thumbnail.
+You walk through a moment, tap **Action!**, then tap **Cut!** when the scene has a readable
+beat. The narrator watches a selected first-person frame and speaks one grounded, deadpan line
+back in your ear while the moment is still *recent past*. The finished cut then lands in the
+Space as a short POV clip with synced captions, title, voice, and library thumbnail.
 
-**One pipeline, two surfaces:** the narration returns *in your ear* during capture, and lands
-in the **Space** below as a finished cut you can re-watch — with film-style subtitles that
-crawl in sync with the voice — and publish to a library.
+**One completed-cut experience, multiple inputs:** from the Space's point of view, glasses cuts
+and authenticated browser uploads resolve to the same artifact shape: a finished video, generated
+title, generated narration, Kokoro voice, synced captions, and a library tile. Glasses remain the
+private wearer path; browser uploads are a judge-verifiable path with no glasses or iOS required.
 
 ## What's in this Space
 
@@ -66,7 +67,8 @@ The Space is the **view platform + library** half of the loop — a small stream
 - **A public library** of real Ray-Ban Meta glasses moments, generated through the same local
   engine path so the channel is never empty. The source clips and mark points are curated; the
   visible titles, narration, voice, thumbnails, and clips are produced by Small Cuts.
-- **"Try it"** — a tucked-away sandbox (open only on request) to narrate your *own* short video.
+- **"Try it"** — a tucked-away, HF-login upload drawer that sends your short video to a private
+  Modal post-cut service, then replays the generated cut in the same theater.
 
 ## How it was built
 
@@ -74,7 +76,8 @@ The Space is the **view platform + library** half of the loop — a small stream
 |---|---|---|
 | Narrator (VLM) | `Qwen/Qwen3-VL-8B-Instruct` | Strong grounded captioning at 8B — well under 32B |
 | Voice (TTS) | **Kokoro** (24 kHz) | Tiny, expressive, open; one signature deadpan delivery |
-| Space runtime | Gradio 6 on CPU, viewer-only for live demo | The judged canvas: public theater + library |
+| Space runtime | Gradio 6 on CPU | Public theater + library; uploads call Modal instead of warming models |
+| Judge upload service | Modal GPU app (`small-cuts-postcut`) | Finished-video verification path with real Qwen + Kokoro output |
 | Local live engine | FastAPI WS home node, **llama.cpp** | The in-ear loop + demo video; no cloud LLM/TTS API |
 | Capture | iOS app for Ray-Ban Meta glasses (`ios/SmallCuts/`) | First-person moments, the way it's meant to be lived |
 
@@ -116,6 +119,13 @@ SMALL_CUTS_BACKEND=transformers uv run --no-sync python app.py
 
 # run the real-time engine (needs `brew install llama.cpp`)
 SMALL_CUTS_BACKEND=llama_cpp SMALL_CUTS_TTS_BACKEND=kokoro uv run python -m small_cuts.engine
+
+# run the hybrid relay + Modal upload Space locally (token comes from your local secret env)
+SMALL_CUTS_RELAY_BUCKET=build-small-hackathon/small-cuts-scenes \
+SMALL_CUTS_RELAY_PREFIX=relay \
+SMALL_CUTS_ENABLE_UPLOAD_SANDBOX=1 \
+SMALL_CUTS_MODAL_API_URL=https://macayaven--small-cuts-postcut-api.modal.run \
+uv run --no-sync python app.py
 
 # the gate (mirrors CI exactly)
 uv run ruff check . && uv run ruff format --check . && uv run pytest

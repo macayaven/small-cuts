@@ -1,9 +1,9 @@
 # Submission Assets - 2026-06-15
 
-Working timestamp: 2026-06-15 08:34 UTC / 10:34 CEST.
+Working timestamp: 2026-06-15 14:16 UTC / 16:16 CEST.
 
 Deadline: 2026-06-15 23:59 UTC / 2026-06-16 01:59 CEST.
-Time remaining at this pass: about 15 hours 25 minutes.
+Time remaining at this pass: about 9 hours 43 minutes.
 Target latest demo start with six-hour buffer: 2026-06-15 17:59 UTC / 19:59 CEST.
 
 ## Final Product Submission
@@ -24,6 +24,18 @@ Short description:
 > grounded deadpan narration, Kokoro speaks it, the wearer hears it, and the same just-happened
 > POV clip lands in a Gradio theater with synced captions, title, voice, and library thumbnail.
 
+Submission baseline:
+
+- The public Space is source-agnostic once a cut is complete: glasses-origin scenes and
+  authenticated browser uploads render as the same theater artifact with video, generated title,
+  generated narration, Kokoro voice, synced captions, and a library tile.
+- The browser upload path is for judge verification. It requires Hugging Face login, sends the
+  finished video to the private Modal `small-cuts-postcut` service, and does not promise glasses,
+  iOS, or real-time capture.
+- The current glasses path is live post-cut: `Action!` records, `Cut!` sends the moment to the
+  private local engine, and `SceneAudio` returns to the wearer. Rolling micro-segment narration
+  while the take is still in progress is the next production-grade phase.
+
 ## Why It Can Win
 
 - It is not another chat wrapper. The product gesture is physical: look, mark, hear, replay.
@@ -40,6 +52,9 @@ Short description:
 
 - The live model narrates one selected frame per moment; the mini-MP4 gives context in the viewer
   but the VLM is not yet doing full video reasoning.
+- The current iOS wearer path is not continuous narration while rolling; narration returns after
+  `Cut!`. The planned next phase is chronological micro-segments with device metadata and continuity
+  state.
 - Browser audio cannot autoplay; the Space correctly requires a user click before sound.
 - Public viewing depends on the current Cloudflare quick tunnel until the named tunnel/HF
   interaction is isolated.
@@ -131,7 +146,7 @@ Longer version:
 Add after posting:
 
 ```text
-Space: https://huggingface.co/spaces/build-small-hackathon/small-cuts
+Space: https://huggingface.co/spaces/build-small-hackathon/small-cuts-live
 Demo: TODO
 ```
 
@@ -160,6 +175,8 @@ Outline:
    - read-gated public Cloudflare endpoint,
    - model-generated public library from real glasses clips.
 7. What is next:
+   - rolling micro-segment narration for the glasses path,
+   - optional device metadata for chronology and narrative continuity,
    - full video reasoning over buffered clips,
    - stronger title generation,
    - durable named tunnel,

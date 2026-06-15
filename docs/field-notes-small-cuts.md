@@ -11,6 +11,12 @@ model writes a grounded deadpan narration, Kokoro turns it into speech, the wear
 the same finished POV cut appears in a Hugging Face Gradio Space with video, voice, captions, title,
 and library thumbnail.
 
+The same public surface also supports a judge-verifiable browser upload path. From the Space's
+point of view, origin should not change the playback contract: when a cut is complete, it appears
+as a video with generated title, generated narration, generated voice, captions, and a thumbnail.
+The difference is upstream. Glasses are the private physical input. Browser uploads are a finished
+video path, authenticated with Hugging Face and processed by a private Modal GPU service.
+
 ## The product shape
 
 The important decision was to keep the Space as the public product surface, not the capture path.
@@ -19,12 +25,11 @@ the master clock, captions follow the audio, and the library shows real POV fram
 generic generated cards.
 
 The glasses path stays private. During the live demo, the iPhone writes to the local engine over
-Tailnet. Public viewers and the Space only read finished scenes through a Cloudflare read gate:
-`GET /v1/scenes`, `GET /v1/scenes/stream`, and `/media/*`. The public hostname blocks the
-WebSocket capture path and visibility writes. That split is less glamorous than making everything
-public, but it is the right product boundary: private capture, public replay. For the hackathon
-demo this rides on a Cloudflare tunnel; a production version would turn that into durable auth,
-domain, and publishing controls rather than opening the capture path.
+Tailnet. Public viewers and the Space read finished scenes through a relay/library surface rather
+than opening the capture socket. That split is less glamorous than making everything public, but it
+is the right product boundary: private capture, public replay. For the hackathon demo this relies
+on local hardware plus hosted relay artifacts; a production version would turn that into durable
+auth, domain, and publishing controls rather than opening the capture path.
 
 ## Why small models worked
 
@@ -78,10 +83,15 @@ source sound is not needed for the narrator concept, and excluding it keeps priv
 simpler.
 
 The current live model reasons over sampled frames from an intentional Action-to-Cut take. The
-viewer can show a short POV clip assembled from those supplemental frames, but full video reasoning
-is a v2 direction. The next version should buffer a low-resolution clip directly into the Space,
-generate narration fragments with timestamps, and let the finished cut feel even closer to what the
-wearer experienced.
+wearer hears the generated line after Cut, and the Space receives the completed cut. The viewer can
+show a short POV clip assembled from supplemental frames, but rolling micro-segment narration is the
+next production-grade version.
+
+That next version should send small chronological segments while the take is still rolling, attach
+device metadata such as time of day, motion, coarse location when explicitly permitted, and source
+state, and let the narrator maintain continuity across fragments. The public Space would still show
+the same completed-cut theater experience, but the wearer path would feel more like a narrator
+thinking alongside the moment rather than only after it.
 
 Title generation now shares the model call with narration: the model returns a short grounded title
 and the spoken narration together, with deterministic title derivation kept as a fallback for

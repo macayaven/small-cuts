@@ -479,9 +479,9 @@ class EngineClient:
         self._client = client or httpx.Client(timeout=HTTP_TIMEOUT_S)
 
     def list_scenes(self, limit: int = SHELF_LIMIT) -> list[dict[str, Any]]:
-        response = self._client.get(f"{self.base_url}/v1/scenes", params={"limit": limit})
+        response = self._client.get(f"{self.base_url}/v1/scenes")
         response.raise_for_status()
-        return response.json()["scenes"]
+        return response.json()["scenes"][-limit:]
 
     def set_visibility(self, scene_id: str, visibility: str) -> dict[str, Any]:
         response = self._client.patch(

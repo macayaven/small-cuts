@@ -114,11 +114,30 @@ final class CaptureCoordinatorTakeTests: XCTestCase {
         XCTAssertFalse(coordinator.running)
         XCTAssertEqual(coordinator.engineLink, .connected)
         XCTAssertTrue(coordinator.awaitingNarration)
+        XCTAssertEqual(coordinator.caption, "Cut sent. Waiting for the narrator.")
         XCTAssertEqual(gate["trigger"] as? String, "user")
         XCTAssertEqual(frames.count, 3)
         XCTAssertEqual(frames[0]["ts_offset_ms"] as? Int, 0)
         XCTAssertEqual(frames[1]["ts_offset_ms"] as? Int, -16_000)
         XCTAssertEqual(frames[2]["ts_offset_ms"] as? Int, -8_000)
+
+        factory.sockets[0].push("""
+        {
+          "contract_version": "1.1.0",
+          "scene_id": "scene-1",
+          "moment_id": "00000000-0000-4000-8000-000000000001",
+          "created_at": "2026-06-15T12:00:00.000+00:00",
+          "play_by": "2026-06-15T12:01:00.000+00:00",
+          "format": "wav_complete",
+          "audio_b64": "UklGRiQAAABXQVZFZm10IBAAAAABAAEAgD4AAAB9AAACABAAZGF0YQAAAAA=",
+          "sample_rate": 16000,
+          "narration": "The sidewalk considers its options."
+        }
+        """)
+        await waitUntil("caption updated from SceneAudio") {
+            coordinator.caption == "The sidewalk considers its options."
+        }
+        XCTAssertFalse(coordinator.awaitingNarration)
 
         coordinator.stop()
     }

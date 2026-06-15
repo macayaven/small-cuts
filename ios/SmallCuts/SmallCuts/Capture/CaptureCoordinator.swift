@@ -190,6 +190,9 @@ final class CaptureCoordinator: ObservableObject {
         guard running, let frame = lastFrame else { return }
         let sent = await submitUserMoment(endingAt: frame)
         awaitingNarration = sent
+        if sent {
+            caption = "Cut sent. Waiting for the narrator."
+        }
         stopFrameCaptureOnly()
     }
 
@@ -303,6 +306,7 @@ final class CaptureCoordinator: ObservableObject {
             lastError = "\(stage): \(message)"
         case .sceneAudio(let message):
             awaitingNarration = false
+            caption = message.narration
             voicePlayer.enqueue(message)
         }
     }

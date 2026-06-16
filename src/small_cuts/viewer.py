@@ -242,17 +242,6 @@ footer { display: none !important; }
 /* Hide the login pill on sign-in via this wrapper Column (gr.LoginButton ignores visible). */
 .sc-upload-signin-box { flex: 0 0 auto !important; width: auto !important; min-width: 0 !important;
   padding: 0 !important; display: inline-flex !important; }
-.sc-iframe-warn {
-  font-family: 'IBM Plex Mono', monospace !important;
-  font-size: .68rem !important;
-  color: #D4AF37 !important;
-  text-decoration: underline !important;
-  margin-right: 8px;
-  white-space: nowrap;
-}
-.sc-iframe-warn:hover {
-  color: #fff5d5 !important;
-}
 .sc-upload-signin button, .sc-upload-signin a, .sc-upload-signin .lg {
   width: auto !important; min-width: 0 !important; max-width: max-content !important;
   height: 30px !important; padding: 0 12px !important; border: 1px solid #2A292F !important;
@@ -1657,26 +1646,6 @@ PLAYBACK_SYNC_JS = """
       if (video) scArmReveal(video);
     });
     window.__scStageObs.observe(stageObserverHost, { childList: true, subtree: true });
-  }
-
-  // OAuth iframe helper: if we are in an iframe, modern browsers block third-party cookies,
-  // which makes OAuth sign-in flaky. Show a "Direct link" help text/button next to sign-in.
-  if (window.self !== window.top) {
-    const checkIframeAuth = () => {
-      const authContainer = document.querySelector('.sc-upload-auth');
-      if (authContainer && !authContainer.querySelector('.sc-iframe-warn')) {
-        const directUrl = window.location.href;
-        const tip = 'Sign-in might fail in iframe due to browser cookie limits. '
-          + 'Click to open directly in a new tab.';
-        const warnHtml = '<a class="sc-iframe-warn" href="' + directUrl
-          + '" target="_blank" title="' + tip + '">🔗 Open Direct Link</a>';
-        authContainer.insertAdjacentHTML('afterbegin', warnHtml);
-      }
-    };
-    checkIframeAuth();
-    // Re-check periodically or on DOM changes to ensure it is added when the top bar renders
-    const topbarObs = new MutationObserver(checkIframeAuth);
-    topbarObs.observe(document.body, { childList: true, subtree: true });
   }
 }
 """

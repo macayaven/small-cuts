@@ -8,11 +8,9 @@ viewer's formatter is pinned to the same shape the contract suite enforces.
 import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from types import SimpleNamespace
 from urllib.parse import unquote
 
 import gradio as gr
-import gradio.oauth
 import httpx
 import numpy as np
 import pytest
@@ -24,35 +22,6 @@ from test_contracts import GOLDEN
 GOLDEN_SCENE = GOLDEN["narrated-scene.schema.json"]
 ENGINE_URL = "http://engine.test:8077"
 CREATED_AT = datetime(2026, 6, 12, 9, 30, 8, tzinfo=timezone.utc)  # the golden created_at
-
-
-def mock_gradio_oauth(monkeypatch):
-    monkeypatch.setattr(
-        gradio.oauth,
-        "_get_mocked_oauth_info",
-        lambda: {
-            "access_token": "mock-oauth-token-for-ci",
-            "token_type": "bearer",
-            "expires_in": 3600,
-            "id_token": "AAAAAAAAAAAAAAAAAAAAAAAAAA",
-            "scope": "openid profile",
-            "expires_at": 9999999999,
-            "userinfo": {
-                "sub": "11111111111111111111111",
-                "name": "CI User",
-                "preferred_username": "ci-user",
-                "profile": "https://huggingface.co/ci-user",
-                "picture": "",
-                "website": "",
-                "aud": "00000000-0000-0000-0000-000000000000",
-                "auth_time": 1691672844,
-                "nonce": "aaaaaaaaaaaaaaaaaaa",
-                "iat": 1691672844,
-                "exp": 1691676444,
-                "iss": "https://huggingface.co",
-            },
-        },
-    )
 
 
 def make_image(width=64, height=48, color=(200, 200, 200)):
@@ -94,34 +63,6 @@ def test_upload_sandbox_requires_modal_url(monkeypatch):
     monkeypatch.setenv("SMALL_CUTS_MODAL_API_URL", "https://example.modal.run")
 
     assert viewer.upload_sandbox_enabled() is True
-
-
-def test_upload_requires_hf_profile():
-    with pytest.raises(gr.Error, match="Sign in"):
-        viewer._require_upload_profile(None)
-
-
-def test_upload_profile_uses_hf_username():
-    profile = SimpleNamespace(name="Alice Example", username="alice")
-
-    assert viewer._require_upload_profile(profile) == "alice"
-
-
-def test_upload_auth_state_uses_hf_username():
-    profile = SimpleNamespace(name="Alice Example", username="alice")
-
-    assert viewer._upload_auth_state(profile) == {"username": "alice"}
-    assert viewer._upload_auth_state(None) == {}
-
-
-def test_upload_auth_state_tolerates_unexpected_profile_shape():
-    class ExplodingProfile:
-        @property
-        def username(self):
-            raise RuntimeError("oauth session not ready")
-
-    assert viewer._upload_username(ExplodingProfile()) is None
-    assert viewer._upload_auth_state(ExplodingProfile()) == {}
 
 
 def test_uploaded_scene_is_preserved_in_engine_state():
@@ -193,7 +134,6 @@ def test_submit_modal_upload_rejects_over_duration(monkeypatch):
         "deadpan",
         "",
         viewer._pack_engine_ui_state([], None, None, None),
-        SimpleNamespace(name="Alice Example", username="alice"),
         fake_client(lambda _request: httpx.Response(200, json={"scenes": []})),
     )
 
@@ -215,7 +155,6 @@ def test_submit_modal_upload_rejects_oversized_file(monkeypatch, tmp_path):
         "deadpan",
         "",
         viewer._pack_engine_ui_state([], None, None, None),
-        SimpleNamespace(name="Alice Example", username="alice"),
         fake_client(lambda _request: httpx.Response(200, json={"scenes": []})),
     )
 
@@ -236,7 +175,6 @@ def test_submit_modal_upload_rejects_unsupported_extension(monkeypatch, tmp_path
         "deadpan",
         "",
         viewer._pack_engine_ui_state([], None, None, None),
-        SimpleNamespace(name="Alice Example", username="alice"),
         fake_client(lambda _request: httpx.Response(200, json={"scenes": []})),
     )
 
@@ -254,38 +192,10 @@ def test_submit_modal_upload_without_video_warns_instead_of_raising(monkeypatch)
         "deadpan",
         "",
         viewer._pack_engine_ui_state([], None, None, None),
-        SimpleNamespace(name="Alice Example", username="alice"),
         fake_client(lambda _request: httpx.Response(200, json={"scenes": []})),
     )
 
     assert warnings == ["Upload a video clip first."]
-    assert outputs[5]["scenes"] == []
-
-
-def test_submit_modal_upload_without_auth_does_not_call_modal(monkeypatch):
-    calls = []
-    warnings = []
-
-    def fail_if_called():
-        calls.append("called")
-        raise AssertionError("Modal must not run without a Hugging Face user")
-
-    monkeypatch.setattr(viewer, "_video_duration_s", lambda _path: 7.5)
-    monkeypatch.setattr(viewer, "_modal_upload_client", fail_if_called)
-    monkeypatch.setattr(viewer.gr, "Warning", lambda message: warnings.append(message))
-
-    outputs = viewer._submit_modal_upload(
-        "clip.mp4",
-        "deadpan",
-        "",
-        viewer._pack_engine_ui_state([], None, None, None),
-        None,
-        fake_client(lambda _request: httpx.Response(200, json={"scenes": []})),
-        upload_auth_state={},
-    )
-
-    assert calls == []
-    assert warnings == ["Sign in with Hugging Face to upload a cut."]
     assert outputs[5]["scenes"] == []
 
 
@@ -309,8 +219,8 @@ def test_submit_modal_upload_pins_returned_scene(monkeypatch):
     calls = []
 
     class FakeModalUploadClient:
-        def submit_video(self, video_path, *, uploader_hf_username, style_key, scene_hint):
-            calls.append((video_path, uploader_hf_username, style_key, scene_hint))
+        def submit_video(self, video_path, *, style_key, scene_hint):
+            calls.append((video_path, style_key, scene_hint))
             return scene
 
     class FakeMediaClient:
@@ -327,11 +237,10 @@ def test_submit_modal_upload_pins_returned_scene(monkeypatch):
         "deadpan",
         "show the ending",
         viewer._pack_engine_ui_state([], None, None, None),
-        SimpleNamespace(name="Alice Example", username="alice"),
         FakeMediaClient(),
     )
 
-    assert calls == [("clip.mp4", "alice", "deadpan", "show the ending")]
+    assert calls == [("clip.mp4", "deadpan", "show the ending")]
     assert "A Modal Scene" in header
     assert "clip.mp4" in stage
     assert "sc-ico-upload" in stage
@@ -348,7 +257,7 @@ def test_submit_modal_upload_modal_failure_warns_instead_of_raising(monkeypatch)
     warnings = []
 
     class FailingModalUploadClient:
-        def submit_video(self, video_path, *, uploader_hf_username, style_key, scene_hint):
+        def submit_video(self, video_path, *, style_key, scene_hint):
             raise viewer.ModalUploadError("modal unavailable")
 
     monkeypatch.setattr(viewer, "_video_duration_s", lambda _path: 7.5)
@@ -360,7 +269,6 @@ def test_submit_modal_upload_modal_failure_warns_instead_of_raising(monkeypatch)
         "deadpan",
         "",
         viewer._pack_engine_ui_state([], None, None, None),
-        SimpleNamespace(name="Alice Example", username="alice"),
         fake_client(lambda _request: httpx.Response(200, json={"scenes": []})),
     )
 
@@ -368,58 +276,10 @@ def test_submit_modal_upload_modal_failure_warns_instead_of_raising(monkeypatch)
     assert outputs[5]["scenes"] == []
 
 
-def test_submit_modal_upload_uses_cached_auth_state_when_profile_missing(monkeypatch):
-    scene = {
-        "scene_id": "modal-2",
-        "title": "A Cached Auth Scene",
-        "narration": "The callback profile was empty, but auth was captured on load.",
-        "style_key": "deadpan",
-        "created_at": "2026-06-15T12:00:00+00:00",
-        "visibility": "public",
-        "media": {
-            "frame_url": "uploads/modal-2/media/frame.jpg",
-            "card_url": "uploads/modal-2/media/card.webp",
-            "clip_url": "uploads/modal-2/media/clip.mp4",
-            "audio_url": "uploads/modal-2/media/voice.wav",
-        },
-        "duration": 7.5,
-        "source": "upload",
-    }
-    calls = []
-
-    class FakeModalUploadClient:
-        def submit_video(self, video_path, *, uploader_hf_username, style_key, scene_hint):
-            calls.append((video_path, uploader_hf_username, style_key, scene_hint))
-            return scene
-
-    class FakeMediaClient:
-        base_url = ""
-
-        def media_url(self, path):
-            return f"/gradio_api/file=/tmp/{Path(path).name}" if path else None
-
-    monkeypatch.setattr(viewer, "_video_duration_s", lambda _path: 7.5)
-    monkeypatch.setattr(viewer, "_modal_upload_client", lambda: FakeModalUploadClient())
-
-    _header, _stage, _feed, _audio, _shelf, state, _visibility = viewer._submit_modal_upload(
-        "clip.mp4",
-        "deadpan",
-        "show the ending",
-        viewer._pack_engine_ui_state([], None, None, None),
-        None,
-        FakeMediaClient(),
-        upload_auth_state={"username": "macayaven"},
-    )
-
-    assert calls == [("clip.mp4", "macayaven", "deadpan", "show the ending")]
-    assert state["upload_scene"]["scene_id"] == "modal-2"
-
-
 def test_upload_sandbox_bounds_queue_and_upload_concurrency(monkeypatch):
     monkeypatch.setenv(viewer.ENGINE_URL_ENV, "http://127.0.0.1:9")
     monkeypatch.setenv(viewer.UPLOAD_SANDBOX_ENV, "1")
     monkeypatch.setenv(viewer.MODAL_API_URL_ENV, "https://example.modal.run")
-    mock_gradio_oauth(monkeypatch)
 
     app = viewer.build_viewer_app()
     upload_deps = [
@@ -458,7 +318,6 @@ def test_upload_sandbox_uses_topbar_popover_not_stage_accordion(monkeypatch):
     monkeypatch.setenv(viewer.ENGINE_URL_ENV, "http://127.0.0.1:9")
     monkeypatch.setenv(viewer.UPLOAD_SANDBOX_ENV, "1")
     monkeypatch.setenv(viewer.MODAL_API_URL_ENV, "https://example.modal.run")
-    mock_gradio_oauth(monkeypatch)
 
     app = viewer.build_viewer_app()
     components = app.config["components"]
@@ -485,26 +344,22 @@ def test_upload_sandbox_uses_topbar_popover_not_stage_accordion(monkeypatch):
     assert "MP4, MOV, WebM, M4V" in helper
 
 
-def test_upload_sandbox_signin_is_compact_and_upload_gated(monkeypatch):
+def test_upload_sandbox_renders_plain_upload_icon_without_login(monkeypatch):
     monkeypatch.setenv(viewer.ENGINE_URL_ENV, "http://127.0.0.1:9")
     monkeypatch.setenv(viewer.UPLOAD_SANDBOX_ENV, "1")
     monkeypatch.setenv(viewer.MODAL_API_URL_ENV, "https://example.modal.run")
-    mock_gradio_oauth(monkeypatch)
 
     app = viewer.build_viewer_app()
     components = app.config["components"]
 
-    login = [
+    login_buttons = [
         component
         for component in components
         if component["type"] == "button"
-        and component["props"].get("elem_classes") == ["sc-upload-signin"]
+        and "signin" in " ".join(component["props"].get("elem_classes", [])).lower()
     ]
-    assert len(login) == 1
-    assert login[0]["props"]["value"] == "🤗 Sign in to upload"
+    assert login_buttons == []
 
-    # R1: the cloud icon is the affordance and is ALWAYS rendered — signed-out it is DISABLED
-    # (not hidden) so it reads as the gated entry point next to the compact sign-in pill.
     upload_buttons = [
         component
         for component in components
@@ -513,31 +368,7 @@ def test_upload_sandbox_signin_is_compact_and_upload_gated(monkeypatch):
     ]
     assert len(upload_buttons) == 1
     assert upload_buttons[0]["props"]["visible"] is not False
-    assert upload_buttons[0]["props"]["interactive"] is False
-    assert "disabled" in upload_buttons[0]["props"].get("elem_classes", [])
-
-
-def test_upload_auth_ui_swaps_signin_for_upload_icon():
-    # R1: signed OUT — sign-in container is VISIBLE (the only sign-in control) and the icon is
-    # gated DISABLED.
-    state_out, signin_out, upload_out = viewer._upload_auth_ui(None)
-    assert state_out == {}
-    assert signin_out == gr.update(visible=True)
-    assert upload_out == gr.update(
-        interactive=False, elem_classes=["sc-icbtn", "sc-upload", "sc-ico-upload", "disabled"]
-    )
-
-    # signed IN — the sign-in container is HIDDEN (no logout affordance, so no sign-in/sign-out
-    # loop) and the icon flips to ENABLED.
-    state, signin_update, upload_update = viewer._upload_auth_ui(
-        SimpleNamespace(name="Alice Example", username="alice")
-    )
-
-    assert state == {"username": "alice"}
-    assert signin_update == gr.update(visible=False)
-    assert upload_update == gr.update(
-        interactive=True, elem_classes=["sc-icbtn", "sc-upload", "sc-ico-upload"]
-    )
+    assert "disabled" not in upload_buttons[0]["props"].get("elem_classes", [])
 
 
 def test_upload_status_html_has_pending_clapperboard():
@@ -903,7 +734,7 @@ def test_go_live_handler_stages_a_scene(monkeypatch):
     assert scene["frame_src"] in stage
     assert scene["title"] in header  # an upload is a finished cut -> title, not "Happening now"
     assert "Narrator" in feed
-    assert shelf == [(scene["card_thumb"], scene["title"])]
+    assert shelf == [(scene["card_thumb"], f"{viewer.UPLOAD_SHELF_PREFIX}{scene['title']}")]
     assert pinned is None
 
 

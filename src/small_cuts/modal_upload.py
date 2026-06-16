@@ -12,6 +12,9 @@ class ModalUploadError(RuntimeError):
     """Raised when hosted post-cut inference fails."""
 
 
+DEFAULT_UPLOAD_SOURCE_ID = "public-demo"
+
+
 @dataclass
 class ModalUploadClient:
     base_url: str
@@ -24,7 +27,6 @@ class ModalUploadClient:
         self,
         video_path: str | Path,
         *,
-        uploader_hf_username: str,
         style_key: str = "deadpan",
         scene_hint: str = "",
     ) -> dict[str, Any]:
@@ -34,7 +36,7 @@ class ModalUploadClient:
             job_id = self._submit(
                 client,
                 Path(video_path),
-                uploader_hf_username,
+                DEFAULT_UPLOAD_SOURCE_ID,
                 style_key,
                 scene_hint,
             )
@@ -47,7 +49,7 @@ class ModalUploadClient:
         self,
         client: httpx.Client,
         video_path: Path,
-        uploader_hf_username: str,
+        source_id: str,
         style_key: str,
         scene_hint: str,
     ) -> str:
@@ -58,7 +60,7 @@ class ModalUploadClient:
                 data={
                     "style_key": style_key,
                     "scene_hint": scene_hint,
-                    "uploader_hf_username": uploader_hf_username,
+                    "uploader_id": source_id,
                 },
                 files={"video": (video_path.name, handle, "video/mp4")},
             )

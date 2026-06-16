@@ -18,11 +18,13 @@ runs on the hackathon Space unchanged.
 from __future__ import annotations
 
 import base64
+import hmac
 import html
 import io
 import os
 import sys
 import tempfile
+import time
 import uuid
 import warnings
 from datetime import datetime, timedelta, timezone
@@ -56,10 +58,14 @@ from .title_card import derive_title
 from .tts import speak
 from .ui import THEME as THEME  # re-export: app.py launches the viewer with the Off-Brand theme
 from .ui import TITLE, _gpu, _narrate_core, _speak_handler
+from .upload_budget import BudgetDecision, DailyProcessingBudget
+from .upload_library import LocalUploadLibrary
 
 ENGINE_URL_ENV = "SMALL_CUTS_ENGINE_URL"
+DISABLE_ENGINE_AUTODETECT_ENV = "SMALL_CUTS_DISABLE_ENGINE_AUTODETECT"
 MODAL_API_URL_ENV = "SMALL_CUTS_MODAL_API_URL"
 MODAL_API_TOKEN_ENV = "SMALL_CUTS_MODAL_API_TOKEN"
+OWNER_UPLOAD_PASSCODE_ENV = "SMALL_CUTS_OWNER_UPLOAD_PASSCODE"
 UPLOAD_SANDBOX_ENV = "SMALL_CUTS_ENABLE_UPLOAD_SANDBOX"
 UPLOAD_MAX_SECONDS_ENV = "SMALL_CUTS_UPLOAD_MAX_SECONDS"
 UPLOAD_MAX_BYTES = 80 * 1024 * 1024
@@ -226,55 +232,20 @@ footer { display: none !important; }
   -webkit-mask-image: var(--sc-ico-glasses-mask); mask-image: var(--sc-ico-glasses-mask); }
 .sc-shelf .thumbnail-item:has(img[alt^="\\002063"])::after {
   -webkit-mask-image: var(--sc-ico-upload-mask); mask-image: var(--sc-ico-upload-mask); }
+.sc-playback-events { display: none !important; }
 
 /* --- Review-2 relayout: single centered column, control pill, masked icons --- */
 .sc-topbar { display: flex; align-items: flex-start; gap: 12px; }
 .sc-topbar .sc-brand { flex: 1 1 auto; }
-.sc-upload-auth { flex: 0 0 auto !important; width: auto !important; min-width: 0 !important;
-  display: inline-flex !important; align-items: center !important;
-  justify-content: flex-end !important;
-  gap: 8px !important; align-self: flex-start !important; margin-left: auto !important; }
-/* R1: the sign-in affordance is the compact pill ONLY — the gr.LoginButton must never render as
-   a full-width blue bar. We restyle it (button + any <a>/.lg wrappers) into the same charcoal
-   pill the rest of the chrome uses; the OAuth mechanism underneath is untouched. */
-.sc-upload-signin { flex: 0 0 auto !important; width: auto !important; min-width: 0 !important;
-  display: inline-flex !important; }
-/* Hide the login pill on sign-in via this wrapper Column (gr.LoginButton ignores visible). */
-.sc-upload-signin-box { flex: 0 0 auto !important; width: auto !important; min-width: 0 !important;
-  padding: 0 !important; display: inline-flex !important; }
-.sc-iframe-warn {
-  font-family: 'IBM Plex Mono', monospace !important;
-  font-size: .68rem !important;
-  color: #D4AF37 !important;
-  text-decoration: underline !important;
-  margin-right: 8px;
-  white-space: nowrap;
-}
-.sc-iframe-warn:hover {
-  color: #fff5d5 !important;
-}
-.sc-upload-signin button, .sc-upload-signin a, .sc-upload-signin .lg {
-  width: auto !important; min-width: 0 !important; max-width: max-content !important;
-  height: 30px !important; padding: 0 12px !important; border: 1px solid #2A292F !important;
-  border-radius: 999px !important; background: transparent !important; color: #E8E4D8 !important;
-  background-image: none !important;
-  box-shadow: none !important; font-size: .72rem !important; letter-spacing: 0 !important;
-  font-family: 'IBM Plex Mono', monospace !important; white-space: nowrap !important; }
-.sc-upload-signin button:hover, .sc-upload-signin a:hover {
-  border-color: #D4AF37 !important; color: #fff5d5 !important; }
-/* "Signed in (user)" reads as a subtle gold confirmation rather than an action. */
-.sc-upload-signin.sc-signed-in button, .sc-upload-signin.sc-signed-in a {
-  color: #D4AF37 !important; cursor: default !important; }
-/* R1: signed-OUT upload icon is visibly DISABLED (dimmed + not-allowed), not hidden — it is the
-   primary affordance, so it always shows. Gradio marks a non-interactive Button with
-   .disabled / [disabled]; we also dim the whole top-right cluster's icon when gated. */
-.sc-upload.sc-icbtn:disabled, .sc-upload.sc-icbtn.disabled,
-.sc-upload.sc-icbtn[disabled] {
-  opacity: .45 !important; cursor: not-allowed !important;
-  background-color: #6c6a74 !important; }
-.sc-upload.sc-icbtn:disabled:hover, .sc-upload.sc-icbtn.disabled:hover,
-.sc-upload.sc-icbtn[disabled]:hover { background-color: #6c6a74 !important; }
-.sc-upload.sc-icbtn:not(:disabled):not(.disabled) { cursor: pointer !important; }
+.sc-upload-entry { flex: 0 0 auto !important; width: auto !important;
+  min-width: 0 !important; display: inline-flex !important; flex-direction: column !important;
+  align-items: center !important; gap: 3px !important; margin-left: auto !important;
+  padding: 0 !important; }
+.sc-upload-entry .block { width: auto !important; min-width: 0 !important; }
+.sc-upload.sc-icbtn { cursor: pointer !important; margin-left: 0 !important; }
+.sc-upload-cta { display: block; color: #8a8894; font-family: 'IBM Plex Mono', monospace;
+  font-size: .58rem; line-height: 1; letter-spacing: .08em; text-transform: uppercase;
+  white-space: nowrap; }
 .sc-header { justify-content: center; text-align: center; }
 .sc-progress { max-width: 560px; height: 4px; margin: 12px auto 2px; border-radius: 3px;
   background: #2A292F; overflow: hidden; }
@@ -300,9 +271,10 @@ footer { display: none !important; }
 .sc-ico-like-filled.sc-icbtn, .sc-ico-flag-filled.sc-icbtn {
   background-color: #D4AF37 !important; }
 #sc-upload-popover { position: fixed !important; top: 52px; right: 28px; z-index: 900;
-  width: min(338px, calc(100vw - 32px)); min-height: 0 !important; height: auto !important;
+  width: min(372px, calc(100vw - 32px)); min-height: 0 !important; height: auto !important;
   overflow: visible !important; padding: 0 !important; background: transparent !important;
   border: none !important; box-shadow: none !important; }
+#sc-upload-popover:has(.form.hidden):has(.sc-narrate-btn.hidden) { display: none !important; }
 #sc-upload-popover > #sc-upload-popover { position: static !important; width: 100% !important;
   min-height: 0 !important; height: auto !important; padding: 0 !important;
   background: transparent !important; border: none !important; box-shadow: none !important;
@@ -317,7 +289,8 @@ footer { display: none !important; }
 .sc-upload-help-title { font-family: 'Spectral', serif; color: #E8E4D8; font-size: 1rem;
   line-height: 1.2; margin-bottom: 5px; }
 .sc-upload-help-meta { color: #8a8894; font-family: 'IBM Plex Mono', monospace;
-  font-size: .68rem; line-height: 1.5; text-transform: uppercase; letter-spacing: .08em; }
+  font-size: .64rem; line-height: 1.45; text-transform: uppercase; letter-spacing: .04em;
+  overflow-wrap: anywhere; }
 /* R2: a generous, centered "Drop Video Here" zone — dashed border that brightens on hover/drag,
    full popover width, theme-dark. Gradio's gr.Video upload renders a .upload-container with a
    dashed drop target; we own its look and center its contents. */
@@ -356,6 +329,7 @@ footer { display: none !important; }
   color: #8a8894; font-size: .78rem; line-height: 1.3; }
 .sc-upload-status.running { color: #E8E4D8; }
 .sc-upload-status.complete { color: #D4AF37; }
+.sc-upload-status.blocked { color: #D4AF37; display: block; }
 /* R5: ONE loader — a director's clapperboard. The top clapper arm is hinged at its LEFT end and
    swings open ~30deg then snaps shut on a ~1.1s loop (ease-out open, fast snap closed, tiny
    settle). Only transform:rotate is animated; transform-origin is pinned at the hinge (8,30 in
@@ -476,29 +450,43 @@ html, body { overflow: hidden; height: 100%; }
 .sc-brand-line { display: inline-flex; align-items: center; white-space: nowrap; }
 .sc-brand-mark { margin-right: 5px; flex: 0 0 auto; }
 
-/* mobile: collapse the theater to one column; gallery becomes a horizontal swipe rail (#7).
-   nowrap is essential — Gradio's row wraps flex-column children into side-by-side columns when
-   the height is bounded; !important is needed to beat the desktop rules above. */
+/* mobile: view-only mode. The library becomes a horizontal swipe rail under the stage;
+   upload stays hidden because native apps own capture/upload on phones. */
 @media (max-width: 860px) {
+  html, body { overflow: hidden; height: 100%; }
+  .gradio-container { height: 100dvh !important; }
+  .gradio-container .main.fillable.app { max-height: 100dvh !important;
+    overflow: hidden !important; padding-bottom: 10px !important; }
   .sc-theater { flex-direction: column !important; flex-wrap: nowrap !important;
     gap: 6px !important; }
-  /* trim the chrome so a big-enough stage + pill + gallery rail all fit one phone screen */
   .sc-header { padding: 0 4px 4px !important; gap: 6px !important; }
   .sc-header-title { font-size: 1.12rem !important; }
   .sc-stage-col { flex: 0 0 auto !important; width: 100% !important; gap: 4px !important; }
   .sc-stage-block { flex: 0 0 auto !important; }
-  .sc-stage-block .sc-stage-shell { height: min(46vh, 400px) !important;
-    max-height: 46vh !important; }
+  .sc-stage-block .sc-stage-shell { width: min(50vw, 196px) !important;
+    max-width: min(50vw, 196px) !important; height: auto !important;
+    max-height: 40vh !important; }
+  .sc-upload-entry, #sc-upload-popover { display: none !important; }
   .sc-rail-col { flex: 0 0 auto !important; width: 100% !important; min-width: 0 !important;
     overflow: hidden !important; }
-  .sc-rail-head { padding: 0 2px 2px !important; }
-  .sc-rail-col .sc-shelf { width: 100% !important; height: 94px !important;
-    flex: 0 0 auto !important; }
-  .sc-rail-col .sc-shelf .grid-wrap { grid-template-columns: none !important;
-    grid-auto-flow: column !important; grid-auto-columns: 30% !important;
-    grid-template-rows: 100% !important; width: 100% !important; max-width: 100% !important;
-    height: 94px !important; max-height: 94px !important;
-    overflow-x: auto !important; overflow-y: hidden !important; }
+  .sc-rail-head { padding: 0 2px 8px !important; }
+  .sc-rail-col .sc-shelf { width: 100% !important; height: 134px !important;
+    flex: 0 0 auto !important; overflow: hidden !important; }
+  .sc-rail-col .sc-shelf .gallery-container .grid-wrap.fixed-height {
+    width: 100% !important; max-width: 100% !important;
+    height: 134px !important; min-height: 0 !important; max-height: 134px !important;
+    overflow-x: auto !important; overflow-y: hidden !important;
+    scroll-snap-type: x mandatory; overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch; padding-bottom: 8px !important; }
+  .sc-rail-col .sc-shelf .grid-wrap .grid-container {
+    display: grid !important; grid-template-columns: none !important;
+    grid-auto-flow: column !important; grid-auto-columns: minmax(142px, 42vw) !important;
+    grid-template-rows: 1fr !important; grid-auto-rows: 1fr !important;
+    width: max-content !important; min-width: 100% !important;
+    height: 126px !important; max-height: 126px !important; }
+  .sc-rail-col .sc-shelf .gallery-item { width: 100% !important; height: 126px !important;
+    scroll-snap-align: start; }
+  .sc-rail-col .sc-shelf .thumbnail-item { width: 100% !important; height: 100% !important; }
 }
 """
 VIEWER_CSS += ICON_CSS
@@ -509,6 +497,10 @@ VIEWER_CSS += ICON_CSS
 
 def _truthy_env(name: str) -> bool:
     return os.environ.get(name, "").strip().lower() in ("1", "true", "yes")
+
+
+def _engine_autodetect_enabled() -> bool:
+    return not _truthy_env(DISABLE_ENGINE_AUTODETECT_ENV)
 
 
 def upload_sandbox_enabled() -> bool:
@@ -544,9 +536,13 @@ def render_upload_panel_help_html(max_seconds: float | None = None) -> str:
         f"Up to {seconds:.0f} seconds · {upload_max_mb()} MB max · {UPLOAD_FORMAT_LABEL}"
         "</div>"
         '<div class="sc-upload-help-meta">'
-        "Private · narrated just for you, never added to the public library"
+        "Saved to this demo library after a successful cut"
         "</div></div>"
     )
+
+
+def render_upload_cta_html() -> str:
+    return '<span class="sc-upload-cta">Upload a clip</span>'
 
 
 def render_clapperboard_svg() -> str:
@@ -594,7 +590,7 @@ def render_clapperboard_html(caption: str = "Rolling...") -> str:
     )
 
 
-def render_upload_status_html(state: str = "idle") -> str:
+def render_upload_status_html(state: str = "idle", message: str | None = None) -> str:
     if state == "running":
         # one loader, the clapperboard (R5) — replaces the old border-spinner.
         body = (
@@ -603,73 +599,71 @@ def render_upload_status_html(state: str = "idle") -> str:
         )
     elif state == "complete":
         body = "Cut ready."
+    elif state == "blocked":
+        body = html.escape(message or "Upload is not available right now.")
     else:
         body = ""
     return f'<div class="sc-upload-status {html.escape(state, quote=True)}">{body}</div>'
 
 
-def _upload_username(profile_or_state: Any) -> str | None:
-    if not profile_or_state:
-        return None
-    try:
-        if isinstance(profile_or_state, dict):
-            username = (
-                profile_or_state.get("username")
-                or profile_or_state.get("preferred_username")
-                or profile_or_state.get("name")
-            )
-        else:
-            username = (
-                getattr(profile_or_state, "username", None)
-                or getattr(profile_or_state, "preferred_username", None)
-                or getattr(profile_or_state, "name", None)
-            )
-    except Exception:
-        return None
-    if not username:
-        return None
-    return str(username)
-
-
-def _upload_auth_state(profile: gr.OAuthProfile | None) -> dict[str, str]:
-    username = _upload_username(profile)
-    return {"username": username} if username else {}
-
-
-def _upload_auth_ui(profile: gr.OAuthProfile | None):
-    """R1: the cloud icon is the upload affordance, gated by auth.
-
-    Signed OUT — the compact sign-in pill is shown (the only sign-in control; no full-width bar)
-    and the upload icon is DISABLED (dimmed, "Sign in to upload"). Signed IN — the sign-in control
-    is HIDDEN entirely (so it can't be clicked to log out, which previously caused an infinite
-    sign-in/sign-out loop) and the upload icon flips to ENABLED. Returns updates for
-    (auth_state, sign-in container, upload icon)."""
-    auth_state = _upload_auth_state(profile)
-    signed_in = bool(auth_state)
+def _toggle_upload_panel(is_open: bool) -> tuple[Any, ...]:
+    next_open = not bool(is_open)
+    if next_open:
+        return (
+            True,
+            gr.update(visible=True),
+            render_upload_status_html(),
+            gr.update(interactive=True),
+            gr.skip(),
+            gr.skip(),
+            gr.skip(),
+        )
     return (
-        auth_state,
-        gr.update(visible=not signed_in),
-        gr.update(
-            interactive=signed_in,
-            elem_classes=_upload_icon_classes(signed_in),
-        ),
+        False,
+        gr.update(visible=False),
+        render_upload_status_html(),
+        gr.update(interactive=True),
+        gr.update(value=None),
+        gr.update(value=""),
+        gr.update(value=""),
     )
 
 
-def _upload_icon_classes(enabled: bool) -> list[str]:
-    """Base classes for the upload cloud-icon button; ``disabled`` is appended when gated so the
-    CSS can dim it even before Gradio toggles its own [disabled] attribute on first render."""
-    classes = ["sc-icbtn", "sc-upload", "sc-ico-upload"]
-    if not enabled:
-        classes.append("disabled")
-    return classes
+def _owner_upload_passcode_valid(passcode: str | None) -> bool:
+    secret = os.environ.get(OWNER_UPLOAD_PASSCODE_ENV, "").strip()
+    candidate = str(passcode or "").strip()
+    return bool(secret and candidate and hmac.compare_digest(candidate, secret))
 
 
-def _require_upload_profile(profile: gr.OAuthProfile | None) -> str:
-    username = _upload_username(profile)
-    if not username:
-        raise gr.Error("Sign in with Hugging Face to upload a cut.")
-    return username
+def _upload_budget_warning(decision: BudgetDecision) -> str:
+    return decision.message or "Demo daily upload limit reached. Uploads reopen tomorrow."
+
+
+def _merge_scene_lists(*scene_lists: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    by_id: dict[str, dict[str, Any]] = {}
+    for scenes in scene_lists:
+        for scene in scenes:
+            scene_id = str(scene.get("scene_id") or "")
+            if scene_id:
+                by_id[scene_id] = scene
+    return sorted(
+        by_id.values(),
+        key=lambda scene: (
+            _parse_ts(scene.get("created_at")) or datetime.min.replace(tzinfo=timezone.utc),
+            str(scene.get("scene_id") or ""),
+        ),
+    )[-SHELF_LIMIT:]
+
+
+def _library_scenes(scenes: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+    return sorted(
+        scenes or [],
+        key=lambda scene: (
+            _parse_ts(scene.get("created_at")) or datetime.min.replace(tzinfo=timezone.utc),
+            str(scene.get("scene_id") or ""),
+        ),
+        reverse=True,
+    )
 
 
 def _modal_upload_client() -> ModalUploadClient:
@@ -925,13 +919,19 @@ class BucketSceneClient(_BucketSceneClient):
 
 
 def shelf_items(
-    scenes: list[dict[str, Any]], client: EngineClient | BucketSceneClient
+    scenes: list[dict[str, Any]], client: EngineClient | BucketSceneClient | None = None
 ) -> list[tuple[str, str]]:
     """Gallery payload: POV frame thumbnails captioned with the generated scene title."""
     items = []
-    for scene in scenes:
+    for scene in _library_scenes(scenes):
         media = scene.get("media") or {}
-        src = client.media_url(media.get("frame_url") or media.get("card_url"))
+        src = media.get("frame_url") or media.get("card_url")
+        if (
+            client is not None
+            and src
+            and not src.startswith(("http://", "https://", "data:", GRADIO_FILE_ROUTE))
+        ):
+            src = client.media_url(src)
         if src:
             items.append((_gallery_media_src(src), _shelf_caption(scene)))
     return items
@@ -1070,12 +1070,13 @@ def make_local_scene(
     card: Image.Image,
     narration: str,
     style_key: str,
+    source_video_path: str | Path | None = None,
 ) -> dict[str, Any]:
     """Session-state scene for upload mode: same keys format_stage understands."""
     stage_image = frame if frame is not None else card
     thumb = stage_image.copy()
     thumb.thumbnail((400, 540))
-    return {
+    scene = {
         "scene_id": f"local-{uuid.uuid4().hex[:12]}",
         "title": derive_title(narration),
         "narration": narration,
@@ -1083,11 +1084,26 @@ def make_local_scene(
         "created_at": datetime.now(timezone.utc).isoformat(),
         "frame_src": _data_uri(stage_image),
         "card_thumb": thumb,
+        "source": "upload",
+        "source_icon": "upload",
     }
+    if source_video_path:
+        scene["clip_src"] = str(source_video_path)
+    return scene
 
 
-def local_shelf_items(scenes: list[dict[str, Any]]) -> list[tuple[Image.Image, str]]:
-    return [(scene["card_thumb"], _shelf_caption(scene)) for scene in scenes]
+def local_shelf_items(scenes: list[dict[str, Any]]) -> list[tuple[Any, str]]:
+    items = []
+    for scene in _library_scenes(scenes):
+        thumb = scene.get("card_thumb")
+        if thumb is None:
+            media = scene.get("media") if isinstance(scene.get("media"), dict) else {}
+            thumb = scene.get("frame_src") or media.get("card_url") or media.get("frame_url")
+            if isinstance(thumb, str):
+                thumb = _gallery_media_src(thumb)
+        if thumb is not None:
+            items.append((thumb, _shelf_caption(scene)))
+    return items
 
 
 @_gpu()
@@ -1110,7 +1126,7 @@ def _go_live_handler(
         frame = pick_key_frame(sample_frames(video_path))
         empty_caption = EMPTY_VIDEO_CAPTION
     card, narration = _narrate_core(frame, style_key, scene_hint or "", empty_caption)
-    scene = make_local_scene(frame, card, narration, style_key)
+    scene = make_local_scene(frame, card, narration, style_key, source_video_path=video_path)
     # Voice-over is on by default — narrate, then voice. A TTS hiccup must not crash the stage;
     # the voice is written to a served WAV so the <audio> master clock can replay it from the shelf.
     try:
@@ -1147,6 +1163,16 @@ def _current_scene(scenes: list[dict[str, Any]], pinned_id: str | None) -> dict[
         return None
     by_id = {scene.get("scene_id"): scene for scene in scenes}
     return by_id.get(pinned_id, scenes[-1])
+
+
+def _library_scene_at_index(
+    scenes: list[dict[str, Any]], index: int | tuple[int, ...] | list[int]
+) -> dict[str, Any] | None:
+    ordered = _library_scenes(scenes)
+    if not ordered:
+        return None
+    raw_index = index[0] if isinstance(index, (tuple, list)) else index
+    return ordered[_clamp_index(int(raw_index), len(ordered))]
 
 
 def _stepped_scene(
@@ -1214,9 +1240,7 @@ def _submit_modal_upload(
     style_key: str,
     scene_hint: str,
     state: Any,
-    profile: gr.OAuthProfile | None,
     media_client: EngineClient | BucketSceneClient,
-    upload_auth_state: Any | None = None,
 ) -> tuple[Any, ...]:
     if not video_path:
         return _modal_upload_warning_response("Upload a video clip first.", state)
@@ -1240,14 +1264,9 @@ def _submit_modal_upload(
             f"Please upload a clip up to {max_seconds:.0f} seconds.", state
         )
 
-    uploader = _upload_username(profile) or _upload_username(upload_auth_state)
-    if not uploader:
-        return _modal_upload_warning_response("Sign in with Hugging Face to upload a cut.", state)
-
     try:
         raw_scene = _modal_upload_client().submit_video(
             video_path,
-            uploader_hf_username=uploader,
             style_key=style_key,
             scene_hint=scene_hint,
         )
@@ -1491,6 +1510,43 @@ PLAYBACK_SYNC_JS = """
     }
   }, true);
 
+  const scFixUploadFormFields = () => {
+    const panel = document.querySelector('#sc-upload-popover');
+    if (!panel) return;
+    const file = panel.querySelector('input[type="file"][data-testid="file-upload"]');
+    if (file) {
+      if (!file.id) file.id = 'sc-upload-video-file';
+      if (!file.getAttribute('name')) file.setAttribute('name', 'small_cuts_video');
+    }
+    const fileLabel = panel.querySelector('label[data-testid="block-label"]');
+    if (file && fileLabel) {
+      const currentFor = fileLabel.getAttribute('for') || '';
+      if (!currentFor || !document.getElementById(currentFor)) {
+        fileLabel.setAttribute('for', file.id);
+      }
+    }
+    const hint = panel.querySelector('textarea[data-testid="textbox"]');
+    if (hint) {
+      if (!hint.id) hint.id = 'sc-upload-hint-text';
+      if (!hint.getAttribute('name')) hint.setAttribute('name', 'small_cuts_hint');
+      if (!hint.getAttribute('aria-label')) {
+        hint.setAttribute('aria-label', 'Whisper context to the narrator');
+      }
+      if (!hint.getAttribute('autocomplete')) hint.setAttribute('autocomplete', 'off');
+    }
+    const owner = panel.querySelector('.sc-owner-passcode input, input[type="password"]');
+    if (owner) {
+      if (!owner.id) owner.id = 'sc-owner-upload-passcode';
+      if (!owner.getAttribute('name')) owner.setAttribute('name', 'small_cuts_owner_passcode');
+      if (!owner.getAttribute('autocomplete')) owner.setAttribute('autocomplete', 'off');
+    }
+  };
+  scFixUploadFormFields();
+  if (!window.__scUploadFormObs && document.body) {
+    window.__scUploadFormObs = new MutationObserver(scFixUploadFormFields);
+    window.__scUploadFormObs.observe(document.body, { childList: true, subtree: true });
+  }
+
   // play/pause must be bound directly to the trusted DOM gesture. A gr.Button.click(js=...)
   // callback runs through Gradio's event layer, which can lose browser user activation and
   // make audio.play() fail with NotAllowedError even though the user tapped the button. Touch
@@ -1633,15 +1689,19 @@ PLAYBACK_SYNC_JS = """
     window.__scRevealTimer = setTimeout(scRevealResult, SC_FINISH_GRACE_MS);
   };
 
-  // tapping Narrate starts generation: mount the loader and hold any result until buffered
-  document.addEventListener('click', (e) => {
-    if (!(e.target.closest && e.target.closest('.sc-narrate-btn'))) return;
+  window.__scCancelGeneration = () => {
+    scRevealResult();
+  };
+
+  // The Gradio upload chain calls this only after server-side preflight succeeds. Quota or
+  // missing-file failures therefore never enter the "Rolling..." generation state.
+  window.__scStartGeneration = () => {
     window.__scGenerating = true;
     document.body.classList.add('sc-generating');
     scMountLoader();
     if (window.__scRevealTimer) clearTimeout(window.__scRevealTimer);
     window.__scRevealTimer = setTimeout(scRevealResult, SC_REVEAL_TIMEOUT_MS);
-  }, true);
+  };
 
   // when Gradio swaps the finished cut into the stage, re-mount the loader over the new <video>
   // and arm the buffered-reveal; the loader stays until canplaythrough/readyState>=3 or timeout.
@@ -1657,32 +1717,32 @@ PLAYBACK_SYNC_JS = """
     });
     window.__scStageObs.observe(stageObserverHost, { childList: true, subtree: true });
   }
-
-  // OAuth iframe helper: if we are in an iframe, modern browsers block third-party cookies,
-  // which makes OAuth sign-in flaky. Show a "Direct link" help text/button next to sign-in.
-  if (window.self !== window.top) {
-    const checkIframeAuth = () => {
-      const authContainer = document.querySelector('.sc-upload-auth');
-      if (authContainer && !authContainer.querySelector('.sc-iframe-warn')) {
-        const directUrl = window.location.href;
-        const tip = 'Sign-in might fail in iframe due to browser cookie limits. '
-          + 'Click to open directly in a new tab.';
-        const warnHtml = '<a class="sc-iframe-warn" href="' + directUrl
-          + '" target="_blank" title="' + tip + '">🔗 Open Direct Link</a>';
-        authContainer.insertAdjacentHTML('afterbegin', warnHtml);
-      }
-    };
-    checkIframeAuth();
-    // Re-check periodically or on DOM changes to ensure it is added when the top bar renders
-    const topbarObs = new MutationObserver(checkIframeAuth);
-    topbarObs.observe(document.body, { childList: true, subtree: true });
-  }
 }
 """
 
 PLAYBACK_SYNC_JS = PLAYBACK_SYNC_JS.replace(
     "__SC_CLAP_LOADER_HTML__", "`" + render_clapperboard_html() + "`"
 )
+
+PLAYBACK_SYNC_ON_LOAD_JS = f"({PLAYBACK_SYNC_JS})();"
+
+START_GENERATION_IF_PREFLIGHT_OK_JS = """
+() => {
+  const status = document.querySelector('.sc-upload-status.running');
+  if (status && window.__scStartGeneration) window.__scStartGeneration();
+}
+"""
+
+FINISH_OR_CANCEL_GENERATION_JS = """
+() => {
+  const complete = document.querySelector('.sc-upload-status.complete');
+  if (complete) {
+    if (window.__scFinishGeneration) window.__scFinishGeneration();
+    return;
+  }
+  if (window.__scCancelGeneration) window.__scCancelGeneration();
+}
+"""
 
 RELAY_EVENT_BRIDGE_JS = """
   if (window.__scRelayPush) return;
@@ -1703,7 +1763,7 @@ RELAY_EVENT_BRIDGE_JS = """
 def build_viewer_app() -> gr.Blocks:
     """The P1 viewer page. Mode is decided once, at build time, from the env."""
     engine_url = os.environ.get(ENGINE_URL_ENV, "").strip()
-    if not engine_url and not os.environ.get("SPACE_ID"):
+    if not engine_url and not os.environ.get("SPACE_ID") and _engine_autodetect_enabled():
         # Auto-detect local engine running on port 8077 (for dev/tailnet live loops)
         try:
             with httpx.Client(timeout=0.25) as c:
@@ -1721,9 +1781,14 @@ def build_viewer_app() -> gr.Blocks:
         client = BucketSceneClient(relay_bucket, prefix=relay_prefix or DEFAULT_RELAY_PREFIX)
     else:
         client = None
-    seed = _seed_scenes() if client is None else []
     upload_sandbox = upload_sandbox_enabled()
     upload_enabled = client is None or upload_sandbox
+    upload_library = LocalUploadLibrary.from_env() if upload_enabled else None
+    upload_budget = DailyProcessingBudget.from_env() if upload_enabled else None
+    if upload_library is not None:
+        gr.set_static_paths(upload_library.static_paths())
+    stored_uploads = upload_library.list_scenes(limit=SHELF_LIMIT) if upload_library else []
+    seed = _merge_scene_lists(_seed_scenes(), stored_uploads) if client is None else []
 
     if client:
         boot_header = render_header_html("Tuning the antenna…", "standby", live=False)
@@ -1756,7 +1821,9 @@ def build_viewer_app() -> gr.Blocks:
         pinned_state = gr.State(None)  # scene_id pinned from the shelf, None = follow live
         liked_state = gr.State(set())  # upload-mode session-local likes, keyed by scene_id
         reported_state = gr.State(set())  # upload-mode session-local reports, keyed by scene_id
-        upload_auth_state = gr.State({}) if upload_sandbox else None
+        upload_panel_open = gr.State(False) if upload_enabled else None
+        upload_run_allowed = gr.State(False) if upload_enabled else None
+        upload_budget_token = gr.State(None) if upload_enabled else None
 
         with gr.Row(elem_classes="sc-topbar"):
             gr.HTML(
@@ -1766,30 +1833,12 @@ def build_viewer_app() -> gr.Blocks:
                 "ear lands here as a cut you can keep.</span></div>",
                 padding=False,
             )
-            if upload_sandbox:
-                # R1: the cloud icon is the affordance and is ALWAYS shown. It boots DISABLED
-                # (dimmed, not-allowed) and the compact pill is the only sign-in control — never a
-                # full-width LoginButton bar. `_upload_auth_ui` flips the icon to enabled on load
-                # if the visitor already has a Hugging Face session (no layout jump either way).
-                with gr.Row(elem_classes="sc-upload-auth"):
-                    # The LoginButton sits in a Column we can reliably hide on sign-in; hiding it
-                    # when signed in removes the logout affordance that caused the sign-in loop.
-                    with gr.Column(
-                        visible=True, min_width=0, elem_classes="sc-upload-signin-box"
-                    ) as upload_login_box:
-                        gr.LoginButton(
-                            "🤗 Sign in to upload",
-                            logout_value="Signed in ({})",
-                            size="sm",
-                            elem_classes=["sc-upload-signin"],
-                        )
+            if upload_enabled:
+                with gr.Column(elem_classes="sc-upload-entry", min_width=0):
                     upload_btn = gr.Button(
-                        "",
-                        interactive=False,
-                        elem_classes=_upload_icon_classes(enabled=False),
+                        "", elem_classes=["sc-icbtn", "sc-upload", "sc-ico-upload"]
                     )
-            elif upload_enabled:
-                upload_btn = gr.Button("", elem_classes=["sc-icbtn", "sc-upload", "sc-ico-upload"])
+                    gr.HTML(render_upload_cta_html(), elem_classes="sc-plain", padding=False)
         # Theater layout (Review-3): stage + controls on the left, the library as a side rail on
         # the right. Fills the width and keeps everything in one viewport (no main scroll); the
         # media query in VIEWER_CSS collapses it to a single column + horizontal rail on mobile.
@@ -1882,6 +1931,14 @@ def build_viewer_app() -> gr.Blocks:
                             max_lines=2,
                             elem_classes="sc-upload-hint",
                         )
+                        owner_passcode = gr.Textbox(
+                            show_label=False,
+                            placeholder="Owner passcode (optional)",
+                            lines=1,
+                            max_lines=1,
+                            type="password",
+                            elem_classes=["sc-upload-hint", "sc-owner-passcode"],
+                        )
                         upload_status = gr.HTML(
                             render_upload_status_html(),
                             elem_classes="sc-plain",
@@ -1911,6 +1968,13 @@ def build_viewer_app() -> gr.Blocks:
         # "Back to live" is now the (clickable) header; this button stays for its un-pin /
         # re-follow-live wiring but is hidden via CSS and triggered by the header click in JS.
         live_btn = gr.Button("⟲ Back to live", elem_classes=["sc-live-btn"])
+        gr.HTML(
+            "",
+            html_template='<span aria-hidden="true"></span>',
+            js_on_load=PLAYBACK_SYNC_ON_LOAD_JS,
+            elem_classes=["sc-playback-events"],
+            padding=False,
+        )
         relay_events = (
             gr.HTML(
                 "",
@@ -1924,22 +1988,54 @@ def build_viewer_app() -> gr.Blocks:
             else None
         )
         if upload_enabled:
-
-            def _show_upload_panel():
-                return (
-                    gr.update(visible=True),
-                    render_upload_status_html(),
-                    gr.update(interactive=True),
-                )
-
             upload_btn.click(
-                _show_upload_panel,
-                outputs=[upload_panel, upload_status, go],
+                _toggle_upload_panel,
+                inputs=[upload_panel_open],
+                outputs=[
+                    upload_panel_open,
+                    upload_panel,
+                    upload_status,
+                    go,
+                    drop_video,
+                    hint,
+                    owner_passcode,
+                ],
                 queue=False,
             )
 
-            def _upload_pending_ui():
-                return render_upload_status_html("running"), gr.update(interactive=False)
+            def _upload_preflight_ui(video_path, passcode):
+                if not video_path:
+                    return (
+                        False,
+                        None,
+                        render_upload_status_html("blocked", "Upload a video clip first."),
+                        gr.update(interactive=True),
+                    )
+                if _owner_upload_passcode_valid(passcode):
+                    return (
+                        True,
+                        None,
+                        render_upload_status_html("running"),
+                        gr.update(interactive=False),
+                    )
+                decision = (
+                    upload_budget.try_reserve()
+                    if upload_budget is not None
+                    else BudgetDecision(True, token=None)
+                )
+                if not decision.allowed:
+                    return (
+                        False,
+                        None,
+                        render_upload_status_html("blocked", _upload_budget_warning(decision)),
+                        gr.update(interactive=True),
+                    )
+                return (
+                    True,
+                    decision.token,
+                    render_upload_status_html("running"),
+                    gr.update(interactive=False),
+                )
 
         if client is not None:
             engine = client  # narrow the type for the closures below
@@ -1947,26 +2043,90 @@ def build_viewer_app() -> gr.Blocks:
             if upload_sandbox:
 
                 def _go_modal_upload_ui(
+                    can_run,
+                    budget_token,
                     video_path,
                     style_key,
                     scene_hint,
                     state,
-                    auth_state,
-                    profile: gr.OAuthProfile | None,
                 ):
+                    if not can_run:
+                        return (
+                            gr.skip(),
+                            gr.skip(),
+                            gr.skip(),
+                            gr.skip(),
+                            gr.skip(),
+                            _engine_ui_state(state),
+                            gr.skip(),
+                            gr.skip(),
+                            gr.update(interactive=True),
+                            gr.skip(),
+                            gr.skip(),
+                            gr.skip(),
+                            gr.skip(),
+                            gr.skip(),
+                        )
                     # _submit_modal_upload keeps its 7-tuple contract; the success/soft-fail
                     # branch (and the R3 reset) is decided here, in the click wrapper, so the
                     # data-flow function is untouched.
-                    result = _submit_modal_upload(
-                        video_path,
-                        style_key,
-                        scene_hint,
-                        state,
-                        profile,
-                        engine,
-                        upload_auth_state=auth_state,
-                    )
+                    started_at = time.monotonic()
+                    try:
+                        result = _submit_modal_upload(
+                            video_path,
+                            style_key,
+                            scene_hint,
+                            state,
+                            engine,
+                        )
+                    finally:
+                        if upload_budget is not None:
+                            upload_budget.finish(budget_token, time.monotonic() - started_at)
                     succeeded = not _is_gradio_update(result[0])
+                    if succeeded and upload_library is not None:
+                        result_state = _engine_ui_state(result[5])
+                        scene = result_state["upload_scene"]
+                        if scene is not None:
+                            saved_scene = upload_library.save_scene(
+                                scene,
+                                source_video_path=video_path,
+                            )
+                            scenes = _merge_scene_lists(
+                                result_state["scenes"],
+                                upload_library.list_scenes(limit=SHELF_LIMIT),
+                            )
+                            payload = format_stage(saved_scene)
+                            result = (
+                                render_header_html(
+                                    payload["title"], payload["style_label"], live=False
+                                ),
+                                render_stage_html(
+                                    payload["frame_src"],
+                                    payload["caption"],
+                                    live=False,
+                                    clip_src=payload["clip_src"],
+                                    duration=payload["duration"],
+                                    source_icon=payload["source_icon"],
+                                ),
+                                render_feed_html(
+                                    [feed_entry(scene) for scene in scenes[-FEED_LIMIT:]]
+                                ),
+                                _audio_html(payload["audio_src"])
+                                if payload["audio_src"]
+                                else gr.skip(),
+                                shelf_items(scenes, engine),
+                                _pack_engine_ui_state(
+                                    scenes,
+                                    saved_scene["scene_id"],
+                                    saved_scene["scene_id"],
+                                    saved_scene["scene_id"],
+                                    previous=result_state,
+                                    upload_scene=saved_scene,
+                                ),
+                                gr.update(value=payload["visibility"])
+                                if payload["visibility"]
+                                else gr.skip(),
+                            )
                     status = (
                         render_upload_status_html("complete")
                         if succeeded
@@ -1976,8 +2136,10 @@ def build_viewer_app() -> gr.Blocks:
                     # on soft-fail keep the user's file and what they typed.
                     video_reset = gr.update(value=None) if succeeded else gr.skip()
                     hint_reset = gr.update(value="") if succeeded else gr.skip()
+                    passcode_reset = gr.update(value="") if succeeded else gr.skip()
                     # Close the popover on success; keep it open on soft-fail so the user can retry.
                     panel_reset = gr.update(visible=False) if succeeded else gr.skip()
+                    panel_open_reset = False if succeeded else gr.skip()
                     return (
                         *result,
                         status,
@@ -1985,16 +2147,28 @@ def build_viewer_app() -> gr.Blocks:
                         video_reset,
                         hint_reset,
                         panel_reset,
+                        panel_open_reset,
+                        passcode_reset,
                     )
 
                 go.click(
-                    _upload_pending_ui,
-                    outputs=[upload_status, go],
+                    _upload_preflight_ui,
+                    inputs=[drop_video, owner_passcode],
+                    outputs=[upload_run_allowed, upload_budget_token, upload_status, go],
                     queue=False,
                     show_progress="hidden",
                 ).then(
+                    js=START_GENERATION_IF_PREFLIGHT_OK_JS,
+                ).then(
                     _go_modal_upload_ui,
-                    inputs=[drop_video, style, hint, scenes_state, upload_auth_state],
+                    inputs=[
+                        upload_run_allowed,
+                        upload_budget_token,
+                        drop_video,
+                        style,
+                        hint,
+                        scenes_state,
+                    ],
                     outputs=[
                         header,
                         stage,
@@ -2008,6 +2182,8 @@ def build_viewer_app() -> gr.Blocks:
                         drop_video,
                         hint,
                         upload_panel,
+                        upload_panel_open,
+                        owner_passcode,
                     ],
                     concurrency_limit=1,
                     concurrency_id=UPLOAD_CONCURRENCY_ID,
@@ -2016,11 +2192,12 @@ def build_viewer_app() -> gr.Blocks:
                     # Deterministic "generation done" signal (success or soft-fail): now that the
                     # server has responded, collapse the clapperboard hang-backstop to a short grace
                     # window. The buffered-reveal still drives the actual reveal on canplaythrough.
-                    js="() => { if (window.__scFinishGeneration) window.__scFinishGeneration(); }",
+                    js=FINISH_OR_CANCEL_GENERATION_JS,
                 )
 
             def _tick(state):
                 state = _engine_ui_state(state)
+                previous_scenes = state["scenes"]
                 (
                     header_update,
                     stage_update,
@@ -2038,6 +2215,16 @@ def build_viewer_app() -> gr.Blocks:
                     state["playing_id"],
                     current_id=state["current_id"],
                 )
+                if upload_library is not None:
+                    upload_scenes = upload_library.list_scenes(limit=SHELF_LIMIT)
+                    scenes = _merge_scene_lists(scenes, upload_scenes)
+                    prev_ids = [scene.get("scene_id") for scene in previous_scenes]
+                    ids = [scene.get("scene_id") for scene in scenes]
+                    if ids != prev_ids:
+                        shelf_update = shelf_items(scenes, engine)
+                        feed_update = render_feed_html(
+                            [feed_entry(scene) for scene in scenes[-FEED_LIMIT:]]
+                        )
                 if state["upload_scene"] is not None:
                     header_update = gr.skip()
                     stage_update = gr.skip()
@@ -2093,9 +2280,9 @@ def build_viewer_app() -> gr.Blocks:
             def _on_select(evt: gr.SelectData, state):
                 state = _engine_ui_state(state)
                 scenes = state["scenes"]
-                if not scenes:
+                scene = _library_scene_at_index(scenes, evt.index)
+                if scene is None:
                     return (gr.skip(),) * 5
-                scene = scenes[_clamp_index(evt.index, len(scenes))]
                 payload = format_stage(scene, engine.base_url)
                 return (
                     render_header_html(payload["title"], payload["style_label"], payload["live"]),
@@ -2233,9 +2420,9 @@ def build_viewer_app() -> gr.Blocks:
 
             def _on_local_select(evt: gr.SelectData, scenes, liked_ids, reported_ids):
                 scenes = scenes or []
-                if not scenes:
+                scene = _library_scene_at_index(scenes, evt.index)
+                if scene is None:
                     return (gr.skip(),) * 6
-                scene = scenes[_clamp_index(evt.index, len(scenes))]
                 payload = format_stage(scene)
                 like_update, report_update = _scene_action_updates(
                     payload["scene_id"], liked_ids, reported_ids
@@ -2306,9 +2493,65 @@ def build_viewer_app() -> gr.Blocks:
                 )
 
             def _go_live_ui(
-                image, video_path, style_key, scene_hint, scenes, liked_ids, reported_ids
+                can_run,
+                budget_token,
+                image,
+                video_path,
+                style_key,
+                scene_hint,
+                scenes,
+                liked_ids,
+                reported_ids,
             ):
-                outputs = _go_live_handler(image, video_path, style_key, scene_hint, scenes)
+                if not can_run:
+                    return (
+                        gr.skip(),
+                        gr.skip(),
+                        gr.skip(),
+                        gr.skip(),
+                        gr.skip(),
+                        scenes or [],
+                        gr.skip(),
+                        gr.skip(),
+                        gr.skip(),
+                        gr.skip(),
+                        gr.update(interactive=True),
+                        gr.skip(),
+                        gr.skip(),
+                        gr.skip(),
+                        gr.skip(),
+                        gr.skip(),
+                    )
+                started_at = time.monotonic()
+                try:
+                    outputs = _go_live_handler(image, video_path, style_key, scene_hint, scenes)
+                finally:
+                    if upload_budget is not None:
+                        upload_budget.finish(budget_token, time.monotonic() - started_at)
+                generated_scene = (outputs[5] or [])[-1] if outputs[5] else None
+                if upload_library is not None and generated_scene is not None:
+                    scene = upload_library.save_scene(
+                        generated_scene,
+                        source_video_path=video_path,
+                    )
+                    scenes = _merge_scene_lists(seed, upload_library.list_scenes(limit=SHELF_LIMIT))
+                    payload = format_stage(scene)
+                    outputs = (
+                        render_header_html(payload["title"], payload["style_label"], live=False),
+                        render_stage_html(
+                            payload["frame_src"],
+                            payload["caption"],
+                            live=False,
+                            clip_src=payload["clip_src"],
+                            duration=payload["duration"],
+                            source_icon=payload["source_icon"],
+                        ),
+                        render_feed_html([feed_entry(s) for s in scenes[-FEED_LIMIT:]]),
+                        local_shelf_items(scenes),
+                        _audio_html(payload["audio_src"]) if payload["audio_src"] else gr.skip(),
+                        scenes,
+                        None,
+                    )
                 scene_id = _scene_id((outputs[5] or [])[-1]) if outputs[5] else None
                 like_update, report_update = _scene_action_updates(
                     scene_id, liked_ids, reported_ids
@@ -2322,6 +2565,9 @@ def build_viewer_app() -> gr.Blocks:
                     render_upload_status_html("complete"),
                     gr.update(interactive=True),
                     gr.update(value=None),
+                    gr.update(value=""),
+                    gr.update(visible=False),
+                    False,
                     gr.update(value=""),
                 )
 
@@ -2350,6 +2596,8 @@ def build_viewer_app() -> gr.Blocks:
                 return reported, report_update
 
             go_inputs = [
+                upload_run_allowed,
+                upload_budget_token,
                 image_none,
                 drop_video,
                 style,
@@ -2372,15 +2620,29 @@ def build_viewer_app() -> gr.Blocks:
             # Narration fires only on the explicit button — binding drop_video.change too
             # would double-narrate (and double the TTS work) the moment a file lands.
             go.click(
-                _upload_pending_ui,
-                outputs=[upload_status, go],
+                _upload_preflight_ui,
+                inputs=[drop_video, owner_passcode],
+                outputs=[upload_run_allowed, upload_budget_token, upload_status, go],
                 queue=False,
                 show_progress="hidden",
             ).then(
+                js=START_GENERATION_IF_PREFLIGHT_OK_JS,
+            ).then(
                 _go_live_ui,
                 inputs=go_inputs,
-                outputs=[*go_outputs, upload_status, go, drop_video, hint],
+                outputs=[
+                    *go_outputs,
+                    upload_status,
+                    go,
+                    drop_video,
+                    hint,
+                    upload_panel,
+                    upload_panel_open,
+                    owner_passcode,
+                ],
                 show_progress="hidden",
+            ).then(
+                js=FINISH_OR_CANCEL_GENERATION_JS,
             )
             like_btn.click(
                 _like_current,
@@ -2418,8 +2680,5 @@ def build_viewer_app() -> gr.Blocks:
                 outputs=step_outputs,
             )
 
-        if upload_sandbox:
-            demo.load(_upload_auth_ui, outputs=[upload_auth_state, upload_login_box, upload_btn])
-        demo.load(js=PLAYBACK_SYNC_JS)
     demo.queue(max_size=UPLOAD_QUEUE_MAX_SIZE, default_concurrency_limit=1)
     return demo

@@ -8,8 +8,15 @@
 
 /* Begin PBXBuildFile section */
 		0182B87FF2BADFE367FEBA09 /* MomentBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F8660E1026A341E86A1D628 /* MomentBuilder.swift */; };
+		033811B96624E55C4B0B3F64 /* FrameSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B69B2753ECED62682B756E4 /* FrameSource.swift */; };
+		03EC5E9B6983E171FFED95BB /* GlassesClipRecorderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4A9772EE85E009B4ED74348 /* GlassesClipRecorderTests.swift */; };
 		04AC0664C96CDB68C140E1AD /* SceneGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 747311FFFF3EBBE08579B573 /* SceneGate.swift */; };
+		0A1BEEE9E68B7C660A9A3C1B /* StubURLProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41DD0633E2EB4C812A899DEA /* StubURLProtocol.swift */; };
+		1179CF96FB2A76C8C5DF954A /* GlassesClipRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6EA4674B12ED7DA763D6A237 /* GlassesClipRecorder.swift */; };
 		1C699C9B8BDF1597FF5B5EC7 /* MWDATMockDevice in Frameworks */ = {isa = PBXBuildFile; productRef = 965C15ED97003637D957B94E /* MWDATMockDevice */; };
+		1CFE27A183F94458401A105C /* IdentityStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D31702875D39EFF6E5F60F7 /* IdentityStore.swift */; };
+		1E9E589D333EC923829C8883 /* PhoneCameraRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = B036B7505B4A8426F52262DA /* PhoneCameraRecorder.swift */; };
+		206FBBCBD7B1CEF8F66DADCE /* WearablesConfigurator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73F07BCAAC50D048B18EEB5D /* WearablesConfigurator.swift */; };
 		284837950350831DB8E2D463 /* WearablesConfiguratorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5AE63FCD178B040D4E5AACCA /* WearablesConfiguratorTests.swift */; };
 		2FAE9A5D44CC091E103D673D /* SmallCutsApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8BE8EFE87FBAEB667D037D5 /* SmallCutsApp.swift */; };
 		3B5C74042F368D706AF4C90F /* GlassesFrameSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = D267B2131EEBEDFE059D72D0 /* GlassesFrameSource.swift */; };
@@ -18,28 +25,50 @@
 		4401870527E956B28E828322 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 880FCDD4CBC896280003B194 /* ContentView.swift */; };
 		4B05C3B208C934BB3F25415D /* GlassesSessionController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B67D11D918137710F02749FD /* GlassesSessionController.swift */; };
 		5871CDA1E9D5FB33245184A7 /* MockGlassesDebugController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79916A519E7962A3ECB160A8 /* MockGlassesDebugController.swift */; };
+		5A0935E3B8E464EA6EF361C1 /* ModalUploadClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14A3B63EA4047A7EF2043167 /* ModalUploadClientTests.swift */; };
+		5D129F733AB66DEF1F863A77 /* ModalScene.swift in Sources */ = {isa = PBXBuildFile; fileRef = AFBEC584FF6F8DCE50693552 /* ModalScene.swift */; };
+		5D85F37209208FFE110AD487 /* CameraPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = 528F425B7CE764558D56CAB5 /* CameraPreview.swift */; };
 		63EE090BBD8E4B7CF087814E /* MWDATCore in Frameworks */ = {isa = PBXBuildFile; productRef = 8EB1B404036BFCCD7FF57C42 /* MWDATCore */; };
 		64D7D6D46F6F430FEFEEA44D /* GlassesSessionControllerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D6F4BA9FB54217A991614C5 /* GlassesSessionControllerTests.swift */; };
+		66DD68A2DA6918CA142DAA07 /* LiteCaptureView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1CCFC48652A528A61022090D /* LiteCaptureView.swift */; };
 		6A353C2C02C64E9657BE367A /* EngineSessionClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31D0A790E69CD08267B72A35 /* EngineSessionClientTests.swift */; };
+		6B0F8C2BA00FC451C30D3126 /* LiteConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77AFA7EE072B2674FD575168 /* LiteConfig.swift */; };
 		703135456BB79B8001542E79 /* FrameClipBufferTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E262AFA4D31BA9A26300C4F /* FrameClipBufferTests.swift */; };
 		7D5139A6D35FD05E744D4CC6 /* VoicePlayerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E9DDEF68041739F02721A89 /* VoicePlayerTests.swift */; };
 		83BDD19F1BBE8BF51058B7C7 /* CaptureCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A19AF4945B8733E10DFFDF16 /* CaptureCoordinator.swift */; };
+		842CE244D873820A73BB4AF5 /* MWDATMockDevice in Frameworks */ = {isa = PBXBuildFile; productRef = 02DC67AB3B342BC3832C4EE7 /* MWDATMockDevice */; };
 		86BAB5F5E30B29CA1E224BE7 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 2D6BE093CF28744F83747D0D /* Assets.xcassets */; };
 		871AB1F5FE0814DB70F255F6 /* SimulatedFrameSourceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CAC173A75920D39B139375BE /* SimulatedFrameSourceTests.swift */; };
+		A8498BEDF3B62C45EB7A2E99 /* GlassesFrameSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = D267B2131EEBEDFE059D72D0 /* GlassesFrameSource.swift */; };
 		AE9E22DC2E5DFD257EAC7118 /* WearablesConfigurator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73F07BCAAC50D048B18EEB5D /* WearablesConfigurator.swift */; };
+		BD449F78FDC0577925BFF276 /* MWDATCore in Frameworks */ = {isa = PBXBuildFile; productRef = CCCAD346211E1F036A5909C9 /* MWDATCore */; };
+		C0F2F97EBB221535B4CCED7D /* LiteTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4DC75C607FA096D87FC8FD11 /* LiteTheme.swift */; };
 		C7DEA84FCDEF285AA62199C8 /* MWDATCore in Frameworks */ = {isa = PBXBuildFile; productRef = D51F7BE88A42D5D452245433 /* MWDATCore */; };
 		C9BDA4F6B08C0491B0ECC73E /* VoicePlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41132D629FB9E5F256BD6898 /* VoicePlayer.swift */; };
+		CB60BD9BCFA31C05FDB42696 /* GlassesSessionController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B67D11D918137710F02749FD /* GlassesSessionController.swift */; };
 		CE6036643BF4E487664F792C /* SimulatedFrameSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9EA3C204376F28F59E8B5592 /* SimulatedFrameSource.swift */; };
 		DE5D309947DC38633D58E171 /* FrameSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B69B2753ECED62682B756E4 /* FrameSource.swift */; };
+		E35B0257A97C116E8011FA54 /* ModalUploadClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = D411C42645BEB20E216650B1 /* ModalUploadClient.swift */; };
 		E3C04106A0F64F24B5A89BE6 /* MWDATCamera in Frameworks */ = {isa = PBXBuildFile; productRef = 7479F73A35459057695F9DCB /* MWDATCamera */; };
 		E60B04C3FE401D1E5DBDDFCD /* FrameClipBuffer.swift in Sources */ = {isa = PBXBuildFile; fileRef = C818AD89BAE56F391C773BA2 /* FrameClipBuffer.swift */; };
 		E87D86D828BEC1C5771BF906 /* CaptureCoordinatorTakeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F031EBD0C12A47A5919A9D4 /* CaptureCoordinatorTakeTests.swift */; };
 		EE17CB9889FAFF62B6F77ECE /* EngineSessionClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5910940C59EA51CEC91C7620 /* EngineSessionClient.swift */; };
 		EE971BCEF016CCE69A07E8BA /* MockWearables.swift in Sources */ = {isa = PBXBuildFile; fileRef = 583D4D6DCDF90B7420BE0024 /* MockWearables.swift */; };
 		EEDB9A7934E9685829CBDF2F /* EngineLoopSmokeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3143196467D93336B0F1931D /* EngineLoopSmokeTests.swift */; };
+		F9599D64A7597113D90E946A /* MWDATCamera in Frameworks */ = {isa = PBXBuildFile; productRef = 3A4B9694967767D9D973C300 /* MWDATCamera */; };
+		F9BA4C88FC745596D86E0CD7 /* RUNBOOK.md in Resources */ = {isa = PBXBuildFile; fileRef = ED209A474A73B74D05F32C0D /* RUNBOOK.md */; };
+		FA58DF1C05AD498ADD0FB3F5 /* SmallCutsLiteApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24421D79404844AE4D330B82 /* SmallCutsLiteApp.swift */; };
+		FB7E6C55C9024BD1CF198443 /* Secrets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 485D5EFD98DDD124FEF0F05B /* Secrets.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
+		59717A5F21C44A29ABE6BB18 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 6D1FFE8427D13994C165B3C9 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 4359D5BFCF582CA3A5490E67;
+			remoteInfo = SmallCutsLite;
+		};
 		B700DDA22C46B3BBF1865216 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 6D1FFE8427D13994C165B3C9 /* Project object */;
@@ -52,33 +81,51 @@
 /* Begin PBXFileReference section */
 		0CA6E6EA32023B901FF0F493 /* MomentBuilderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MomentBuilderTests.swift; sourceTree = "<group>"; };
 		107424152F0CCCDC3612560C /* SmallCutsTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = SmallCutsTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		14A3B63EA4047A7EF2043167 /* ModalUploadClientTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModalUploadClientTests.swift; sourceTree = "<group>"; };
+		1CCFC48652A528A61022090D /* LiteCaptureView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiteCaptureView.swift; sourceTree = "<group>"; };
 		23376BABE4247CA323AE33CA /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		24421D79404844AE4D330B82 /* SmallCutsLiteApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmallCutsLiteApp.swift; sourceTree = "<group>"; };
 		2D6BE093CF28744F83747D0D /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		3143196467D93336B0F1931D /* EngineLoopSmokeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EngineLoopSmokeTests.swift; sourceTree = "<group>"; };
 		31D0A790E69CD08267B72A35 /* EngineSessionClientTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EngineSessionClientTests.swift; sourceTree = "<group>"; };
+		3D31702875D39EFF6E5F60F7 /* IdentityStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IdentityStore.swift; sourceTree = "<group>"; };
 		41132D629FB9E5F256BD6898 /* VoicePlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoicePlayer.swift; sourceTree = "<group>"; };
+		41DD0633E2EB4C812A899DEA /* StubURLProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StubURLProtocol.swift; sourceTree = "<group>"; };
+		485D5EFD98DDD124FEF0F05B /* Secrets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Secrets.swift; sourceTree = "<group>"; };
+		4DC75C607FA096D87FC8FD11 /* LiteTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiteTheme.swift; sourceTree = "<group>"; };
 		4E262AFA4D31BA9A26300C4F /* FrameClipBufferTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrameClipBufferTests.swift; sourceTree = "<group>"; };
 		4F8660E1026A341E86A1D628 /* MomentBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MomentBuilder.swift; sourceTree = "<group>"; };
+		528F425B7CE764558D56CAB5 /* CameraPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraPreview.swift; sourceTree = "<group>"; };
 		583D4D6DCDF90B7420BE0024 /* MockWearables.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MockWearables.swift; sourceTree = "<group>"; };
 		5910940C59EA51CEC91C7620 /* EngineSessionClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EngineSessionClient.swift; sourceTree = "<group>"; };
 		5AE63FCD178B040D4E5AACCA /* WearablesConfiguratorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WearablesConfiguratorTests.swift; sourceTree = "<group>"; };
 		5D6F4BA9FB54217A991614C5 /* GlassesSessionControllerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlassesSessionControllerTests.swift; sourceTree = "<group>"; };
 		6A55ECC61FBFF5D13B1E0C4E /* SceneGateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneGateTests.swift; sourceTree = "<group>"; };
 		6B69B2753ECED62682B756E4 /* FrameSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrameSource.swift; sourceTree = "<group>"; };
+		6D684E3D535E734223585344 /* SmallCutsLiteTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = SmallCutsLiteTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		6EA4674B12ED7DA763D6A237 /* GlassesClipRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlassesClipRecorder.swift; sourceTree = "<group>"; };
 		73F07BCAAC50D048B18EEB5D /* WearablesConfigurator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WearablesConfigurator.swift; sourceTree = "<group>"; };
 		747311FFFF3EBBE08579B573 /* SceneGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneGate.swift; sourceTree = "<group>"; };
+		76F39BBA13831707CA6C167F /* SmallCutsLite.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = SmallCutsLite.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		77AFA7EE072B2674FD575168 /* LiteConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiteConfig.swift; sourceTree = "<group>"; };
 		79916A519E7962A3ECB160A8 /* MockGlassesDebugController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MockGlassesDebugController.swift; sourceTree = "<group>"; };
+		7F4361AAC9E7E4BF1CB79F33 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		880FCDD4CBC896280003B194 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		8F031EBD0C12A47A5919A9D4 /* CaptureCoordinatorTakeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureCoordinatorTakeTests.swift; sourceTree = "<group>"; };
 		9E9DDEF68041739F02721A89 /* VoicePlayerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoicePlayerTests.swift; sourceTree = "<group>"; };
 		9EA3C204376F28F59E8B5592 /* SimulatedFrameSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SimulatedFrameSource.swift; sourceTree = "<group>"; };
 		A19AF4945B8733E10DFFDF16 /* CaptureCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureCoordinator.swift; sourceTree = "<group>"; };
+		AFBEC584FF6F8DCE50693552 /* ModalScene.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModalScene.swift; sourceTree = "<group>"; };
+		B036B7505B4A8426F52262DA /* PhoneCameraRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhoneCameraRecorder.swift; sourceTree = "<group>"; };
 		B67D11D918137710F02749FD /* GlassesSessionController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlassesSessionController.swift; sourceTree = "<group>"; };
 		BE8D5D8A9097ADC2053624BC /* SmallCuts.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = SmallCuts.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C818AD89BAE56F391C773BA2 /* FrameClipBuffer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrameClipBuffer.swift; sourceTree = "<group>"; };
 		CAC173A75920D39B139375BE /* SimulatedFrameSourceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SimulatedFrameSourceTests.swift; sourceTree = "<group>"; };
 		D267B2131EEBEDFE059D72D0 /* GlassesFrameSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlassesFrameSource.swift; sourceTree = "<group>"; };
+		D411C42645BEB20E216650B1 /* ModalUploadClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModalUploadClient.swift; sourceTree = "<group>"; };
+		D4A9772EE85E009B4ED74348 /* GlassesClipRecorderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlassesClipRecorderTests.swift; sourceTree = "<group>"; };
 		D8BE8EFE87FBAEB667D037D5 /* SmallCutsApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmallCutsApp.swift; sourceTree = "<group>"; };
+		ED209A474A73B74D05F32C0D /* RUNBOOK.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = RUNBOOK.md; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -100,15 +147,61 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		716052CF30F3D16EA2E89816 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				BD449F78FDC0577925BFF276 /* MWDATCore in Frameworks */,
+				F9599D64A7597113D90E946A /* MWDATCamera in Frameworks */,
+				842CE244D873820A73BB4AF5 /* MWDATMockDevice in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		15AEF56C68ED8CE777152753 /* UI */ = {
+			isa = PBXGroup;
+			children = (
+				1CCFC48652A528A61022090D /* LiteCaptureView.swift */,
+				4DC75C607FA096D87FC8FD11 /* LiteTheme.swift */,
+			);
+			path = UI;
+			sourceTree = "<group>";
+		};
+		1A2A0B0CA6FC1FAA867EB6C5 /* Config */ = {
+			isa = PBXGroup;
+			children = (
+				77AFA7EE072B2674FD575168 /* LiteConfig.swift */,
+				485D5EFD98DDD124FEF0F05B /* Secrets.swift */,
+			);
+			path = Config;
+			sourceTree = "<group>";
+		};
+		1B67EBF67ED5D0F8D56872DE /* App */ = {
+			isa = PBXGroup;
+			children = (
+				24421D79404844AE4D330B82 /* SmallCutsLiteApp.swift */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
 		3B9AB488596273A6C3640C1F /* Transport */ = {
 			isa = PBXGroup;
 			children = (
 				5910940C59EA51CEC91C7620 /* EngineSessionClient.swift */,
 			);
 			path = Transport;
+			sourceTree = "<group>";
+		};
+		407539CF623D4173B65C0611 /* Capture */ = {
+			isa = PBXGroup;
+			children = (
+				528F425B7CE764558D56CAB5 /* CameraPreview.swift */,
+				6EA4674B12ED7DA763D6A237 /* GlassesClipRecorder.swift */,
+				B036B7505B4A8426F52262DA /* PhoneCameraRecorder.swift */,
+			);
+			path = Capture;
 			sourceTree = "<group>";
 		};
 		495B7F71D609ABA69A38283D /* App */ = {
@@ -147,9 +240,26 @@
 			isa = PBXGroup;
 			children = (
 				BE8D5D8A9097ADC2053624BC /* SmallCuts.app */,
+				76F39BBA13831707CA6C167F /* SmallCutsLite.app */,
+				6D684E3D535E734223585344 /* SmallCutsLiteTests.xctest */,
 				107424152F0CCCDC3612560C /* SmallCutsTests.xctest */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		8D472B1B90A63FD36050D463 /* SmallCutsLite */ = {
+			isa = PBXGroup;
+			children = (
+				7F4361AAC9E7E4BF1CB79F33 /* Info.plist */,
+				ED209A474A73B74D05F32C0D /* RUNBOOK.md */,
+				1B67EBF67ED5D0F8D56872DE /* App */,
+				C5972DF222E4724371B7CCAE /* Auth */,
+				407539CF623D4173B65C0611 /* Capture */,
+				1A2A0B0CA6FC1FAA867EB6C5 /* Config */,
+				15AEF56C68ED8CE777152753 /* UI */,
+				B3D37A9B56971039722787BA /* Upload */,
+			);
+			path = SmallCutsLite;
 			sourceTree = "<group>";
 		};
 		90D2095CC0EE658F69AB7B7B /* Support */ = {
@@ -182,9 +292,20 @@
 			isa = PBXGroup;
 			children = (
 				5C63CE7EE96872F97D943402 /* SmallCuts */,
+				8D472B1B90A63FD36050D463 /* SmallCutsLite */,
+				F76518B551FA55B76B09117C /* SmallCutsLiteTests */,
 				9CC680D0C1B6A66AF32B5E28 /* SmallCutsTests */,
 				76D4425680B8BC2C3FE326C9 /* Products */,
 			);
+			sourceTree = "<group>";
+		};
+		B3D37A9B56971039722787BA /* Upload */ = {
+			isa = PBXGroup;
+			children = (
+				AFBEC584FF6F8DCE50693552 /* ModalScene.swift */,
+				D411C42645BEB20E216650B1 /* ModalUploadClient.swift */,
+			);
+			path = Upload;
 			sourceTree = "<group>";
 		};
 		C2CE144CCFD547185132F16F /* Capture */ = {
@@ -200,6 +321,24 @@
 				41132D629FB9E5F256BD6898 /* VoicePlayer.swift */,
 			);
 			path = Capture;
+			sourceTree = "<group>";
+		};
+		C5972DF222E4724371B7CCAE /* Auth */ = {
+			isa = PBXGroup;
+			children = (
+				3D31702875D39EFF6E5F60F7 /* IdentityStore.swift */,
+			);
+			path = Auth;
+			sourceTree = "<group>";
+		};
+		F76518B551FA55B76B09117C /* SmallCutsLiteTests */ = {
+			isa = PBXGroup;
+			children = (
+				D4A9772EE85E009B4ED74348 /* GlassesClipRecorderTests.swift */,
+				14A3B63EA4047A7EF2043167 /* ModalUploadClientTests.swift */,
+				41DD0633E2EB4C812A899DEA /* StubURLProtocol.swift */,
+			);
+			path = SmallCutsLiteTests;
 			sourceTree = "<group>";
 		};
 		FDF7342E740F2253492E500E /* Glasses */ = {
@@ -235,6 +374,28 @@
 			productReference = BE8D5D8A9097ADC2053624BC /* SmallCuts.app */;
 			productType = "com.apple.product-type.application";
 		};
+		4359D5BFCF582CA3A5490E67 /* SmallCutsLite */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = BE2110D91D5476A0940801A3 /* Build configuration list for PBXNativeTarget "SmallCutsLite" */;
+			buildPhases = (
+				D9FC0A8F6272DF77AC81DE44 /* Sources */,
+				DD4869630AFE47DEBB80855C /* Resources */,
+				716052CF30F3D16EA2E89816 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = SmallCutsLite;
+			packageProductDependencies = (
+				CCCAD346211E1F036A5909C9 /* MWDATCore */,
+				3A4B9694967767D9D973C300 /* MWDATCamera */,
+				02DC67AB3B342BC3832C4EE7 /* MWDATMockDevice */,
+			);
+			productName = SmallCutsLite;
+			productReference = 76F39BBA13831707CA6C167F /* SmallCutsLite.app */;
+			productType = "com.apple.product-type.application";
+		};
 		599176B2C92C0600BB72BDD1 /* SmallCutsTests */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 2F6035E1375E41E41CC300E7 /* Build configuration list for PBXNativeTarget "SmallCutsTests" */;
@@ -255,6 +416,24 @@
 			productReference = 107424152F0CCCDC3612560C /* SmallCutsTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
+		63D0E26E1E619ADD135FDF37 /* SmallCutsLiteTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 62B1D8706115F6A3B9630C7B /* Build configuration list for PBXNativeTarget "SmallCutsLiteTests" */;
+			buildPhases = (
+				620F7EEA9776777F1C082A06 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				01C4FA9AD00165D2807BCF03 /* PBXTargetDependency */,
+			);
+			name = SmallCutsLiteTests;
+			packageProductDependencies = (
+			);
+			productName = SmallCutsLiteTests;
+			productReference = 6D684E3D535E734223585344 /* SmallCutsLiteTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -265,6 +444,10 @@
 				LastUpgradeCheck = 1430;
 				TargetAttributes = {
 					3B54931FD28C91518EC027C1 = {
+						ProvisioningStyle = Automatic;
+					};
+					4359D5BFCF582CA3A5490E67 = {
+						DevelopmentTeam = ZYJ38YVC5F;
 						ProvisioningStyle = Automatic;
 					};
 				};
@@ -287,6 +470,8 @@
 			projectRoot = "";
 			targets = (
 				3B54931FD28C91518EC027C1 /* SmallCuts */,
+				4359D5BFCF582CA3A5490E67 /* SmallCutsLite */,
+				63D0E26E1E619ADD135FDF37 /* SmallCutsLiteTests */,
 				599176B2C92C0600BB72BDD1 /* SmallCutsTests */,
 			);
 		};
@@ -301,9 +486,27 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		DD4869630AFE47DEBB80855C /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				F9BA4C88FC745596D86E0CD7 /* RUNBOOK.md in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		620F7EEA9776777F1C082A06 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				03EC5E9B6983E171FFED95BB /* GlassesClipRecorderTests.swift in Sources */,
+				5A0935E3B8E464EA6EF361C1 /* ModalUploadClientTests.swift in Sources */,
+				0A1BEEE9E68B7C660A9A3C1B /* StubURLProtocol.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		A13F20900B3DD5AAEDC88600 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -343,9 +546,36 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		D9FC0A8F6272DF77AC81DE44 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				5D85F37209208FFE110AD487 /* CameraPreview.swift in Sources */,
+				033811B96624E55C4B0B3F64 /* FrameSource.swift in Sources */,
+				1179CF96FB2A76C8C5DF954A /* GlassesClipRecorder.swift in Sources */,
+				A8498BEDF3B62C45EB7A2E99 /* GlassesFrameSource.swift in Sources */,
+				CB60BD9BCFA31C05FDB42696 /* GlassesSessionController.swift in Sources */,
+				1CFE27A183F94458401A105C /* IdentityStore.swift in Sources */,
+				66DD68A2DA6918CA142DAA07 /* LiteCaptureView.swift in Sources */,
+				6B0F8C2BA00FC451C30D3126 /* LiteConfig.swift in Sources */,
+				C0F2F97EBB221535B4CCED7D /* LiteTheme.swift in Sources */,
+				5D129F733AB66DEF1F863A77 /* ModalScene.swift in Sources */,
+				E35B0257A97C116E8011FA54 /* ModalUploadClient.swift in Sources */,
+				1E9E589D333EC923829C8883 /* PhoneCameraRecorder.swift in Sources */,
+				FB7E6C55C9024BD1CF198443 /* Secrets.swift in Sources */,
+				FA58DF1C05AD498ADD0FB3F5 /* SmallCutsLiteApp.swift in Sources */,
+				206FBBCBD7B1CEF8F66DADCE /* WearablesConfigurator.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		01C4FA9AD00165D2807BCF03 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 4359D5BFCF582CA3A5490E67 /* SmallCutsLite */;
+			targetProxy = 59717A5F21C44A29ABE6BB18 /* PBXContainerItemProxy */;
+		};
 		EFB9ADFC0BD396A03A8334EF /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = 3B54931FD28C91518EC027C1 /* SmallCuts */;
@@ -354,6 +584,29 @@
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
+		16CA0FDF717B621E6F01DCED /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = ZYJ38YVC5F;
+				ENABLE_PREVIEWS = YES;
+				INFOPLIST_FILE = SmallCutsLite/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.macayaven.smallcutslite;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
 		43C754DFDD382AFC5AD730A0 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -548,6 +801,48 @@
 			};
 			name = Debug;
 		};
+		A3F1F8CB608D0FD55F993B99 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = ZYJ38YVC5F;
+				ENABLE_PREVIEWS = YES;
+				INFOPLIST_FILE = SmallCutsLite/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.macayaven.smallcutslite;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+		A97BD10ED9F286A35D544883 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.macayaven.SmallCutsLiteTests;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/SmallCutsLite.app/SmallCutsLite";
+			};
+			name = Release;
+		};
 		AA79D9C9019C53D53E5E43C7 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -569,6 +864,25 @@
 			};
 			name = Release;
 		};
+		F5BC69AA9EDE04A5E2D562A9 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.macayaven.SmallCutsLiteTests;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/SmallCutsLite.app/SmallCutsLite";
+			};
+			name = Debug;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -577,6 +891,15 @@
 			buildConfigurations = (
 				A1D7B5EB40530592323C82AE /* Debug */,
 				AA79D9C9019C53D53E5E43C7 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		62B1D8706115F6A3B9630C7B /* Build configuration list for PBXNativeTarget "SmallCutsLiteTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F5BC69AA9EDE04A5E2D562A9 /* Debug */,
+				A97BD10ED9F286A35D544883 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;
@@ -599,6 +922,15 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;
 		};
+		BE2110D91D5476A0940801A3 /* Build configuration list for PBXNativeTarget "SmallCutsLite" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				16CA0FDF717B621E6F01DCED /* Debug */,
+				A3F1F8CB608D0FD55F993B99 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
@@ -613,6 +945,16 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		02DC67AB3B342BC3832C4EE7 /* MWDATMockDevice */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 683CA6C91C855DFB9DA702D5 /* XCRemoteSwiftPackageReference "meta-wearables-dat-ios" */;
+			productName = MWDATMockDevice;
+		};
+		3A4B9694967767D9D973C300 /* MWDATCamera */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 683CA6C91C855DFB9DA702D5 /* XCRemoteSwiftPackageReference "meta-wearables-dat-ios" */;
+			productName = MWDATCamera;
+		};
 		7479F73A35459057695F9DCB /* MWDATCamera */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 683CA6C91C855DFB9DA702D5 /* XCRemoteSwiftPackageReference "meta-wearables-dat-ios" */;
@@ -627,6 +969,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 683CA6C91C855DFB9DA702D5 /* XCRemoteSwiftPackageReference "meta-wearables-dat-ios" */;
 			productName = MWDATMockDevice;
+		};
+		CCCAD346211E1F036A5909C9 /* MWDATCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 683CA6C91C855DFB9DA702D5 /* XCRemoteSwiftPackageReference "meta-wearables-dat-ios" */;
+			productName = MWDATCore;
 		};
 		D51F7BE88A42D5D452245433 /* MWDATCore */ = {
 			isa = XCSwiftPackageProductDependency;

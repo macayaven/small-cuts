@@ -31,7 +31,7 @@ def test_modal_client_submits_and_polls_result(tmp_path):
         poll_interval_s=0,
     )
 
-    assert client.submit_video(video, uploader_hf_username="alice")["scene_id"] == "s1"
+    assert client.submit_video(video)["scene_id"] == "s1"
     assert calls == [
         ("POST", "/v1/cuts"),
         ("GET", "/v1/cuts/job-1"),
@@ -56,4 +56,4 @@ def test_modal_client_rejects_missing_scene(tmp_path):
     )
 
     with pytest.raises(ModalUploadError, match="scene"):
-        client.submit_video(video, uploader_hf_username="alice")
+        client.submit_video(video)

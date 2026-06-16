@@ -6,7 +6,6 @@ colorTo: purple
 sdk: gradio
 sdk_version: 6.18.0
 app_file: app.py
-hf_oauth: true
 pinned: true
 license: mit
 short_description: A deadpan narrator for your life, from small open models.
@@ -66,12 +65,11 @@ The Space is the **view platform + library** half of the loop:
 - **A public library** of real Ray-Ban Meta glasses moments, generated through the same local
   engine path so the channel is never empty. Source clips and mark points are curated; the visible
   titles, narration, voice, thumbnails, and clips are **produced by Small Cuts**.
-- **"Try it"** — a tucked-away, HF-login upload drawer. Sign in, drop a short video, and a private
-  **Modal** GPU service runs the real Qwen + Kokoro pipeline and replays your generated cut in the
-  same theater. This is the judge-verifiable path: no glasses or iOS required. **Privacy-first:**
-  your upload is narrated *only for your session* — it's never added to the public library or shown
-  to anyone else, and a refresh clears it. The library you browse is separate, curated, persistent
-  content (real glasses moments); your private try-it never mixes into it.
+- **"Try it"** — a tucked-away upload drawer. Drop a short video and, while the shared demo budget
+  still has capacity, a private **Modal** GPU service can run the real Qwen + Kokoro pipeline and
+  replay the generated cut in the same theater. Local prototypes can use the mock narrator/TTS
+  path. Successful uploads are stored in a persistent demo library and remain available after
+  refresh.
 
 ---
 
@@ -89,6 +87,34 @@ You walk through a moment, tap **Action!**, then tap **Cut!** when the scene has
 The narrator watches a selected first-person frame and speaks one grounded, deadpan line back in
 your ear while the moment is still recent past. The finished cut lands in the Space as a short POV
 clip with synced captions, title, voice, and library thumbnail.
+
+## Local prototype run
+
+This prototype removes sign-in from uploads. Local testing uses mock narration and mock TTS so the
+app starts quickly:
+
+```bash
+SMALL_CUTS_BACKEND=mock \
+SMALL_CUTS_TTS_BACKEND=mock \
+SMALL_CUTS_DISABLE_ENGINE_AUTODETECT=1 \
+SMALL_CUTS_UPLOAD_LIBRARY_DIR="$HOME/.small-cuts/prototype-uploads" \
+SMALL_CUTS_UPLOAD_BUDGET_DB="$HOME/.small-cuts/prototype-upload-budget.sqlite3" \
+SMALL_CUTS_DAILY_GPU_BUDGET_SECONDS=1200 \
+SMALL_CUTS_GPU_SECONDS_PER_UPLOAD_RESERVATION=60 \
+SMALL_CUTS_OWNER_UPLOAD_PASSCODE="not-versioned" \
+uv run --extra dev python app.py
+```
+
+Upload abuse prevention is intentionally identity-free in this prototype. The app reserves a small
+chunk of the shared daily processing budget before generation starts, then charges the actual
+processing wall time when the job finishes. When the committed budget reaches
+`SMALL_CUTS_DAILY_GPU_BUDGET_SECONDS`, uploads are paused until the next UTC day. The current
+persistence backend is local SQLite plus filesystem media; the same viewer boundary can later be
+backed by Cloud Storage plus Firestore for hosted deployment.
+
+For owner testing, set `SMALL_CUTS_OWNER_UPLOAD_PASSCODE` as a local environment variable or Space
+secret. A matching passcode in the upload drawer bypasses the shared daily budget; visitors without
+that passcode still use the public demo budget.
 
 ---
 

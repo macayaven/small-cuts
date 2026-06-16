@@ -139,8 +139,7 @@ can verify real output without touching the maker's machine.
 
 ### Submission links
 
-- 📹 **Demo video (YouTube):** _TODO — add public link before submission_
-- 📣 **Social post (Reddit):** _TODO — add link before submission_
+- 📹 **Demo video (YouTube):** [youtu.be/UCEP8ipYhSQ](https://youtu.be/UCEP8ipYhSQ)
 - 📣 **Social post (LinkedIn):** [Small Cuts on LinkedIn](https://www.linkedin.com/posts/carlos-crespo-macaya_youtube-share-7472437932679782400-V9ze/)
 - 📝 **Field notes / write-up:** [hf.co/blog/build-small-hackathon/small-cuts-field-notes](https://huggingface.co/blog/build-small-hackathon/small-cuts-field-notes)
 

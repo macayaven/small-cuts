@@ -926,8 +926,10 @@ def shelf_items(
     for scene in _library_scenes(scenes):
         media = scene.get("media") or {}
         src = media.get("frame_url") or media.get("card_url")
-        if client is not None and src and not src.startswith(
-            ("http://", "https://", "data:", GRADIO_FILE_ROUTE)
+        if (
+            client is not None
+            and src
+            and not src.startswith(("http://", "https://", "data:", GRADIO_FILE_ROUTE))
         ):
             src = client.media_url(src)
         if src:

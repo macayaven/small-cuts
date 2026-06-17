@@ -1223,6 +1223,14 @@ def test_stage_html_without_duration_still_embeds_caption_chunks():
     assert "scCaptionChunks" in viewer.PLAYBACK_SYNC_JS
 
 
+def test_caption_painter_guards_writes_against_observer_loop():
+    # The chrome MutationObserver watches childList/subtree; the caption painter MUST only write
+    # textContent on change, or it re-fires the observer in an infinite loop that hangs the tab.
+    js = viewer.PLAYBACK_SYNC_JS
+    assert "line.textContent !== text" in js
+    assert "MutationObserver" in js
+
+
 @pytest.mark.parametrize(
     ("created_at", "fresh"),
     [

@@ -1837,10 +1837,14 @@ PLAYBACK_SYNC_JS = """
         }
       }
     }
+    // Write ONLY on change. scRefreshPlaybackChrome runs from a MutationObserver watching
+    // childList/subtree, and setting textContent is itself a childList mutation — writing
+    // unconditionally re-fires the observer in an infinite loop that pegs the main thread and
+    // hangs the tab. The change-guards below make every paint idempotent and self-limiting.
     if (text != null) {
-      line.textContent = text;
-      line.hidden = false;
-    } else {
+      if (line.textContent !== text) line.textContent = text;
+      if (line.hidden) line.hidden = false;
+    } else if (!line.hidden) {
       line.hidden = true;
     }
   };
@@ -1856,7 +1860,8 @@ PLAYBACK_SYNC_JS = """
         progress = Math.max(0, Math.min(1, time / duration));
       }
     }
-    if (fill) fill.style.width = (progress * 100).toFixed(1) + '%';
+    const widthPct = (progress * 100).toFixed(1) + '%';
+    if (fill && fill.style.width !== widthPct) fill.style.width = widthPct;
     scPaintCaption(time, duration);
   };
   const scRefreshPlaybackChrome = () => {

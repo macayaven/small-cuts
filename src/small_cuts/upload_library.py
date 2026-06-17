@@ -7,6 +7,7 @@ import os
 import re
 import shutil
 import sqlite3
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -50,6 +51,7 @@ class LocalUploadLibrary:
         self.root = Path(base).expanduser().resolve()
         self.media_dir = self.root / "media"
         self.media_dir.mkdir(parents=True, exist_ok=True)
+        self._lock = threading.Lock()
         self._db = sqlite3.connect(self.root / "uploads.sqlite3", check_same_thread=False)
         self._db.execute(_SCHEMA)
         self._db.commit()
@@ -111,7 +113,7 @@ class LocalUploadLibrary:
         payload["source_icon"] = SOURCE
 
         stored_at = _now_iso()
-        with self._db:
+        with self._lock, self._db:
             self._db.execute(
                 """
                 INSERT INTO upload_scenes (scene_id, created_at, stored_at, payload)
@@ -131,25 +133,27 @@ class LocalUploadLibrary:
         return copy.deepcopy(payload)
 
     def list_scenes(self, limit: int = 60) -> list[dict[str, Any]]:
-        rows = self._db.execute(
-            """
-            SELECT payload FROM (
-                SELECT created_at, scene_id, payload
-                FROM upload_scenes
-                ORDER BY created_at DESC, scene_id DESC
-                LIMIT ?
-            )
-            ORDER BY created_at ASC, scene_id ASC
-            """,
-            (int(limit),),
-        ).fetchall()
+        with self._lock:
+            rows = self._db.execute(
+                """
+                SELECT payload FROM (
+                    SELECT created_at, scene_id, payload
+                    FROM upload_scenes
+                    ORDER BY created_at DESC, scene_id DESC
+                    LIMIT ?
+                )
+                ORDER BY created_at ASC, scene_id ASC
+                """,
+                (int(limit),),
+            ).fetchall()
         return [json.loads(row[0]) for row in rows]
 
     def static_paths(self) -> list[Path]:
         return [self.root]
 
     def close(self) -> None:
-        self._db.close()
+        with self._lock:
+            self._db.close()
 
     def _materialize_value(self, value: str, scene_dir: Path, filename: str) -> str:
         if value.startswith(("http://", "https://")):

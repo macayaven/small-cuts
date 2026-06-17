@@ -97,5 +97,10 @@ except Exception as exc:
     STARTUP_ERROR = str(exc)
     demo = _degraded_app(STARTUP_ERROR)
 
+
+def launch_demo():
+    return demo.launch(theme=THEME, _app=demo.app)
+
+
 if __name__ == "__main__":
-    demo.launch(theme=THEME)
+    launch_demo()

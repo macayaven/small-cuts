@@ -5,6 +5,7 @@ The NarratedScene fixture is the golden sample from test_contracts.py, so the
 viewer's formatter is pinned to the same shape the contract suite enforces.
 """
 
+import inspect
 import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -587,7 +588,7 @@ def test_relay_event_bridge_listens_for_hook_events():
     assert ".sc-relay-refresh" not in viewer.RELAY_EVENT_BRIDGE_JS
 
 
-def test_bucket_scene_client_reads_manifest_and_caches_media(tmp_path, monkeypatch):
+def test_bucket_scene_client_reads_manifest_and_caches_shelf_media(tmp_path, monkeypatch):
     class FakeBucketFs:
         def __init__(self, files):
             self.files = files
@@ -627,7 +628,8 @@ def test_bucket_scene_client_reads_manifest_and_caches_media(tmp_path, monkeypat
     frame_url = hydrated["media"]["frame_url"]
     assert frame_url.startswith("/gradio_api/file=")
     assert Path(unquote(frame_url.removeprefix("/gradio_api/file="))).read_bytes() == b"frame"
-    assert (tmp_path / "media/9f1c7e4a/voice.wav").read_bytes() == b"voice"
+    assert hydrated["media"]["audio_url"] == "media/9f1c7e4a/voice.wav"
+    assert not (tmp_path / "media/9f1c7e4a/voice.wav").exists()
     assert f"{root}/manifest.json" in fake_fs.seen
 
 
@@ -752,6 +754,14 @@ def test_playback_js_uses_trusted_dom_click_for_audio():
     assert "audio play blocked" in viewer.PLAYBACK_SYNC_JS
 
 
+def test_playback_js_pauses_voice_when_video_stalls():
+    assert "__scUserWantsPlayback" in viewer.PLAYBACK_SYNC_JS
+    assert "video.addEventListener('waiting'" in viewer.PLAYBACK_SYNC_JS
+    assert "video.addEventListener('stalled'" in viewer.PLAYBACK_SYNC_JS
+    assert "small_cuts.viewer: video stalled" in viewer.PLAYBACK_SYNC_JS
+    assert "Math.abs(video.currentTime - videoTargetTime)" in viewer.PLAYBACK_SYNC_JS
+
+
 def test_header_live_reads_happening_now_else_title():
     live = viewer.render_header_html("The Bicycle Is Mustard Yellow", "noir", live=True)
     assert "Happening now" in live
@@ -810,6 +820,76 @@ def test_poll_engine_renders_the_whole_page():
     assert scenes == [GOLDEN_SCENE]
     assert current == GOLDEN_SCENE["scene_id"]
     assert playing == GOLDEN_SCENE["scene_id"]
+
+
+def test_poll_engine_hydrates_current_bucket_scene_media_lazily():
+    class LazyBucketClient:
+        base_url = ""
+
+        def list_scenes(self, limit):
+            return [
+                {
+                    **GOLDEN_SCENE,
+                    "media": {
+                        "frame_url": "media/scene/frame.jpg",
+                        "clip_url": "media/scene/clip.mp4",
+                        "audio_url": "media/scene/voice.wav",
+                    },
+                }
+            ]
+
+        def media_url(self, path):
+            return f"/gradio_api/file=/tmp/{Path(path).name}" if path else None
+
+    _header, stage, _feed, audio, _shelf, _scenes, _current, _playing, _vis = viewer.poll_engine(
+        LazyBucketClient(),
+        [],
+        pinned_id=None,
+        playing_id=None,
+        now=CREATED_AT,
+    )
+
+    assert "/tmp/frame.jpg" in stage
+    assert "/tmp/clip.mp4" in stage
+    assert "/tmp/voice.wav" in audio
+
+
+def test_engine_scene_control_outputs_hydrates_raw_relay_media():
+    class LazyBucketClient:
+        base_url = ""
+
+        def media_url(self, path):
+            return f"/gradio_api/file=/tmp/{Path(path).name}" if path else None
+
+    raw_scene = {
+        **GOLDEN_SCENE,
+        "media": {
+            "frame_url": "media/scene/frame.jpg",
+            "clip_url": "media/scene/clip.mp4",
+            "audio_url": "media/scene/voice.wav",
+        },
+    }
+
+    _header, stage, audio, state, _visibility = viewer._engine_scene_control_outputs(
+        raw_scene,
+        LazyBucketClient(),
+        [raw_scene],
+        viewer._pack_engine_ui_state([raw_scene], None, None, None),
+        pinned_id=raw_scene["scene_id"],
+        restart_audio=True,
+    )
+
+    assert "/tmp/frame.jpg" in stage
+    assert "/tmp/clip.mp4" in stage
+    assert "/tmp/voice.wav" in audio
+    assert state["pinned_id"] == raw_scene["scene_id"]
+    assert state["playing_id"] == raw_scene["scene_id"]
+
+
+def test_engine_gallery_callbacks_do_not_format_raw_relay_scenes_directly():
+    source = inspect.getsource(viewer.build_viewer_app)
+
+    assert "payload = format_stage(scene, engine.base_url)" not in source
 
 
 def test_poll_engine_finished_scene_shows_title():

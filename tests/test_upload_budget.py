@@ -80,3 +80,44 @@ def test_unfinished_reservation_counts_against_hard_limit_until_ttl(tmp_path):
 
     assert third.allowed is True
     assert third.token is not None
+
+
+def test_stale_reservations_expire_independently_of_newer_reservations(tmp_path):
+    current = 1_800_000_000.0
+    budget = DailyProcessingBudget(
+        tmp_path / "budget.sqlite3",
+        daily_limit_s=120,
+        reserve_s=60,
+        reservation_ttl_s=120,
+        now_fn=lambda: current,
+    )
+
+    first = budget.try_reserve()
+    assert first.allowed is True
+
+    current += 90
+    second = budget.try_reserve()
+    assert second.allowed is True
+
+    current += 31
+    third = budget.try_reserve()
+
+    assert third.allowed is True
+    assert third.token is not None
+    assert budget.seconds_committed_today() == 120
+
+
+def test_reservations_use_immediate_write_transaction(tmp_path):
+    budget = DailyProcessingBudget(
+        tmp_path / "budget.sqlite3",
+        daily_limit_s=60,
+        reserve_s=60,
+        now_fn=lambda: 1_800_000_000.0,
+    )
+    statements = []
+    budget._db.set_trace_callback(statements.append)
+
+    decision = budget.try_reserve()
+
+    assert decision.allowed is True
+    assert "BEGIN IMMEDIATE" in [statement.strip().upper() for statement in statements]

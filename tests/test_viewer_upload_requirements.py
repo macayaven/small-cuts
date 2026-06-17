@@ -197,6 +197,16 @@ def test_desktop_library_is_horizontal_carousel():
     assert "scrollbar-color: rgba(212,175,55,.75) transparent;" in source
 
 
+def test_hf_space_header_does_not_cover_desktop_upload_control():
+    source = (ROOT / "src/small_cuts/viewer.py").read_text()
+
+    assert "scSyncHfHeaderSafeZone" in source
+    assert "sc-hf-header-present" in source
+    assert ".sc-topbar.sc-hf-header-present" in source
+    assert "#sc-upload-popover.sc-hf-header-present" in source
+    assert "padding-top: 48px !important;" in source
+
+
 def test_blocked_upload_status_is_inline_and_loader_free():
     status = render_upload_status_html(
         "blocked", "Demo daily GPU budget reached. Uploads reopen tomorrow."

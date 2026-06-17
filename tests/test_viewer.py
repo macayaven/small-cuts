@@ -508,6 +508,7 @@ def test_upload_sandbox_renders_plain_upload_icon_without_login(monkeypatch):
     ]
     assert len(upload_buttons) == 1
     assert upload_buttons[0]["props"]["visible"] is not False
+    assert upload_buttons[0]["props"]["value"] == "Upload a clip"
     assert "disabled" not in upload_buttons[0]["props"].get("elem_classes", [])
 
 

@@ -244,9 +244,15 @@ footer { display: none !important; }
   padding: 0 !important; }
 .sc-upload-entry .block { width: auto !important; min-width: 0 !important; }
 .sc-upload.sc-icbtn { cursor: pointer !important; margin-left: 0 !important; }
+.sc-upload.sc-icbtn { font-size: 0 !important; line-height: 0 !important;
+  overflow: hidden !important; }
 .sc-upload-cta { display: block; color: #8a8894; font-family: 'IBM Plex Mono', monospace;
   font-size: .58rem; line-height: 1; letter-spacing: .08em; text-transform: uppercase;
   white-space: nowrap; }
+@media (min-width: 861px) {
+  .sc-topbar.sc-hf-header-present { padding-top: 48px !important; }
+  #sc-upload-popover.sc-hf-header-present { top: 100px !important; }
+}
 .sc-header { justify-content: center; text-align: center; }
 .sc-progress { max-width: 560px; height: 4px; margin: 12px auto 2px; border-radius: 3px;
   background: #2A292F; overflow: hidden; }
@@ -1538,6 +1544,18 @@ PLAYBACK_SYNC_JS = """
     link.href = 'data:image/svg+xml,' + encodeURIComponent(svg);
   } catch (e) {}
 
+  const scSyncHfHeaderSafeZone = () => {
+    const hasHeader = !!document.querySelector('#huggingface-space-header');
+    document.querySelectorAll('.sc-topbar, #sc-upload-popover').forEach((node) => {
+      node.classList.toggle('sc-hf-header-present', hasHeader);
+    });
+  };
+  scSyncHfHeaderSafeZone();
+  if (!window.__scHfHeaderObs && document.body) {
+    window.__scHfHeaderObs = new MutationObserver(scSyncHfHeaderSafeZone);
+    window.__scHfHeaderObs.observe(document.body, { childList: true, subtree: true });
+  }
+
   // header click = back to live (un-pin / re-follow); forwards to the hidden Gradio button
   document.addEventListener('click', (e) => {
     if (e.target.closest && e.target.closest('.sc-header')) {
@@ -1882,7 +1900,8 @@ def build_viewer_app() -> gr.Blocks:
             if upload_enabled:
                 with gr.Column(elem_classes="sc-upload-entry", min_width=0):
                     upload_btn = gr.Button(
-                        "", elem_classes=["sc-icbtn", "sc-upload", "sc-ico-upload"]
+                        "Upload a clip",
+                        elem_classes=["sc-icbtn", "sc-upload", "sc-ico-upload"],
                     )
                     gr.HTML(render_upload_cta_html(), elem_classes="sc-plain", padding=False)
         # Theater layout (Review-3): stage + controls on the left, the library as a side rail on

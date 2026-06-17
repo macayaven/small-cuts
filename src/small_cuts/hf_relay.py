@@ -32,6 +32,7 @@ RELAY_CACHE_DIR = Path(tempfile.gettempdir()) / "small-cuts-hf-relay"
 GRADIO_FILE_ROUTE = "/gradio_api/file="
 DEFAULT_SCENE_LIMIT = 60
 MEDIA_KEYS = ("frame_url", "card_url", "audio_url", "clip_url")
+SHELF_MEDIA_KEYS = ("frame_url", "card_url")
 PUBLISH_VISIBILITIES = frozenset({"shared", "public"})
 HTTP_TIMEOUT_S = 20.0
 MANIFEST_CACHE_TTL_S = 5.0
@@ -145,7 +146,7 @@ class BucketSceneClient:
                 hydrated = []
                 for scene in scenes:
                     try:
-                        hydrated.append(self._hydrate_scene(scene))
+                        hydrated.append(self._hydrate_scene(scene, keys=self._list_media_keys()))
                     except FileNotFoundError:
                         continue
                 uploaded = self._uploaded_scenes()
@@ -180,7 +181,7 @@ class BucketSceneClient:
             for scene_path in mounted_paths:
                 scene = json.loads(scene_path.read_bytes().decode("utf-8"))
                 if isinstance(scene, dict):
-                    uploaded.append(self._hydrate_scene(scene))
+                    uploaded.append(self._hydrate_scene(scene, keys=self._list_media_keys()))
             return uploaded
         glob = getattr(self.fs, "glob", None)
         if glob is None:
@@ -195,7 +196,7 @@ class BucketSceneClient:
                 raw = self.fs.cat(scene_path)
                 scene = json.loads(raw.decode("utf-8"))
                 if isinstance(scene, dict):
-                    uploaded.append(self._hydrate_scene(scene))
+                    uploaded.append(self._hydrate_scene(scene, keys=self._list_media_keys()))
             except FileNotFoundError:
                 continue
         return uploaded
@@ -233,15 +234,20 @@ class BucketSceneClient:
             f"/resolve/{quote(path, safe='/')}"
         )
 
-    def _hydrate_scene(self, scene: dict[str, Any]) -> dict[str, Any]:
+    def _hydrate_scene(
+        self, scene: dict[str, Any], *, keys: tuple[str, ...] = MEDIA_KEYS
+    ) -> dict[str, Any]:
         hydrated = copy.deepcopy(scene)
         media = hydrated.get("media")
         if not isinstance(media, dict):
             hydrated["media"] = {}
             return hydrated
-        for key in MEDIA_KEYS:
+        for key in keys:
             media[key] = self.media_url(media.get(key))
         return hydrated
+
+    def _list_media_keys(self) -> tuple[str, ...]:
+        return MEDIA_KEYS if self.direct_media_urls else SHELF_MEDIA_KEYS
 
     def _relative_media_path(self, path: str) -> Path:
         value = path.strip().lstrip("/")

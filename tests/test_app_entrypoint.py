@@ -76,6 +76,25 @@ def test_app_installs_relay_hook_routes(monkeypatch):
     assert "/small-cuts/events" in route_paths
 
 
+def test_app_launch_reuses_route_installed_app(monkeypatch):
+    monkeypatch.setenv("SPACE_ID", "macayaven/small-cuts-dev")
+    monkeypatch.delenv("SMALL_CUTS_ENGINE_URL", raising=False)
+    monkeypatch.setenv("SMALL_CUTS_RELAY_BUCKET", "macayaven/small-cuts-scenes-dev")
+    monkeypatch.setitem(sys.modules, "spaces", None)
+    module = _load_app_module("_small_cuts_test_app_launch")
+    captured = {}
+
+    def fake_launch(**kwargs):
+        captured.update(kwargs)
+
+    monkeypatch.setattr(module.demo, "launch", fake_launch)
+
+    module.launch_demo()
+
+    assert captured["theme"] is module.THEME
+    assert captured["_app"] is module.demo.app
+
+
 def test_app_filters_gradio_starlette_queue_warning(monkeypatch):
     monkeypatch.setenv("SMALL_CUTS_ENGINE_URL", "http://127.0.0.1:9")
 

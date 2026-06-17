@@ -1049,7 +1049,8 @@ def poll_engine(
     channel_live = is_fresh(newest.get("created_at"), now=now)
     by_id = {scene.get("scene_id"): scene for scene in scenes}
     current = by_id.get(pinned_id) or by_id.get(current_id) or newest
-    payload = format_stage(current, client.base_url, now=now)
+    current_for_stage = _scene_with_media_urls(current, client)
+    payload = format_stage(current_for_stage, client.base_url, now=now)
     on_air = channel_live and current.get("scene_id") == newest.get("scene_id")
     notice = "New cut available" if channel_live and not on_air else None
 
@@ -1611,6 +1612,12 @@ PLAYBACK_SYNC_JS = """
   if (typeof window.__scUploadSubmitLocked !== 'boolean') {
     window.__scUploadSubmitLocked = false;
   }
+  if (typeof window.__scUserWantsPlayback !== 'boolean') {
+    window.__scUserWantsPlayback = false;
+  }
+  if (typeof window.__scPausedForVideoBuffer !== 'boolean') {
+    window.__scPausedForVideoBuffer = false;
+  }
   const scUploadSubmitButton = () => (
     document.querySelector('#sc-upload-popover button.sc-narrate-btn')
     || document.querySelector('#sc-upload-popover .sc-narrate-btn button')
@@ -1679,28 +1686,75 @@ PLAYBACK_SYNC_JS = """
   // make audio.play() fail with NotAllowedError even though the user tapped the button. Touch
   // devices get pointerdown; mouse/keyboard use click. The guard prevents touch pointerdown's
   // follow-up click from immediately pausing the scene.
+  const scVideoTargetTime = (audio, video) => {
+    if (!audio || !video || !isFinite(video.duration) || video.duration <= 0) return null;
+    return audio.currentTime % video.duration;
+  };
+  const scSyncVideoToAudio = (audio, video, force = false) => {
+    const videoTargetTime = scVideoTargetTime(audio, video);
+    if (videoTargetTime === null) return;
+    if (force || Math.abs(video.currentTime - videoTargetTime) > 0.35) {
+      try { video.currentTime = videoTargetTime; } catch (err) {}
+    }
+  };
+  const scPauseVoiceForVideoBuffer = (reason) => {
+    const audio = document.querySelector('#sc-voice');
+    if (!window.__scUserWantsPlayback || !audio || audio.paused) return;
+    window.__scPausedForVideoBuffer = true;
+    console.warn('small_cuts.viewer: video stalled', reason);
+    audio.pause();
+  };
+  const scResumeVoiceAfterVideoBuffer = () => {
+    const audio = document.querySelector('#sc-voice');
+    const video = document.querySelector('.sc-stage-shell video');
+    if (!window.__scUserWantsPlayback || !window.__scPausedForVideoBuffer || !audio) return;
+    window.__scPausedForVideoBuffer = false;
+    audio.play().catch((err) => {
+      console.warn('small_cuts.viewer: audio play blocked', err);
+    });
+    if (video) {
+      scSyncVideoToAudio(audio, video, true);
+      video.play().catch(() => {});
+    }
+  };
+  const scWireVideoBufferEvents = (video) => {
+    if (!video || video.__scBufferEventsWired) return;
+    video.__scBufferEventsWired = true;
+    video.addEventListener('waiting', () => scPauseVoiceForVideoBuffer('waiting'));
+    video.addEventListener('stalled', () => scPauseVoiceForVideoBuffer('stalled'));
+    video.addEventListener('playing', scResumeVoiceAfterVideoBuffer);
+    video.addEventListener('canplay', scResumeVoiceAfterVideoBuffer);
+  };
   const togglePlayback = (e) => {
     const playBtn = e.target.closest && e.target.closest('.sc-play-btn');
     if (!playBtn) return;
     const audio = document.querySelector('#sc-voice');
     const video = document.querySelector('.sc-stage-shell video');
+    scWireVideoBufferEvents(video);
 
     if (!audio || !audio.getAttribute('src')) {
       if (!video) return;
-      if (video.paused) video.play().catch(() => {});
-      else video.pause();
+      if (video.paused) {
+        window.__scUserWantsPlayback = true;
+        video.play().catch(() => {});
+      } else {
+        window.__scUserWantsPlayback = false;
+        video.pause();
+      }
       return;
     }
 
     if (audio.paused) {
-      if (video && isFinite(video.duration) && video.duration > 0) {
-        try { video.currentTime = audio.currentTime % video.duration; } catch (err) {}
-      }
+      window.__scUserWantsPlayback = true;
+      window.__scPausedForVideoBuffer = false;
+      if (video) scSyncVideoToAudio(audio, video, true);
       audio.play().catch((err) => {
         console.warn('small_cuts.viewer: audio play blocked', err);
       });
       if (video) video.play().catch(() => {});
     } else {
+      window.__scUserWantsPlayback = false;
+      window.__scPausedForVideoBuffer = false;
       audio.pause();
       if (video) video.pause();
     }
@@ -1723,16 +1777,24 @@ PLAYBACK_SYNC_JS = """
     const sub = document.querySelector('#sc-subtitle');
     const fill = document.querySelector('#sc-progress-fill');
     const playBtn = document.querySelector('.sc-play-btn');
+    scWireVideoBufferEvents(video);
 
     // couple the muted video to the voice's play/pause state (a muted video may play()
     // programmatically without a user gesture; the voice itself is unlocked by the play tap)
     if (audio && video) {
-      if (audio.paused) { if (!video.paused) video.pause(); }
-      else if (video.paused) { video.play().catch(() => {}); }
+      if (audio.paused) {
+        if (!window.__scPausedForVideoBuffer && !video.paused) video.pause();
+      } else {
+        scSyncVideoToAudio(audio, video);
+        if (video.paused) video.play().catch(() => {});
+      }
     }
     // the play button shows the action it WILL do: play icon when paused, pause icon when playing
     if (playBtn) {
-      const playing = !!(audio && !audio.paused);
+      const hasAudio = !!(audio && audio.getAttribute('src'));
+      const playing = window.__scUserWantsPlayback && (
+        hasAudio || !!(video && !video.paused)
+      );
       playBtn.classList.toggle('sc-ico-pause', playing);
       playBtn.classList.toggle('sc-ico-play', !playing);
     }

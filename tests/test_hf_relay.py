@@ -184,6 +184,48 @@ def test_bucket_scene_client_can_use_hf_resolve_media_urls(tmp_path):
         "https://huggingface.co/buckets/macayaven/small-cuts-scenes-dev"
         "/resolve/relay/media/scene%201/frame.jpg"
     )
+    assert "/resolve/main/" not in media["frame_url"]
+
+
+def test_bucket_scene_client_list_scenes_does_not_eagerly_fetch_audio_or_clip(tmp_path):
+    scene = {
+        **GOLDEN["narrated-scene.schema.json"],
+        "media": {
+            "frame_url": "media/scene-1/frame.jpg",
+            "audio_url": "media/scene-1/voice.wav",
+            "clip_url": "media/scene-1/clip.mp4",
+        },
+    }
+
+    class FakeFs:
+        def __init__(self):
+            self.calls = []
+
+        def cat(self, path):
+            self.calls.append(path)
+            if path.endswith("/manifest.json"):
+                return json.dumps({"scenes": [scene]}).encode()
+            if path.endswith("/media/scene-1/frame.jpg"):
+                return b"frame"
+            raise AssertionError(f"unexpected eager media fetch: {path}")
+
+    fs = FakeFs()
+    client = hf_relay.BucketSceneClient(
+        "macayaven/small-cuts-scenes-dev",
+        prefix="relay",
+        fs=fs,
+        cache_dir=tmp_path,
+    )
+
+    (listed,) = client.list_scenes()
+
+    assert listed["media"]["frame_url"].startswith("/gradio_api/file=")
+    assert listed["media"]["audio_url"] == "media/scene-1/voice.wav"
+    assert listed["media"]["clip_url"] == "media/scene-1/clip.mp4"
+    assert fs.calls == [
+        "hf://buckets/macayaven/small-cuts-scenes-dev/relay/manifest.json",
+        "hf://buckets/macayaven/small-cuts-scenes-dev/relay/media/scene-1/frame.jpg",
+    ]
 
 
 def test_bucket_scene_client_discovers_modal_upload_scene_files(tmp_path):

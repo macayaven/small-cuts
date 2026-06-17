@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import base64
 import io
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from urllib.parse import unquote
 
@@ -120,3 +123,46 @@ def test_list_scenes_is_oldest_to_newest_and_limited(tmp_path):
     scenes = library.list_scenes(limit=2)
 
     assert [scene["scene_id"] for scene in scenes] == ["scene-1", "scene-2"]
+
+
+def test_list_scenes_serializes_access_to_shared_sqlite_connection(tmp_path):
+    library = LocalUploadLibrary(tmp_path / "library")
+    library.save_scene(
+        {
+            "scene_id": "scene-1",
+            "title": "Cut 1",
+            "narration": "A short remembered scene.",
+            "style_key": "deadpan",
+            "created_at": "2026-06-16T10:00:00+00:00",
+            "frame_src": _jpeg_data_uri(),
+        },
+    )
+
+    class OverlapDetectingConnection:
+        def __init__(self, connection):
+            self.connection = connection
+            self.guard = threading.Lock()
+            self.active = 0
+
+        def execute(self, *args, **kwargs):
+            with self.guard:
+                self.active += 1
+                if self.active > 1:
+                    self.active -= 1
+                    raise AssertionError("sqlite access overlapped")
+            try:
+                time.sleep(0.05)
+                return self.connection.execute(*args, **kwargs)
+            finally:
+                with self.guard:
+                    self.active -= 1
+
+        def __getattr__(self, name):
+            return getattr(self.connection, name)
+
+    library._db = OverlapDetectingConnection(library._db)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(lambda _index: library.list_scenes(), range(2)))
+
+    assert [result[0]["scene_id"] for result in results] == ["scene-1", "scene-1"]

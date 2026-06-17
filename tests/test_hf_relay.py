@@ -187,6 +187,36 @@ def test_bucket_scene_client_can_use_hf_resolve_media_urls(tmp_path):
     assert "/resolve/main/" not in media["frame_url"]
 
 
+def test_bucket_scene_client_defaults_to_direct_media_urls_on_space_relay(monkeypatch, tmp_path):
+    scene = {
+        **GOLDEN["narrated-scene.schema.json"],
+        "media": {"frame_url": "media/scene-1/frame.jpg"},
+    }
+    monkeypatch.setenv("SPACE_ID", "build-small-hackathon/small-cuts-live")
+    monkeypatch.setenv(hf_relay.RELAY_BUCKET_ENV, "build-small-hackathon/small-cuts-scenes")
+    monkeypatch.delenv(hf_relay.RELAY_DIRECT_MEDIA_URLS_ENV, raising=False)
+
+    class FakeFs:
+        def cat(self, path):
+            if path.endswith("/manifest.json"):
+                return json.dumps({"scenes": [scene]}).encode()
+            raise AssertionError(f"unexpected media fetch through fs: {path}")
+
+    client = hf_relay.BucketSceneClient(
+        "build-small-hackathon/small-cuts-scenes",
+        prefix="relay",
+        fs=FakeFs(),
+        cache_dir=tmp_path,
+    )
+
+    media = client.list_scenes()[0]["media"]
+
+    assert media["frame_url"] == (
+        "https://huggingface.co/buckets/build-small-hackathon/small-cuts-scenes"
+        "/resolve/relay/media/scene-1/frame.jpg"
+    )
+
+
 def test_bucket_scene_client_list_scenes_does_not_eagerly_fetch_audio_or_clip(tmp_path):
     scene = {
         **GOLDEN["narrated-scene.schema.json"],
@@ -267,6 +297,7 @@ def test_bucket_scene_client_discovers_modal_upload_scene_files(tmp_path):
         prefix="relay",
         fs=FakeFs(),
         cache_dir=tmp_path,
+        direct_media_urls=False,
     )
 
     scenes = client.list_scenes()
@@ -342,7 +373,7 @@ def test_bucket_scene_client_serializes_concurrent_media_cache_writes(tmp_path):
     assert (tmp_path / "media/scene-1/frame.jpg").read_bytes() == b"frame"
 
 
-def test_bucket_scene_client_skips_scene_with_missing_media_instead_of_blanking_all(tmp_path):
+def test_bucket_scene_client_keeps_scene_with_missing_shelf_media(tmp_path):
     broken = {
         **GOLDEN["narrated-scene.schema.json"],
         "scene_id": "broken",
@@ -367,9 +398,14 @@ def test_bucket_scene_client_skips_scene_with_missing_media_instead_of_blanking_
         prefix="relay",
         fs=FakeFs(),
         cache_dir=tmp_path,
+        direct_media_urls=False,
     )
 
-    assert [scene["scene_id"] for scene in client.list_scenes()] == ["good"]
+    scenes = client.list_scenes()
+
+    assert [scene["scene_id"] for scene in scenes] == ["broken", "good"]
+    assert scenes[0]["media"]["frame_url"].startswith("data:image/svg+xml")
+    assert scenes[1]["media"]["frame_url"].startswith("/gradio_api/file=")
 
 
 def test_bucket_scene_client_prunes_old_cache_files_after_media_write(tmp_path):

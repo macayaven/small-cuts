@@ -5,6 +5,7 @@ The NarratedScene fixture is the golden sample from test_contracts.py, so the
 viewer's formatter is pinned to the same shape the contract suite enforces.
 """
 
+import html
 import inspect
 import json
 from datetime import datetime, timedelta, timezone
@@ -754,23 +755,17 @@ def test_playback_js_uses_trusted_dom_click_for_audio():
     assert "audio play blocked" in viewer.PLAYBACK_SYNC_JS
 
 
-def test_playback_clock_uses_intended_state_during_audio_startup():
-    assert (
-        "const shouldPlay = window.__scUserWantsPlayback && !window.__scPausedForVideoBuffer;"
-        in viewer.PLAYBACK_SYNC_JS
-    )
-    assert (
-        "if (audio.paused) {\n        if (!window.__scPausedForVideoBuffer"
-        " && !video.paused) video.pause();" not in viewer.PLAYBACK_SYNC_JS
-    )
-
-
-def test_playback_js_pauses_voice_when_video_stalls():
-    assert "__scUserWantsPlayback" in viewer.PLAYBACK_SYNC_JS
-    assert "video.addEventListener('waiting'" in viewer.PLAYBACK_SYNC_JS
-    assert "video.addEventListener('stalled'" in viewer.PLAYBACK_SYNC_JS
-    assert "small_cuts.viewer: video stalled" in viewer.PLAYBACK_SYNC_JS
-    assert "Math.abs(video.currentTime - videoTargetTime)" in viewer.PLAYBACK_SYNC_JS
+def test_playback_js_is_event_driven_without_clock_sync():
+    assert "setInterval" not in viewer.PLAYBACK_SYNC_JS
+    assert "scVideoTargetTime" not in viewer.PLAYBACK_SYNC_JS
+    assert "scSyncVideoToAudio" not in viewer.PLAYBACK_SYNC_JS
+    assert "currentTime % video.duration" not in viewer.PLAYBACK_SYNC_JS
+    assert "video.addEventListener('waiting'" not in viewer.PLAYBACK_SYNC_JS
+    assert "video.addEventListener('stalled'" not in viewer.PLAYBACK_SYNC_JS
+    assert "addEventListener('play'" in viewer.PLAYBACK_SYNC_JS
+    assert "addEventListener('pause'" in viewer.PLAYBACK_SYNC_JS
+    assert "addEventListener('timeupdate'" in viewer.PLAYBACK_SYNC_JS
+    assert "const clock = hasAudio ? audio : video;" in viewer.PLAYBACK_SYNC_JS
 
 
 def test_header_live_reads_happening_now_else_title():
@@ -824,7 +819,7 @@ def test_poll_engine_renders_the_whole_page():
     assert "Happening now" in header  # fresh scene = live capture
     assert f"{ENGINE_URL}/media/9f1c7e4a/frame.jpg" in stage
     assert "mustard yellow" in feed
-    # audio is now the hidden master-clock <audio> element carrying the served voice URL
+    # audio is now the hidden narration <audio> element carrying the served voice URL
     assert "<audio" in audio and 'id="sc-voice"' in audio
     assert f"{ENGINE_URL}/media/9f1c7e4a/voice.wav" in audio
     assert shelf == [(f"{ENGINE_URL}/media/9f1c7e4a/frame.jpg", "The Bicycle Is Mustard Yellow")]
@@ -1141,7 +1136,7 @@ def test_go_live_handler_writes_voice_file(monkeypatch):
     audio_src = scenes[0]["audio_src"]
     assert audio_src is not None and audio_src.endswith(".wav")
     assert Path(audio_src).exists()  # written to the served generated-audio dir
-    # the page's audio slot carries that file as the master-clock <audio> element
+    # the page's audio slot carries that file as the hidden narration <audio> element
     assert "<audio" in audio and "gradio_api/file=" in audio
 
 
@@ -1157,6 +1152,26 @@ def test_subtitle_chunks_are_short_and_robust():
     assert viewer._subtitle_chunks(long_word) == [long_word]
 
 
+def test_caption_cues_cover_duration_with_even_windows():
+    cues = viewer.caption_cues(
+        "A long sentence that should be split into several small caption pieces here.",
+        8.0,
+    )
+
+    assert cues
+    assert cues[0][0] == 0.0
+    assert cues[-1][1] == 8.0
+    assert all(end > start for start, end, _text in cues)
+    assert [left[1] for left in cues[:-1]] == [right[0] for right in cues[1:]]
+    assert " ".join(text for _start, _end, text in cues).startswith("A long sentence")
+
+
+def test_caption_cues_skip_empty_or_invalid_duration():
+    assert viewer.caption_cues("   ", 8.0) == []
+    assert viewer.caption_cues("caption", 0) == []
+    assert viewer.caption_cues("caption", None) == []
+
+
 def test_stage_html_whitespace_caption_renders_no_subtitle():
     assert "sc-subtitle" not in viewer.render_stage_html("http://x/f.jpg", "   ", live=True)
 
@@ -1167,6 +1182,45 @@ def test_stage_html_embeds_duration_and_coerces_strings():
     # a stringy duration from a loose payload must coerce, not TypeError
     stringy = viewer.render_stage_html("http://x/f.jpg", "Hi.", live=True, duration="12.0")
     assert 'data-duration="12.0"' in stringy
+
+
+def test_stage_html_embeds_caption_data_attrs_no_script_or_track():
+    out = viewer.render_stage_html(
+        "http://x/f.jpg",
+        "A tiny caption for timing.",
+        live=False,
+        duration=6.0,
+    )
+
+    assert "data-sc-cues=" in out
+    assert "data-sc-chunks=" in out  # always embedded as the client-side fallback
+    assert "<track" not in out
+    assert "setInterval" not in out
+    # caption data rides on data-* attrs, NOT a gr.HTML <script> island (which Gradio warns about)
+    assert "<script" not in out
+
+    raw = out.split('data-sc-cues="', 1)[1].split('"', 1)[0]
+    cues = json.loads(html.unescape(raw))
+    assert cues[0][0] == 0.0
+    assert cues[-1][1] == 6.0
+    assert "A tiny caption" in cues[0][2]
+
+
+def test_stage_html_without_duration_still_embeds_caption_chunks():
+    # Seed/boot scenes can lack a server-side duration; captions must still advance off the
+    # browser's live clock, so the chunk list is embedded even when no timed cues exist.
+    out = viewer.render_stage_html(
+        "http://x/f.jpg",
+        "First line here. Second line follows.",
+        live=False,
+    )
+    assert "data-sc-chunks=" in out
+    assert "data-sc-cues=" not in out
+    raw = out.split('data-sc-chunks="', 1)[1].split('"', 1)[0]
+    chunks = json.loads(html.unescape(raw))
+    assert len(chunks) >= 2
+    # the painter exposes a client-side fallback that indexes chunks by the live media duration
+    assert "scCaptionChunks" in viewer.PLAYBACK_SYNC_JS
 
 
 @pytest.mark.parametrize(

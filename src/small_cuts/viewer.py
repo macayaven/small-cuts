@@ -20,6 +20,8 @@ from __future__ import annotations
 import base64
 import html
 import io
+import json
+import math
 import os
 import sys
 import tempfile
@@ -405,9 +407,8 @@ body.sc-generating .loading-overlay, body.sc-generating .loading-spinner,
 body.sc-generating .spinner, body.sc-generating .show-progress { display: none !important; }
 body.sc-generating .wrap.generating, body.sc-generating .wrap.translucent {
   opacity: 0 !important; background: transparent !important; }
-/* custom file-backed player (Review-3): the master clock is a hidden <audio id="sc-voice"> in
-   .sc-audio-host. gr.Audio can't serve as the clock — it plays via wavesurfer, leaving its own
-   <audio> element empty/unreadable. The pill's play/pause + volume drive #sc-voice via JS. */
+/* custom file-backed player (Review-3): the hidden <audio id="sc-voice"> carries narration.
+   Browser media events drive the pill/progress/captions; the decorative muted video free-runs. */
 .sc-audio-host { display: none !important; }
 .sc-vol-ctl { display: inline-flex; align-items: center; flex: 0 0 auto; }
 .sc-vol { -webkit-appearance: none; appearance: none; width: 62px; height: 4px; border-radius: 3px;
@@ -818,6 +819,38 @@ def _subtitle_chunks(text: str, max_words: int = 5) -> list[str]:
     return chunks or [text.strip()]
 
 
+def caption_cues(text: str, duration: float | str | None) -> list[tuple[float, float, str]]:
+    """Evenly distribute subtitle chunks across a known media duration."""
+    if not text.strip():
+        return []
+    try:
+        total = float(duration)
+    except (TypeError, ValueError):
+        return []
+    if not math.isfinite(total) or total <= 0:
+        return []
+    chunks = [chunk for chunk in _subtitle_chunks(text.strip()) if chunk.strip()]
+    if not chunks:
+        return []
+    window = total / len(chunks)
+    cues: list[tuple[float, float, str]] = []
+    for index, chunk in enumerate(chunks):
+        start = index * window
+        end = total if index == len(chunks) - 1 else (index + 1) * window
+        cues.append((start, end, chunk))
+    return cues
+
+
+def _caption_data_attr(value: Any) -> str:
+    """JSON compacted + HTML-escaped for safe embedding in a `data-*` attribute.
+
+    Caption cue/chunk lists ride on the subtitle div's data attributes rather than an inert
+    `<script>` island: Gradio warns about (and may not surface) `<script>` tags inside gr.HTML, but
+    attributes always survive innerHTML insertion and sanitization.
+    """
+    return html.escape(json.dumps(value, separators=(",", ":")), quote=True)
+
+
 def render_stage_html(
     frame_src: str | None,
     caption: str,
@@ -833,9 +866,8 @@ def render_stage_html(
     """
     if clip_src:
         poster = f' poster="{html.escape(frame_src, quote=True)}"' if frame_src else ""
-        # No `autoplay`: the video is muted and driven by the shared play/pause clock
-        # (PLAYBACK_SYNC_JS) so it starts/freezes with the voice. It loops while playing so a
-        # short clip keeps moving under a longer narration; on pause it freezes on its frame.
+        # No `autoplay`: the trusted play gesture starts/stops this decorative b-roll.
+        # It loops on its own native clock; narration audio is not allowed to snap its currentTime.
         body = (
             f'<video src="{html.escape(clip_src, quote=True)}"{poster} '
             'muted loop playsinline preload="auto" fetchpriority="high"></video>'
@@ -845,12 +877,20 @@ def render_stage_html(
     else:
         body = '<div class="sc-stage-empty">🎬</div>'
     if caption and caption.strip():
-        spans = "".join(
-            f'<span class="sc-sub-line"{"" if i == 0 else " hidden"}>{html.escape(c)}</span>'
-            for i, c in enumerate(_subtitle_chunks(caption))
-        )
+        chunks = [chunk for chunk in _subtitle_chunks(caption.strip()) if chunk.strip()]
+        cues = caption_cues(caption, duration)
+        first_caption = cues[0][2] if cues else (chunks[0] if chunks else caption.strip())
         dur_attr = f' data-duration="{float(duration):.1f}"' if duration else ""
-        caption_html = f'<div class="sc-subtitle" id="sc-subtitle"{dur_attr}>{spans}</div>'
+        # Timed cues (when the scene's duration is known server-side) are preferred by the painter;
+        # the chunk list is ALWAYS embedded so captions still advance off the browser's live clock
+        # for scenes whose duration is only known in the browser (e.g. seed scenes).
+        cues_attr = f' data-sc-cues="{_caption_data_attr(cues)}"' if cues else ""
+        chunks_attr = f' data-sc-chunks="{_caption_data_attr(chunks)}"' if chunks else ""
+        caption_html = (
+            f'<div class="sc-subtitle" id="sc-subtitle"{dur_attr}{cues_attr}{chunks_attr}>'
+            f'<span class="sc-sub-line">{html.escape(first_caption)}</span>'
+            "</div>"
+        )
     else:
         caption_html = ""
     if source_icon in SOURCE_ICON_LABELS:
@@ -1167,7 +1207,7 @@ def _go_live_handler(
     card, narration = _narrate_core(frame, style_key, scene_hint or "", empty_caption)
     scene = make_local_scene(frame, card, narration, style_key, source_video_path=video_path)
     # Voice-over is on by default — narrate, then voice. A TTS hiccup must not crash the stage;
-    # the voice is written to a served WAV so the <audio> master clock can replay it from the shelf.
+    # the voice is written to a served WAV so the hidden <audio> can replay it from the shelf.
     try:
         speech = speak(narration)
         scene["duration"] = len(speech.audio) / speech.sample_rate if speech.sample_rate else None
@@ -1501,7 +1541,8 @@ def _clamp_index(evt_index: Any, length: int) -> int:
 
 
 # Generated voice-overs are written here as served WAV files (ephemeral, not the library) so the
-# custom <audio> master clock can stream them — see _write_voice. Registered via set_static_paths.
+# custom <audio> narration element can stream them — see _write_voice. Registered via
+# set_static_paths.
 GENERATED_AUDIO_DIR = Path(tempfile.gettempdir()) / "small_cuts_voice"
 
 
@@ -1517,9 +1558,11 @@ def _audio_url(src: str | None) -> str | None:
 
 
 def _audio_html(src: str | None) -> str:
-    """The hidden master-clock `<audio>` element — no native controls; the pill drives it via JS
-    (PLAYBACK_SYNC_JS). Re-rendered into its host on each scene change so the source swaps with the
-    cut. gr.Audio can't serve as the clock: it plays via wavesurfer, leaving its `<audio>` empty."""
+    """The hidden narration `<audio>` element — no native controls.
+
+    Re-rendered into its host on each scene change so the source swaps with the cut. gr.Audio can't
+    serve this role: it plays via wavesurfer, leaving its `<audio>` empty.
+    """
     url = _audio_url(src)
     if not url:
         return '<audio id="sc-voice" preload="auto" fetchpriority="high"></audio>'
@@ -1563,12 +1606,10 @@ def _audio_duration(path: str | None) -> float | None:
         return None
 
 
-# One clock for the whole stage (Review-3 #3). gr.Audio's native <audio> is the master:
-# the (muted) video and the captions/progress follow ITS play/pause + currentTime, so play
-# runs all three and pause freezes all three on the same frame. Replaces the old three-clock
-# arrangement (video autoplay-loop + gr.Audio + a Date.now() caption estimate) that let the
-# video drift free of the narration. Also injects the Voice-Cut favicon and wires the header
-# as the "back to live" affordance (the standalone button is hidden).
+# Browser-native playback wiring for the stage. Narration audio is authoritative when it has
+# a source; otherwise the muted looping video is authoritative. Captions/progress/icon state
+# are painted from media events, while the b-roll free-runs on its own native clock.
+# Also injects the Voice-Cut favicon and wires the header as the "back to live" affordance.
 PLAYBACK_SYNC_JS = """
 () => {
   if (window.__scInit) return;
@@ -1665,9 +1706,6 @@ PLAYBACK_SYNC_JS = """
   if (typeof window.__scUserWantsPlayback !== 'boolean') {
     window.__scUserWantsPlayback = false;
   }
-  if (typeof window.__scPausedForVideoBuffer !== 'boolean') {
-    window.__scPausedForVideoBuffer = false;
-  }
   const scUploadSubmitButton = () => (
     document.querySelector('#sc-upload-popover button.sc-narrate-btn')
     || document.querySelector('#sc-upload-popover .sc-narrate-btn button')
@@ -1731,84 +1769,173 @@ PLAYBACK_SYNC_JS = """
     setTimeout(scSyncUploadSubmitState, 0);
   }, true);
 
+  const scHasMediaSrc = (el) => !!(el && (el.currentSrc || el.getAttribute('src')));
+  const scAuthoritativeMedia = () => {
+    const audio = document.querySelector('#sc-voice');
+    const video = document.querySelector('.sc-stage-shell video');
+    const hasAudio = scHasMediaSrc(audio);
+    const clock = hasAudio ? audio : video;
+    return { audio, video, hasAudio, clock };
+  };
+  const scSetPlayIcon = (playing) => {
+    const playBtn = document.querySelector('.sc-play-btn');
+    if (!playBtn) return;
+    playBtn.classList.toggle('sc-ico-pause', playing);
+    playBtn.classList.toggle('sc-ico-play', !playing);
+  };
+  const scSubtitleData = (key) => {
+    const sub = document.querySelector('#sc-subtitle');
+    const raw = sub && sub.dataset ? sub.dataset[key] : '';
+    if (!raw) return [];
+    try {
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (err) {
+      return [];
+    }
+  };
+  const scCaptionCues = () => scSubtitleData('scCues');
+  const scCaptionChunks = () => scSubtitleData('scChunks');
+  const scCueText = (cues, t) => {
+    let active = null;
+    cues.some((cue, index) => {
+      const start = Number(cue[0]);
+      const end = Number(cue[1]);
+      if (!Number.isFinite(start) || !Number.isFinite(end)) return false;
+      const isLast = index === cues.length - 1;
+      if (t >= start && (t < end || (isLast && t <= end + 0.25))) {
+        active = cue;
+        return true;
+      }
+      return false;
+    });
+    const lastCue = cues[cues.length - 1];
+    if (!active && lastCue && t >= Number(lastCue[1])) active = lastCue;
+    return active ? (active[2] || '') : null;
+  };
+  // Captions advance on the authoritative clock. Server cues (with timings, when the scene's
+  // duration is known) win; otherwise evenly index the chunk list by the LIVE media duration, so
+  // captions still track scenes whose duration is only known in the browser (e.g. seed scenes).
+  const scPaintCaption = (time, duration) => {
+    const sub = document.querySelector('#sc-subtitle');
+    if (!sub) return;
+    const line = sub.querySelector('.sc-sub-line');
+    if (!line) return;
+    const t = Number.isFinite(time) ? time : 0;
+    const cues = scCaptionCues();
+    let text = null;
+    if (cues.length) {
+      text = scCueText(cues, t);
+    } else {
+      const chunks = scCaptionChunks();
+      if (chunks.length) {
+        if (Number.isFinite(duration) && duration > 0) {
+          const p = Math.max(0, Math.min(1, t / duration));
+          text = chunks[Math.min(chunks.length - 1, Math.floor(p * chunks.length))];
+        } else {
+          text = chunks[0];
+        }
+      }
+    }
+    if (text != null) {
+      line.textContent = text;
+      line.hidden = false;
+    } else {
+      line.hidden = true;
+    }
+  };
+  const scPaintProgressAndCaption = (clock) => {
+    const fill = document.querySelector('#sc-progress-fill');
+    let progress = 0;
+    let time = 0;
+    let duration = 0;
+    if (clock) {
+      time = Number.isFinite(clock.currentTime) ? clock.currentTime : 0;
+      duration = Number.isFinite(clock.duration) ? clock.duration : 0;
+      if (duration > 0) {
+        progress = Math.max(0, Math.min(1, time / duration));
+      }
+    }
+    if (fill) fill.style.width = (progress * 100).toFixed(1) + '%';
+    scPaintCaption(time, duration);
+  };
+  const scRefreshPlaybackChrome = () => {
+    const media = scAuthoritativeMedia();
+    const playing = !!(media.clock && !media.clock.paused && !media.clock.ended);
+    scSetPlayIcon(playing);
+    scPaintProgressAndCaption(media.clock);
+  };
+
   // play/pause must be bound directly to the trusted DOM gesture. A gr.Button.click(js=...)
   // callback runs through Gradio's event layer, which can lose browser user activation and
   // make audio.play() fail with NotAllowedError even though the user tapped the button. Touch
   // devices get pointerdown; mouse/keyboard use click. The guard prevents touch pointerdown's
   // follow-up click from immediately pausing the scene.
-  const scVideoTargetTime = (audio, video) => {
-    if (!audio || !video || !isFinite(video.duration) || video.duration <= 0) return null;
-    return audio.currentTime % video.duration;
-  };
-  const scSyncVideoToAudio = (audio, video, force = false) => {
-    const videoTargetTime = scVideoTargetTime(audio, video);
-    if (videoTargetTime === null) return;
-    if (force || Math.abs(video.currentTime - videoTargetTime) > 1.5) {
-      try { video.currentTime = videoTargetTime; } catch (err) {}
-    }
-  };
-  const scPauseVoiceForVideoBuffer = (reason) => {
-    const audio = document.querySelector('#sc-voice');
-    if (!window.__scUserWantsPlayback || !audio || audio.paused) return;
-    window.__scPausedForVideoBuffer = true;
-    console.warn('small_cuts.viewer: video stalled', reason);
-    audio.pause();
-  };
-  const scResumeVoiceAfterVideoBuffer = () => {
-    const audio = document.querySelector('#sc-voice');
-    const video = document.querySelector('.sc-stage-shell video');
-    if (!window.__scUserWantsPlayback || !window.__scPausedForVideoBuffer || !audio) return;
-    window.__scPausedForVideoBuffer = false;
-    audio.play().catch((err) => {
-      console.warn('small_cuts.viewer: audio play blocked', err);
-    });
-    if (video) {
-      scSyncVideoToAudio(audio, video, true);
-      video.play().catch(() => {});
-    }
-  };
-  const scWireVideoBufferEvents = (video) => {
-    if (!video || video.__scBufferEventsWired) return;
-    video.__scBufferEventsWired = true;
-    video.addEventListener('waiting', () => scPauseVoiceForVideoBuffer('waiting'));
-    video.addEventListener('stalled', () => scPauseVoiceForVideoBuffer('stalled'));
-    video.addEventListener('playing', scResumeVoiceAfterVideoBuffer);
-    video.addEventListener('canplay', scResumeVoiceAfterVideoBuffer);
-  };
   const togglePlayback = (e) => {
     const playBtn = e.target.closest && e.target.closest('.sc-play-btn');
     if (!playBtn) return;
-    const audio = document.querySelector('#sc-voice');
-    const video = document.querySelector('.sc-stage-shell video');
-    scWireVideoBufferEvents(video);
+    const media = scAuthoritativeMedia();
+    const { audio, video, hasAudio, clock } = media;
+    if (!clock) return;
 
-    if (!audio || !audio.getAttribute('src')) {
-      if (!video) return;
-      if (video.paused) {
-        window.__scUserWantsPlayback = true;
-        video.play().catch(() => {});
-      } else {
-        window.__scUserWantsPlayback = false;
-        video.pause();
-      }
-      return;
-    }
-
-    if (audio.paused) {
+    if (clock.paused || clock.ended) {
       window.__scUserWantsPlayback = true;
-      window.__scPausedForVideoBuffer = false;
-      if (video) scSyncVideoToAudio(audio, video, true);
-      audio.play().catch((err) => {
-        console.warn('small_cuts.viewer: audio play blocked', err);
-      });
-      if (video) video.play().catch(() => {});
+      if (hasAudio && audio) {
+        audio.play().catch((err) => {
+          console.warn('small_cuts.viewer: audio play blocked', err);
+        });
+        if (video) video.play().catch(() => {});
+      } else if (video) {
+        video.play().catch(() => {});
+      }
     } else {
       window.__scUserWantsPlayback = false;
-      window.__scPausedForVideoBuffer = false;
-      audio.pause();
-      if (video) video.pause();
+      clock.pause();
+      if (hasAudio && video) video.pause();
     }
   };
+  document.addEventListener('play', (e) => {
+    const media = scAuthoritativeMedia();
+    if (!media.clock || e.target !== media.clock) return;
+    window.__scUserWantsPlayback = true;
+    scSetPlayIcon(true);
+    if (media.hasAudio && media.video && media.video.paused) {
+      media.video.play().catch(() => {});
+    }
+  }, true);
+  document.addEventListener('pause', (e) => {
+    const media = scAuthoritativeMedia();
+    if (!media.clock || e.target !== media.clock) return;
+    window.__scUserWantsPlayback = false;
+    scSetPlayIcon(false);
+    if (media.hasAudio && media.video && !media.video.paused) {
+      media.video.pause();
+    }
+    scPaintProgressAndCaption(media.clock);
+  }, true);
+  document.addEventListener('timeupdate', (e) => {
+    const media = scAuthoritativeMedia();
+    if (!media.clock || e.target !== media.clock) return;
+    scPaintProgressAndCaption(media.clock);
+  }, true);
+  document.addEventListener('loadedmetadata', (e) => {
+    const media = scAuthoritativeMedia();
+    if (media.clock && e.target === media.clock) scRefreshPlaybackChrome();
+  }, true);
+  document.addEventListener('durationchange', (e) => {
+    const media = scAuthoritativeMedia();
+    if (media.clock && e.target === media.clock) scRefreshPlaybackChrome();
+  }, true);
+  if (!window.__scPlaybackChromeObs && document.body) {
+    window.__scPlaybackChromeObs = new MutationObserver(scRefreshPlaybackChrome);
+    window.__scPlaybackChromeObs.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['src'],
+    });
+  }
+  scRefreshPlaybackChrome();
   document.addEventListener('pointerdown', (e) => {
     if (e.pointerType === 'mouse') return;
     if (!(e.target.closest && e.target.closest('.sc-play-btn'))) return;
@@ -1820,51 +1947,6 @@ PLAYBACK_SYNC_JS = """
     if (Date.now() - (window.__scLastTouchPlayAt || 0) < 500) return;
     togglePlayback(e);
   }, true);
-
-  window.__scClock = setInterval(() => {
-    const audio = document.querySelector('#sc-voice');   // our own master clock <audio>
-    const video = document.querySelector('.sc-stage-shell video');
-    const sub = document.querySelector('#sc-subtitle');
-    const fill = document.querySelector('#sc-progress-fill');
-    const playBtn = document.querySelector('.sc-play-btn');
-    scWireVideoBufferEvents(video);
-
-    // Couple the muted video to the user's intended play state, not the transient
-    // audio.paused flag. During audio startup/buffering, audio.paused can remain true
-    // for a few ticks after the user tapped play; treating that as a pause command
-    // creates the play -> instant pause -> play race that makes the video stutter.
-    if (audio && video) {
-      const shouldPlay = window.__scUserWantsPlayback && !window.__scPausedForVideoBuffer;
-      if (shouldPlay) {
-        scSyncVideoToAudio(audio, video);
-        if (video.paused) video.play().catch(() => {});
-      } else {
-        if (!video.paused) video.pause();
-        if (!audio.paused) audio.pause();
-      }
-    }
-    // the play button shows the action it WILL do: play icon when paused, pause icon when playing
-    if (playBtn) {
-      const hasAudio = !!(audio && audio.getAttribute('src'));
-      const playing = window.__scUserWantsPlayback && (
-        hasAudio || !!(video && !video.paused)
-      );
-      playBtn.classList.toggle('sc-ico-pause', playing);
-      playBtn.classList.toggle('sc-ico-play', !playing);
-    }
-
-    // captions + progress advance on the REAL voice clock — true currentTime sync
-    if (!sub) { if (fill) fill.style.width = '0%'; return; }
-    const lines = sub.querySelectorAll('.sc-sub-line');
-    if (!lines.length) return;
-    let p = 0;
-    if (audio && isFinite(audio.duration) && audio.duration > 0) {
-      p = Math.max(0, Math.min(1, audio.currentTime / audio.duration));
-    }
-    const idx = Math.min(lines.length - 1, Math.floor(p * lines.length));
-    lines.forEach((l, i) => { l.hidden = (i !== idx); });
-    if (fill) fill.style.width = (p * 100).toFixed(1) + '%';
-  }, 120);
 
   // R4 + R5: between "Make the cut" and the buffered reveal the user sees ONLY the
   // clapperboard loader. We mount the loader over the stage when the Narrate button is tapped,
@@ -2130,7 +2212,7 @@ def build_viewer_app() -> gr.Blocks:
                         report_btn = gr.Button(
                             "", elem_classes=["sc-icbtn", "sc-ico-flag", "sc-report-btn"]
                         )
-                    # hidden master-clock <audio> host (re-rendered on each scene change)
+                    # hidden narration <audio> host (re-rendered on each scene change)
                     audio = gr.HTML(boot_audio, elem_classes="sc-audio-host", padding=False)
                 # The play tap is handled by PLAYBACK_SYNC_JS as a delegated DOM click so the
                 # browser keeps user activation for audio.play().

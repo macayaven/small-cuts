@@ -107,16 +107,16 @@ def test_space_defaults_gradio_ssr_off_for_custom_routes(monkeypatch):
     assert os.environ["GRADIO_SSR_MODE"] == "False"
 
 
-def test_space_respects_explicit_gradio_ssr_mode(monkeypatch):
+def test_space_forces_gradio_ssr_off_for_custom_routes(monkeypatch):
     monkeypatch.setenv("SPACE_ID", "macayaven/small-cuts-dev")
     monkeypatch.setenv("GRADIO_SSR_MODE", "True")
     monkeypatch.delenv("SMALL_CUTS_ENGINE_URL", raising=False)
     monkeypatch.setenv("SMALL_CUTS_RELAY_BUCKET", "macayaven/small-cuts-scenes-dev")
     monkeypatch.setitem(sys.modules, "spaces", None)
 
-    _load_app_module("_small_cuts_test_app_ssr_explicit")
+    _load_app_module("_small_cuts_test_app_ssr_forced_off")
 
-    assert os.environ["GRADIO_SSR_MODE"] == "True"
+    assert os.environ["GRADIO_SSR_MODE"] == "False"
 
 
 def test_app_filters_gradio_starlette_queue_warning(monkeypatch):

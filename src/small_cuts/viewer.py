@@ -838,10 +838,10 @@ def render_stage_html(
         # short clip keeps moving under a longer narration; on pause it freezes on its frame.
         body = (
             f'<video src="{html.escape(clip_src, quote=True)}"{poster} '
-            "muted loop playsinline></video>"
+            'muted loop playsinline preload="auto" fetchpriority="high"></video>'
         )
     elif frame_src:
-        body = f'<img src="{html.escape(frame_src, quote=True)}" alt="">'
+        body = f'<img src="{html.escape(frame_src, quote=True)}" alt="" fetchpriority="high">'
     else:
         body = '<div class="sc-stage-empty">🎬</div>'
     if caption and caption.strip():
@@ -1522,8 +1522,11 @@ def _audio_html(src: str | None) -> str:
     cut. gr.Audio can't serve as the clock: it plays via wavesurfer, leaving its `<audio>` empty."""
     url = _audio_url(src)
     if not url:
-        return '<audio id="sc-voice" preload="auto"></audio>'
-    return f'<audio id="sc-voice" src="{html.escape(url, quote=True)}" preload="auto"></audio>'
+        return '<audio id="sc-voice" preload="auto" fetchpriority="high"></audio>'
+    return (
+        f'<audio id="sc-voice" src="{html.escape(url, quote=True)}" '
+        'preload="auto" fetchpriority="high"></audio>'
+    )
 
 
 def _write_voice(samples: Any, sample_rate: int, scene_id: str) -> str | None:
@@ -1740,7 +1743,7 @@ PLAYBACK_SYNC_JS = """
   const scSyncVideoToAudio = (audio, video, force = false) => {
     const videoTargetTime = scVideoTargetTime(audio, video);
     if (videoTargetTime === null) return;
-    if (force || Math.abs(video.currentTime - videoTargetTime) > 0.35) {
+    if (force || Math.abs(video.currentTime - videoTargetTime) > 1.5) {
       try { video.currentTime = videoTargetTime; } catch (err) {}
     }
   };
@@ -2055,7 +2058,11 @@ def build_viewer_app() -> gr.Blocks:
         # as the launch-time fallback — passing it here keeps the de-Gradio
         # CSS attached however the Space launches the demo.
         warnings.filterwarnings("ignore", message=".*moved from the Blocks constructor.*")
-        blocks = gr.Blocks(title=TITLE, css=VIEWER_CSS)
+        blocks = gr.Blocks(
+            title=TITLE,
+            css=VIEWER_CSS,
+            head="""<link rel="preconnect" href="https://huggingface.co" crossorigin>""",
+        )
 
     with blocks as demo:
         scenes_state = gr.State(

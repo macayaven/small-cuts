@@ -183,6 +183,20 @@ def test_mobile_stage_has_explicit_width_clamp():
     assert "width: max-content !important; min-width: 100% !important;" in source
 
 
+def test_desktop_library_is_horizontal_carousel():
+    source = (ROOT / "src/small_cuts/viewer.py").read_text()
+
+    assert ".sc-theater { flex-direction: row !important;" in source
+    assert "flex-wrap: nowrap !important;" in source
+    assert ".sc-rail-col { flex: 0 0 auto !important;" in source
+    assert "width: clamp(360px, 44vw, 520px) !important;" in source
+    assert "height: 154px !important;" in source
+    assert "grid-auto-columns: minmax(150px, 168px) !important;" in source
+    assert "scroll-snap-type: x mandatory;" in source
+    assert "overflow-x: auto !important; overflow-y: hidden !important;" in source
+    assert "scrollbar-color: rgba(212,175,55,.75) transparent;" in source
+
+
 def test_blocked_upload_status_is_inline_and_loader_free():
     status = render_upload_status_html(
         "blocked", "Demo daily GPU budget reached. Uploads reopen tomorrow."

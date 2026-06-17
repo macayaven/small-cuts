@@ -83,6 +83,18 @@ def test_uploaded_scene_is_preserved_in_engine_state():
     assert state["upload_scene"]["scene_id"] == "modal-upload-1"
 
 
+def test_upload_error_message_is_preserved_in_engine_state():
+    state = viewer._pack_engine_ui_state(
+        scenes=[],
+        pinned_id=None,
+        current_id=None,
+        playing_id=None,
+        previous={"upload_error_message": "Modal upload failed: unavailable"},
+    )
+
+    assert state["upload_error_message"] == "Modal upload failed: unavailable"
+
+
 def test_upload_video_cap_defaults_to_sixty_seconds(monkeypatch):
     monkeypatch.delenv("SMALL_CUTS_UPLOAD_MAX_SECONDS", raising=False)
 
@@ -255,6 +267,7 @@ def test_submit_modal_upload_pins_returned_scene(monkeypatch):
 
 def test_submit_modal_upload_modal_failure_warns_instead_of_raising(monkeypatch):
     warnings = []
+    captured = []
 
     class FailingModalUploadClient:
         def submit_video(self, video_path, *, style_key, scene_hint):
@@ -262,6 +275,7 @@ def test_submit_modal_upload_modal_failure_warns_instead_of_raising(monkeypatch)
 
     monkeypatch.setattr(viewer, "_video_duration_s", lambda _path: 7.5)
     monkeypatch.setattr(viewer, "_modal_upload_client", lambda: FailingModalUploadClient())
+    monkeypatch.setattr(viewer, "capture_exception", lambda exc: captured.append(exc))
     monkeypatch.setattr(viewer.gr, "Warning", lambda message: warnings.append(message))
 
     outputs = viewer._submit_modal_upload(
@@ -273,7 +287,111 @@ def test_submit_modal_upload_modal_failure_warns_instead_of_raising(monkeypatch)
     )
 
     assert warnings == ["Modal upload failed: modal unavailable"]
+    assert len(captured) == 1
+    assert isinstance(captured[0], viewer.ModalUploadError)
     assert outputs[5]["scenes"] == []
+    assert outputs[5]["upload_error_message"] == "Modal upload failed: modal unavailable"
+
+
+def test_submit_modal_upload_unexpected_failure_warns_and_reports(monkeypatch):
+    warnings = []
+    captured = []
+
+    class FailingModalUploadClient:
+        def submit_video(self, video_path, *, style_key, scene_hint):
+            raise RuntimeError("unexpected modal client crash")
+
+    monkeypatch.setattr(viewer, "_video_duration_s", lambda _path: 7.5)
+    monkeypatch.setattr(viewer, "_modal_upload_client", lambda: FailingModalUploadClient())
+    monkeypatch.setattr(viewer, "capture_exception", lambda exc: captured.append(exc))
+    monkeypatch.setattr(viewer.gr, "Warning", lambda message: warnings.append(message))
+
+    outputs = viewer._submit_modal_upload(
+        "clip.mp4",
+        "deadpan",
+        "",
+        viewer._pack_engine_ui_state([], None, None, None),
+        fake_client(lambda _request: httpx.Response(200, json={"scenes": []})),
+    )
+
+    assert warnings == ["Upload failed before processing. Please try again."]
+    assert len(captured) == 1
+    assert isinstance(captured[0], RuntimeError)
+    assert outputs[5]["scenes"] == []
+    assert (
+        outputs[5]["upload_error_message"] == "Upload failed before processing. Please try again."
+    )
+
+
+def test_modal_upload_soft_failure_renders_inline_status(monkeypatch, tmp_path):
+    monkeypatch.setenv(viewer.ENGINE_URL_ENV, "http://127.0.0.1:9")
+    monkeypatch.setenv(viewer.UPLOAD_SANDBOX_ENV, "1")
+    monkeypatch.setenv(viewer.MODAL_API_URL_ENV, "https://example.modal.run")
+    monkeypatch.setenv("SMALL_CUTS_UPLOAD_BUDGET_DB", str(tmp_path / "budget.sqlite3"))
+
+    state = viewer._pack_engine_ui_state([], None, None, None)
+
+    def fail_upload(*_args, **_kwargs):
+        return (
+            viewer.gr.skip(),
+            viewer.gr.skip(),
+            viewer.gr.skip(),
+            viewer.gr.skip(),
+            viewer.gr.skip(),
+            {**state, "upload_error_message": "Modal upload failed: modal unavailable"},
+            viewer.gr.skip(),
+        )
+
+    monkeypatch.setattr(viewer, "_submit_modal_upload", fail_upload)
+    app = viewer.build_viewer_app()
+    upload_dep = next(
+        dep
+        for dep in app.config["dependencies"]
+        if dep.get("backend_fn") and dep.get("api_name") == "_go_modal_upload_ui"
+    )
+    upload_fn = app.fns[upload_dep["id"]].fn
+
+    outputs = upload_fn(
+        True,
+        None,
+        "clip.mp4",
+        "deadpan",
+        "",
+        state,
+        viewer.render_upload_status_html("running"),
+    )
+
+    assert "sc-upload-status blocked" in outputs[7]
+    assert "Modal upload failed: modal unavailable" in outputs[7]
+    assert outputs[8]["interactive"] is True
+
+
+def test_modal_upload_missing_preflight_state_clears_running_status(monkeypatch, tmp_path):
+    monkeypatch.setenv(viewer.ENGINE_URL_ENV, "http://127.0.0.1:9")
+    monkeypatch.setenv(viewer.UPLOAD_SANDBOX_ENV, "1")
+    monkeypatch.setenv(viewer.MODAL_API_URL_ENV, "https://example.modal.run")
+    monkeypatch.setenv("SMALL_CUTS_UPLOAD_BUDGET_DB", str(tmp_path / "budget.sqlite3"))
+
+    app = viewer.build_viewer_app()
+    upload_dep = next(
+        dep
+        for dep in app.config["dependencies"]
+        if dep.get("backend_fn") and dep.get("api_name") == "_go_modal_upload_ui"
+    )
+    upload_fn = app.fns[upload_dep["id"]].fn
+
+    outputs = upload_fn(
+        False,
+        None,
+        "clip.mp4",
+        "deadpan",
+        "",
+        viewer._pack_engine_ui_state([], None, None, None),
+        viewer.render_upload_status_html("running"),
+    )
+
+    assert "sc-upload-status blocked" in outputs[7]
+    assert "Upload did not start" in outputs[7]
 
 
 def test_upload_sandbox_bounds_queue_and_upload_concurrency(monkeypatch):
@@ -312,6 +430,28 @@ def test_upload_sandbox_bounds_queue_and_upload_concurrency(monkeypatch):
     assert target_event == "relay_scene"
     assert components_by_id[target_id]["type"] == "html"
     assert components_by_id[target_id]["props"]["elem_classes"] == ["sc-relay-events"]
+
+
+def test_upload_sandbox_chains_backend_upload_directly_after_preflight(monkeypatch, tmp_path):
+    monkeypatch.setenv(viewer.ENGINE_URL_ENV, "http://127.0.0.1:9")
+    monkeypatch.setenv(viewer.UPLOAD_SANDBOX_ENV, "1")
+    monkeypatch.setenv(viewer.MODAL_API_URL_ENV, "https://example.modal.run")
+    monkeypatch.setenv("SMALL_CUTS_UPLOAD_BUDGET_DB", str(tmp_path / "budget.sqlite3"))
+
+    app = viewer.build_viewer_app()
+    preflight_dep = next(
+        dep
+        for dep in app.config["dependencies"]
+        if dep.get("backend_fn") and dep.get("api_name") == "_upload_preflight_ui"
+    )
+    upload_dep = next(
+        dep
+        for dep in app.config["dependencies"]
+        if dep.get("backend_fn") and dep.get("api_name") == "_go_modal_upload_ui"
+    )
+
+    assert upload_dep["trigger_after"] == preflight_dep["id"]
+    assert "window.__scStartGeneration" in upload_dep["js"]
 
 
 def test_upload_sandbox_uses_topbar_popover_not_stage_accordion(monkeypatch):

@@ -88,6 +88,7 @@ UPLOAD_QUEUE_MAX_SIZE = 8
 UPLOAD_CONCURRENCY_ID = "small-cuts-modal-upload"
 VISIBILITIES = ("private", "shared", "public")
 _KEEP_UPLOAD_SCENE = object()
+_KEEP_UPLOAD_ERROR = object()
 SOURCE_ICON_LABELS = {
     "glasses": "Glasses capture",
     "upload": "Space upload",
@@ -627,6 +628,10 @@ def render_upload_status_html(state: str = "idle", message: str | None = None) -
     else:
         body = ""
     return f'<div class="sc-upload-status {html.escape(state, quote=True)}">{body}</div>'
+
+
+def _upload_status_is_running(status_html: Any) -> bool:
+    return isinstance(status_html, str) and "sc-upload-status running" in status_html
 
 
 def _toggle_upload_panel(is_open: bool) -> tuple[Any, ...]:
@@ -1216,12 +1221,16 @@ def _engine_ui_state(value: Any) -> dict[str, Any]:
     data = value if isinstance(value, dict) else {}
     scenes = data.get("scenes")
     upload_scene = data.get("upload_scene")
+    upload_error_message = data.get("upload_error_message")
     return {
         "scenes": scenes if isinstance(scenes, list) else [],
         "pinned_id": data.get("pinned_id"),
         "current_id": data.get("current_id"),
         "playing_id": data.get("playing_id"),
         "upload_scene": upload_scene if isinstance(upload_scene, dict) else None,
+        "upload_error_message": upload_error_message
+        if isinstance(upload_error_message, str)
+        else "",
     }
 
 
@@ -1232,6 +1241,7 @@ def _pack_engine_ui_state(
     playing_id: Any,
     previous: dict[str, Any] | None = None,
     upload_scene: Any = _KEEP_UPLOAD_SCENE,
+    upload_error_message: Any = _KEEP_UPLOAD_ERROR,
 ) -> dict[str, Any]:
     prev = _engine_ui_state(previous)
     return {
@@ -1242,18 +1252,23 @@ def _pack_engine_ui_state(
         "upload_scene": prev["upload_scene"]
         if upload_scene is _KEEP_UPLOAD_SCENE
         else upload_scene,
+        "upload_error_message": prev["upload_error_message"]
+        if upload_error_message is _KEEP_UPLOAD_ERROR
+        else (upload_error_message if isinstance(upload_error_message, str) else ""),
     }
 
 
 def _modal_upload_warning_response(message: str, state: Any) -> tuple[Any, ...]:
     gr.Warning(message)
+    state_payload = _engine_ui_state(state)
+    state_payload["upload_error_message"] = message
     return (
         gr.skip(),
         gr.skip(),
         gr.skip(),
         gr.skip(),
         gr.skip(),
-        _engine_ui_state(state),
+        state_payload,
         gr.skip(),
     )
 
@@ -1294,7 +1309,13 @@ def _submit_modal_upload(
             scene_hint=scene_hint,
         )
     except (ModalUploadError, httpx.HTTPError) as exc:
+        capture_exception(exc)
         return _modal_upload_warning_response(f"Modal upload failed: {exc}", state)
+    except Exception as exc:
+        capture_exception(exc)
+        return _modal_upload_warning_response(
+            "Upload failed before processing. Please try again.", state
+        )
 
     scene = _scene_with_media_urls(raw_scene, media_client)
     current_state = _engine_ui_state(state)
@@ -1321,6 +1342,7 @@ def _submit_modal_upload(
             scene_id,
             previous=current_state,
             upload_scene=scene,
+            upload_error_message=None,
         ),
         gr.update(value=payload["visibility"]) if payload["visibility"] else gr.skip(),
     )
@@ -1750,9 +1772,10 @@ PLAYBACK_SYNC_JS = PLAYBACK_SYNC_JS.replace(
 PLAYBACK_SYNC_ON_LOAD_JS = f"({PLAYBACK_SYNC_JS})();"
 
 START_GENERATION_IF_PREFLIGHT_OK_JS = """
-() => {
+(...args) => {
   const status = document.querySelector('.sc-upload-status.running');
   if (status && window.__scStartGeneration) window.__scStartGeneration();
+  return args;
 }
 """
 
@@ -2072,8 +2095,14 @@ def build_viewer_app() -> gr.Blocks:
                     style_key,
                     scene_hint,
                     state,
+                    upload_status_html,
                 ):
                     if not can_run:
+                        status_update = gr.skip()
+                        if video_path and _upload_status_is_running(upload_status_html):
+                            status_update = render_upload_status_html(
+                                "blocked", "Upload did not start. Please try again."
+                            )
                         return (
                             gr.skip(),
                             gr.skip(),
@@ -2082,7 +2111,7 @@ def build_viewer_app() -> gr.Blocks:
                             gr.skip(),
                             _engine_ui_state(state),
                             gr.skip(),
-                            gr.skip(),
+                            status_update,
                             gr.update(interactive=True),
                             gr.skip(),
                             gr.skip(),
@@ -2145,6 +2174,7 @@ def build_viewer_app() -> gr.Blocks:
                                     saved_scene["scene_id"],
                                     previous=result_state,
                                     upload_scene=saved_scene,
+                                    upload_error_message=None,
                                 ),
                                 gr.update(value=payload["visibility"])
                                 if payload["visibility"]
@@ -2153,7 +2183,11 @@ def build_viewer_app() -> gr.Blocks:
                     status = (
                         render_upload_status_html("complete")
                         if succeeded
-                        else render_upload_status_html()
+                        else render_upload_status_html(
+                            "blocked",
+                            _engine_ui_state(result[5])["upload_error_message"]
+                            or "Upload could not be processed. Please try again.",
+                        )
                     )
                     # R3: on SUCCESS clear the video + hint so a second upload works immediately;
                     # on soft-fail keep the user's file and what they typed.
@@ -2181,8 +2215,6 @@ def build_viewer_app() -> gr.Blocks:
                     queue=False,
                     show_progress="hidden",
                 ).then(
-                    js=START_GENERATION_IF_PREFLIGHT_OK_JS,
-                ).then(
                     _go_modal_upload_ui,
                     inputs=[
                         upload_run_allowed,
@@ -2191,6 +2223,7 @@ def build_viewer_app() -> gr.Blocks:
                         style,
                         hint,
                         scenes_state,
+                        upload_status,
                     ],
                     outputs=[
                         header,
@@ -2211,6 +2244,7 @@ def build_viewer_app() -> gr.Blocks:
                     concurrency_limit=1,
                     concurrency_id=UPLOAD_CONCURRENCY_ID,
                     show_progress="hidden",
+                    js=START_GENERATION_IF_PREFLIGHT_OK_JS,
                 ).then(
                     # Deterministic "generation done" signal (success or soft-fail): now that the
                     # server has responded, collapse the clapperboard hang-backstop to a short grace
@@ -2649,8 +2683,6 @@ def build_viewer_app() -> gr.Blocks:
                 queue=False,
                 show_progress="hidden",
             ).then(
-                js=START_GENERATION_IF_PREFLIGHT_OK_JS,
-            ).then(
                 _go_live_ui,
                 inputs=go_inputs,
                 outputs=[
@@ -2664,6 +2696,7 @@ def build_viewer_app() -> gr.Blocks:
                     owner_passcode,
                 ],
                 show_progress="hidden",
+                js=START_GENERATION_IF_PREFLIGHT_OK_JS,
             ).then(
                 js=FINISH_OR_CANCEL_GENERATION_JS,
             )

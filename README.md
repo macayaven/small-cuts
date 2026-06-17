@@ -98,8 +98,10 @@ SMALL_CUTS_BACKEND=mock \
 SMALL_CUTS_TTS_BACKEND=mock \
 SMALL_CUTS_DISABLE_ENGINE_AUTODETECT=1 \
 SMALL_CUTS_BUCKET_MOUNT_PATH="$HOME/.small-cuts/prototype-bucket" \
+SMALL_CUTS_RELAY_DIRECT_MEDIA_URLS=1 \
 SMALL_CUTS_DAILY_GPU_BUDGET_SECONDS=1200 \
 SMALL_CUTS_GPU_SECONDS_PER_UPLOAD_RESERVATION=60 \
+SMALL_CUTS_UPLOAD_RESERVATION_TTL_SECONDS=1800 \
 SMALL_CUTS_OWNER_UPLOAD_PASSCODE="not-versioned" \
 uv run --extra dev python app.py
 ```
@@ -110,10 +112,20 @@ processing wall time when the job finishes. When the committed budget reaches
 `SMALL_CUTS_DAILY_GPU_BUDGET_SECONDS`, uploads are paused until the next UTC day. The current
 persistence backend is local SQLite plus filesystem media; the same viewer boundary can later be
 backed by Cloud Storage plus Firestore for hosted deployment.
+If a browser or Space restart abandons a preflight reservation before Modal starts, the reservation
+is released after `SMALL_CUTS_UPLOAD_RESERVATION_TTL_SECONDS` so a failed handoff does not consume
+the shared daily budget for the rest of the day.
 
 For owner testing, set `SMALL_CUTS_OWNER_UPLOAD_PASSCODE` as a local environment variable or Space
 secret. A matching passcode in the upload drawer bypasses the shared daily budget; visitors without
 that passcode still use the public demo budget.
+
+Set `SENTRY_DSN` as a Space secret to receive startup, polling, and upload-processing failures in
+Sentry. Without that secret, the app still shows inline upload errors but does not send telemetry.
+
+For public HF relay buckets, set `SMALL_CUTS_RELAY_DIRECT_MEDIA_URLS=1` so gallery videos resolve
+through Hugging Face's bucket CDN/range endpoint instead of being served through the Space's mounted
+filesystem path. Keep it unset for private buckets that should not be browser-readable.
 
 ---
 

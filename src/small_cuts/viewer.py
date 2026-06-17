@@ -407,9 +407,10 @@ body.sc-generating .wrap.generating, body.sc-generating .wrap.translucent {
 .sc-vol::-moz-range-thumb { width: 12px; height: 12px; border: none; border-radius: 50%;
   background: #D4AF37; cursor: pointer; }
 
-/* --- Review-3 theater layout: fit one viewport (no scroll), stage + gallery rail --- */
-/* Lock the page to a single viewport so the main container never scrolls (#4). The gallery
-   lives in a side rail inside this height, so nothing is clipped. */
+/* --- Review-3 theater layout: fit one viewport (no scroll), stage + library carousel --- */
+/* Lock the page to a single viewport so the main container never scrolls (#4). The library
+   lives in a bounded horizontal rail beside the player, so a growing shelf never pushes the
+   active clip farther away. */
 html, body { overflow: hidden; height: 100%; }
 .gradio-container { height: 100dvh !important; }
 .gradio-container .main.fillable.app { max-height: 100dvh !important; overflow: hidden !important;
@@ -419,7 +420,8 @@ html, body { overflow: hidden; height: 100%; }
 .gradio-container .contain > .column { min-height: 0 !important; }
 .sc-soul { display: none; }   /* the poetic subline costs vertical budget; brand stays */
 
-.sc-theater { flex: 1 1 auto !important; min-height: 0 !important; align-items: stretch !important;
+.sc-theater { flex-direction: row !important; flex-wrap: nowrap !important;
+  flex: 1 1 auto !important; min-height: 0 !important; align-items: stretch !important;
   gap: 22px !important; max-width: 1180px; margin: 6px auto 0 !important; width: 100%; }
 .sc-stage-col { display: flex !important; flex-direction: column; min-height: 0 !important;
   align-items: center; flex: 1 1 auto !important; gap: 4px !important; }
@@ -432,17 +434,38 @@ html, body { overflow: hidden; height: 100%; }
    ratio is preserved and the controls below it always stay on-screen. The aspect-ratio must
    NOT drive height off the column width (that overflowed the viewport). */
 .sc-stage-block .sc-stage-shell { height: clamp(300px, 48dvh, 430px) !important;
-  max-height: 430px; width: auto; max-width: min(100%, calc(100vw - 380px));
+  max-height: 430px; width: auto; max-width: min(100%, calc(100vw - 620px));
   flex: 0 0 auto; }
-.sc-rail-col { flex: 0 0 286px !important; min-height: 0 !important; display: flex !important;
-  flex-direction: column; }
+.sc-rail-col { flex: 0 0 auto !important; width: clamp(360px, 44vw, 520px) !important;
+  min-width: 0 !important; min-height: 0 !important; display: flex !important;
+  flex-direction: column; overflow: hidden !important; }
 .sc-rail-head { display: flex; align-items: center; gap: 4px; color: #8a8894;
   font-family: 'IBM Plex Mono', monospace; font-size: .72rem; letter-spacing: .16em;
-  text-transform: uppercase; padding: 4px 2px 8px; }
-.sc-rail-col .sc-shelf { flex: 1 1 auto; min-height: 0; }
-.sc-rail-col .sc-shelf .grid-wrap { grid-template-columns: repeat(2, 1fr) !important;
-  height: 100% !important; max-height: 100% !important; overflow-y: auto !important;
-  overflow-x: hidden !important; }
+  text-transform: uppercase; padding: 0 2px 8px; }
+.sc-rail-col .sc-shelf { flex: 0 0 auto !important; width: 100% !important;
+  height: 154px !important; min-height: 0 !important; overflow: hidden !important; }
+.sc-rail-col .sc-shelf .gallery-container .grid-wrap.fixed-height {
+  width: 100% !important; max-width: 100% !important;
+  height: 154px !important; min-height: 0 !important; max-height: 154px !important;
+  overflow-x: auto !important; overflow-y: hidden !important;
+  scroll-snap-type: x mandatory; overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch; padding-bottom: 8px !important;
+  scrollbar-width: thin; scrollbar-color: rgba(212,175,55,.75) transparent; }
+.sc-rail-col .sc-shelf .gallery-container .grid-wrap.fixed-height::-webkit-scrollbar {
+  height: 6px; }
+.sc-rail-col .sc-shelf .gallery-container .grid-wrap.fixed-height::-webkit-scrollbar-track {
+  background: transparent; }
+.sc-rail-col .sc-shelf .gallery-container .grid-wrap.fixed-height::-webkit-scrollbar-thumb {
+  background: rgba(212,175,55,.75); border-radius: 999px; }
+.sc-rail-col .sc-shelf .grid-wrap .grid-container {
+  display: grid !important; grid-template-columns: none !important;
+  grid-auto-flow: column !important; grid-auto-columns: minmax(150px, 168px) !important;
+  grid-template-rows: 1fr !important; grid-auto-rows: 1fr !important;
+  width: max-content !important; min-width: 100% !important;
+  height: 146px !important; max-height: 146px !important; }
+.sc-rail-col .sc-shelf .gallery-item { width: 100% !important; height: 146px !important;
+  scroll-snap-align: start; }
+.sc-rail-col .sc-shelf .thumbnail-item { width: 100% !important; height: 100% !important; }
 
 /* header doubles as the "back to live" affordance (the standalone button is hidden) */
 .sc-header { cursor: pointer; }

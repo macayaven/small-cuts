@@ -5,10 +5,8 @@ from pathlib import Path
 from PIL import Image
 
 from small_cuts.viewer import (
-    OWNER_UPLOAD_PASSCODE_ENV,
     _engine_autodetect_enabled,
     _library_scene_at_index,
-    _owner_upload_passcode_valid,
     _toggle_upload_panel,
     local_shelf_items,
     make_local_scene,
@@ -42,6 +40,8 @@ def test_readme_disables_hf_oauth_metadata():
     assert "GCP SSO" not in readme
     assert "Google-backed upload access" not in readme
     assert "authenticated identity" not in readme
+    assert "OWNER_UPLOAD_PASSCODE" not in readme
+    assert "passcode" not in readme.lower()
 
 
 def test_local_shelf_items_accepts_persisted_media_urls():
@@ -126,31 +126,18 @@ def test_engine_autodetect_can_be_disabled(monkeypatch):
     assert _engine_autodetect_enabled() is False
 
 
-def test_owner_upload_passcode_requires_configured_secret(monkeypatch):
-    monkeypatch.delenv(OWNER_UPLOAD_PASSCODE_ENV, raising=False)
-
-    assert _owner_upload_passcode_valid("anything") is False
-
-    monkeypatch.setenv(OWNER_UPLOAD_PASSCODE_ENV, "owner-secret")
-
-    assert _owner_upload_passcode_valid("owner-secret") is True
-    assert _owner_upload_passcode_valid("wrong-secret") is False
-    assert _owner_upload_passcode_valid("") is False
-
-
 def test_upload_panel_toggle_opens_then_closes_and_resets_wip():
     opened = _toggle_upload_panel(False)
     assert opened[0] is True
     assert opened[1]["visible"] is True
-    assert opened[3]["interactive"] is True
+    assert opened[3]["interactive"] is False
 
     closed = _toggle_upload_panel(True)
     assert closed[0] is False
     assert closed[1]["visible"] is False
-    assert closed[3]["interactive"] is True
+    assert closed[3]["interactive"] is False
     assert closed[4]["value"] is None
     assert closed[5]["value"] == ""
-    assert closed[6]["value"] == ""
 
 
 def test_upload_cta_copy_is_clear_and_in_theme():
@@ -241,5 +228,26 @@ def test_upload_form_accessibility_initializer_sets_native_ids_and_names():
     assert "small_cuts_video" in source
     assert "sc-upload-hint-text" in source
     assert "small_cuts_hint" in source
-    assert "sc-owner-upload-passcode" in source
-    assert "small_cuts_owner_passcode" in source
+
+
+def test_upload_submit_button_has_client_side_ready_and_lock_state():
+    source = (ROOT / "src/small_cuts/viewer.py").read_text()
+
+    assert "scSyncUploadSubmitState" in source
+    assert "__scUploadSubmitLocked" in source
+    assert "scUploadRunning" in source
+    assert ".sc-upload-status.running" in source
+    assert "sc-upload-submit-locked" in source
+    assert "button.sc-narrate-btn" in source
+    assert ".sc-narrate-btn button" in source
+    assert ".sc-upload-video video" in source
+    assert "attributeFilter: ['src']" in source
+    assert "attributeFilter: ['src', 'disabled', 'class']" not in source
+
+
+def test_owner_passcode_is_not_visible_in_public_upload_modal():
+    source = (ROOT / "src/small_cuts/viewer.py").read_text()
+
+    assert "Owner passcode" not in source
+    assert "sc-owner-passcode" not in source
+    assert "OWNER_UPLOAD_PASSCODE_ENV" not in source

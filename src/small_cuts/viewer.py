@@ -18,7 +18,6 @@ runs on the hackathon Space unchanged.
 from __future__ import annotations
 
 import base64
-import hmac
 import html
 import io
 import os
@@ -65,7 +64,6 @@ ENGINE_URL_ENV = "SMALL_CUTS_ENGINE_URL"
 DISABLE_ENGINE_AUTODETECT_ENV = "SMALL_CUTS_DISABLE_ENGINE_AUTODETECT"
 MODAL_API_URL_ENV = "SMALL_CUTS_MODAL_API_URL"
 MODAL_API_TOKEN_ENV = "SMALL_CUTS_MODAL_API_TOKEN"
-OWNER_UPLOAD_PASSCODE_ENV = "SMALL_CUTS_OWNER_UPLOAD_PASSCODE"
 UPLOAD_SANDBOX_ENV = "SMALL_CUTS_ENABLE_UPLOAD_SANDBOX"
 UPLOAD_MAX_SECONDS_ENV = "SMALL_CUTS_UPLOAD_MAX_SECONDS"
 UPLOAD_MAX_BYTES = 80 * 1024 * 1024
@@ -331,6 +329,11 @@ footer { display: none !important; }
   color: #8a8894 !important; }
 #sc-upload-popover .sc-narrate-btn button, #sc-upload-popover .sc-narrate-btn {
   width: 100% !important; min-height: 38px !important; }
+#sc-upload-popover button.sc-narrate-btn:disabled,
+#sc-upload-popover button.sc-narrate-btn.sc-upload-submit-locked,
+#sc-upload-popover .sc-narrate-btn button:disabled,
+#sc-upload-popover .sc-narrate-btn button.sc-upload-submit-locked {
+  opacity: .58 !important; cursor: not-allowed !important; filter: saturate(.72) !important; }
 #sc-upload-popover button { width: 100% !important; min-height: 26px !important; }
 .sc-upload-status { min-height: 22px; display: flex; align-items: center; gap: 8px;
   color: #8a8894; font-size: .78rem; line-height: 1.3; }
@@ -647,8 +650,7 @@ def _toggle_upload_panel(is_open: bool) -> tuple[Any, ...]:
             True,
             gr.update(visible=True),
             render_upload_status_html(),
-            gr.update(interactive=True),
-            gr.skip(),
+            gr.update(interactive=False),
             gr.skip(),
             gr.skip(),
         )
@@ -656,17 +658,19 @@ def _toggle_upload_panel(is_open: bool) -> tuple[Any, ...]:
         False,
         gr.update(visible=False),
         render_upload_status_html(),
-        gr.update(interactive=True),
+        gr.update(interactive=False),
         gr.update(value=None),
-        gr.update(value=""),
         gr.update(value=""),
     )
 
 
-def _owner_upload_passcode_valid(passcode: str | None) -> bool:
-    secret = os.environ.get(OWNER_UPLOAD_PASSCODE_ENV, "").strip()
-    candidate = str(passcode or "").strip()
-    return bool(secret and candidate and hmac.compare_digest(candidate, secret))
+def _sync_upload_submit_ready_ui(video_path: str | None) -> tuple[Any, str]:
+    if video_path:
+        return gr.update(interactive=True), render_upload_status_html()
+    return (
+        gr.update(interactive=False),
+        render_upload_status_html("blocked", "Upload a video clip first."),
+    )
 
 
 def _upload_budget_warning(decision: BudgetDecision) -> str:
@@ -1597,18 +1601,78 @@ PLAYBACK_SYNC_JS = """
       }
       if (!hint.getAttribute('autocomplete')) hint.setAttribute('autocomplete', 'off');
     }
-    const owner = panel.querySelector('.sc-owner-passcode input, input[type="password"]');
-    if (owner) {
-      if (!owner.id) owner.id = 'sc-owner-upload-passcode';
-      if (!owner.getAttribute('name')) owner.setAttribute('name', 'small_cuts_owner_passcode');
-      if (!owner.getAttribute('autocomplete')) owner.setAttribute('autocomplete', 'off');
-    }
   };
   scFixUploadFormFields();
   if (!window.__scUploadFormObs && document.body) {
     window.__scUploadFormObs = new MutationObserver(scFixUploadFormFields);
     window.__scUploadFormObs.observe(document.body, { childList: true, subtree: true });
   }
+
+  if (typeof window.__scUploadSubmitLocked !== 'boolean') {
+    window.__scUploadSubmitLocked = false;
+  }
+  const scUploadSubmitButton = () => (
+    document.querySelector('#sc-upload-popover button.sc-narrate-btn')
+    || document.querySelector('#sc-upload-popover .sc-narrate-btn button')
+  );
+  const scUploadPreviewReady = () => {
+    const video = document.querySelector('#sc-upload-popover .sc-upload-video video');
+    if (!video) return false;
+    const source = video.currentSrc || video.getAttribute('src')
+      || (video.querySelector('source') && video.querySelector('source').src);
+    return !!source && video.readyState >= 1;
+  };
+  const scUploadRunning = () => (
+    !!document.querySelector('#sc-upload-popover .sc-upload-status.running')
+  );
+  const scSetUploadSubmitDisabled = (disabled) => {
+    const button = scUploadSubmitButton();
+    if (!button) return;
+    const ariaDisabled = disabled ? 'true' : 'false';
+    if (button.disabled !== disabled) button.disabled = disabled;
+    if (button.getAttribute('aria-disabled') !== ariaDisabled) {
+      button.setAttribute('aria-disabled', ariaDisabled);
+    }
+    if (button.classList.contains('sc-upload-submit-locked') !== disabled) {
+      button.classList.toggle('sc-upload-submit-locked', disabled);
+    }
+  };
+  const scSyncUploadSubmitState = () => {
+    scSetUploadSubmitDisabled(
+      window.__scUploadSubmitLocked || scUploadRunning() || !scUploadPreviewReady()
+    );
+  };
+  window.__scSyncUploadSubmitState = scSyncUploadSubmitState;
+  scSyncUploadSubmitState();
+  if (!window.__scUploadSubmitObs && document.body) {
+    window.__scUploadSubmitObs = new MutationObserver(scSyncUploadSubmitState);
+    window.__scUploadSubmitObs.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['src'],
+    });
+  }
+  document.addEventListener('loadedmetadata', (e) => {
+    if (e.target && e.target.closest && e.target.closest('#sc-upload-popover .sc-upload-video')) {
+      scSyncUploadSubmitState();
+    }
+  }, true);
+  document.addEventListener('click', (e) => {
+    const button = e.target.closest
+      && e.target.closest(
+        '#sc-upload-popover button.sc-narrate-btn, #sc-upload-popover .sc-narrate-btn button'
+      );
+    if (!button) return;
+    if (window.__scUploadSubmitLocked || scUploadRunning() || !scUploadPreviewReady()) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      scSyncUploadSubmitState();
+      return;
+    }
+    window.__scUploadSubmitLocked = true;
+    setTimeout(scSyncUploadSubmitState, 0);
+  }, true);
 
   // play/pause must be bound directly to the trusted DOM gesture. A gr.Button.click(js=...)
   // callback runs through Gradio's event layer, which can lose browser user activation and
@@ -1722,6 +1786,8 @@ PLAYBACK_SYNC_JS = """
       if (loader) loader.remove();
     }
     window.__scGenerating = false;
+    window.__scUploadSubmitLocked = false;
+    if (window.__scSyncUploadSubmitState) window.__scSyncUploadSubmitState();
     document.body.classList.remove('sc-generating');
     if (window.__scRevealTimer) {
       clearTimeout(window.__scRevealTimer);
@@ -1996,14 +2062,6 @@ def build_viewer_app() -> gr.Blocks:
                             max_lines=2,
                             elem_classes="sc-upload-hint",
                         )
-                        owner_passcode = gr.Textbox(
-                            show_label=False,
-                            placeholder="Owner passcode (optional)",
-                            lines=1,
-                            max_lines=1,
-                            type="password",
-                            elem_classes=["sc-upload-hint", "sc-owner-passcode"],
-                        )
                         upload_status = gr.HTML(
                             render_upload_status_html(),
                             elem_classes="sc-plain",
@@ -2014,6 +2072,7 @@ def build_viewer_app() -> gr.Blocks:
                             "Narrate this video",
                             variant="primary",
                             size="sm",
+                            interactive=False,
                             elem_classes="sc-narrate-btn",
                         )
             with gr.Column(elem_classes="sc-rail-col"):
@@ -2063,25 +2122,17 @@ def build_viewer_app() -> gr.Blocks:
                     go,
                     drop_video,
                     hint,
-                    owner_passcode,
                 ],
                 queue=False,
             )
 
-            def _upload_preflight_ui(video_path, passcode):
+            def _upload_preflight_ui(video_path):
                 if not video_path:
                     return (
                         False,
                         None,
                         render_upload_status_html("blocked", "Upload a video clip first."),
                         gr.update(interactive=True),
-                    )
-                if _owner_upload_passcode_valid(passcode):
-                    return (
-                        True,
-                        None,
-                        render_upload_status_html("running"),
-                        gr.update(interactive=False),
                     )
                 decision = (
                     upload_budget.try_reserve()
@@ -2101,6 +2152,14 @@ def build_viewer_app() -> gr.Blocks:
                     render_upload_status_html("running"),
                     gr.update(interactive=False),
                 )
+
+            drop_video.change(
+                _sync_upload_submit_ready_ui,
+                inputs=[drop_video],
+                outputs=[go, upload_status],
+                queue=False,
+                show_progress="hidden",
+            )
 
         if client is not None:
             engine = client  # narrow the type for the closures below
@@ -2212,7 +2271,6 @@ def build_viewer_app() -> gr.Blocks:
                     # on soft-fail keep the user's file and what they typed.
                     video_reset = gr.update(value=None) if succeeded else gr.skip()
                     hint_reset = gr.update(value="") if succeeded else gr.skip()
-                    passcode_reset = gr.update(value="") if succeeded else gr.skip()
                     # Close the popover on success; keep it open on soft-fail so the user can retry.
                     panel_reset = gr.update(visible=False) if succeeded else gr.skip()
                     panel_open_reset = False if succeeded else gr.skip()
@@ -2224,12 +2282,11 @@ def build_viewer_app() -> gr.Blocks:
                         hint_reset,
                         panel_reset,
                         panel_open_reset,
-                        passcode_reset,
                     )
 
                 go.click(
                     _upload_preflight_ui,
-                    inputs=[drop_video, owner_passcode],
+                    inputs=[drop_video],
                     outputs=[upload_run_allowed, upload_budget_token, upload_status, go],
                     queue=False,
                     show_progress="hidden",
@@ -2258,7 +2315,6 @@ def build_viewer_app() -> gr.Blocks:
                         hint,
                         upload_panel,
                         upload_panel_open,
-                        owner_passcode,
                     ],
                     concurrency_limit=1,
                     concurrency_id=UPLOAD_CONCURRENCY_ID,
@@ -2644,7 +2700,6 @@ def build_viewer_app() -> gr.Blocks:
                     gr.update(value=""),
                     gr.update(visible=False),
                     False,
-                    gr.update(value=""),
                 )
 
             def _like_current(scenes, pinned_id, liked_ids, reported_ids):
@@ -2697,7 +2752,7 @@ def build_viewer_app() -> gr.Blocks:
             # would double-narrate (and double the TTS work) the moment a file lands.
             go.click(
                 _upload_preflight_ui,
-                inputs=[drop_video, owner_passcode],
+                inputs=[drop_video],
                 outputs=[upload_run_allowed, upload_budget_token, upload_status, go],
                 queue=False,
                 show_progress="hidden",
@@ -2712,7 +2767,6 @@ def build_viewer_app() -> gr.Blocks:
                     hint,
                     upload_panel,
                     upload_panel_open,
-                    owner_passcode,
                 ],
                 show_progress="hidden",
                 js=START_GENERATION_IF_PREFLIGHT_OK_JS,

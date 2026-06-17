@@ -454,6 +454,55 @@ def test_upload_sandbox_chains_backend_upload_directly_after_preflight(monkeypat
     assert "window.__scStartGeneration" in upload_dep["js"]
 
 
+def test_upload_submit_starts_disabled_until_video_change(monkeypatch, tmp_path):
+    monkeypatch.setenv(viewer.ENGINE_URL_ENV, "http://127.0.0.1:9")
+    monkeypatch.setenv(viewer.UPLOAD_SANDBOX_ENV, "1")
+    monkeypatch.setenv(viewer.MODAL_API_URL_ENV, "https://example.modal.run")
+    monkeypatch.setenv("SMALL_CUTS_UPLOAD_BUDGET_DB", str(tmp_path / "budget.sqlite3"))
+
+    app = viewer.build_viewer_app()
+    components = app.config["components"]
+    go_buttons = [
+        component
+        for component in components
+        if component["type"] == "button" and component["props"].get("value") == "Narrate this video"
+    ]
+
+    assert len(go_buttons) == 1
+    assert go_buttons[0]["props"]["interactive"] is False
+
+    ready_dep = next(
+        dep
+        for dep in app.config["dependencies"]
+        if dep.get("backend_fn") and dep.get("api_name") == "_sync_upload_submit_ready_ui"
+    )
+    ready_fn = app.fns[ready_dep["id"]].fn
+
+    enabled, status = ready_fn("clip.mp4")
+    assert enabled["interactive"] is True
+    assert "sc-upload-status idle" in status
+
+    disabled, status = ready_fn(None)
+    assert disabled["interactive"] is False
+    assert "Upload a video clip first." in status
+
+
+def test_upload_preflight_has_no_owner_passcode_bypass(monkeypatch, tmp_path):
+    monkeypatch.setenv(viewer.ENGINE_URL_ENV, "http://127.0.0.1:9")
+    monkeypatch.setenv(viewer.UPLOAD_SANDBOX_ENV, "1")
+    monkeypatch.setenv(viewer.MODAL_API_URL_ENV, "https://example.modal.run")
+    monkeypatch.setenv("SMALL_CUTS_UPLOAD_BUDGET_DB", str(tmp_path / "budget.sqlite3"))
+
+    app = viewer.build_viewer_app()
+    preflight_dep = next(
+        dep
+        for dep in app.config["dependencies"]
+        if dep.get("backend_fn") and dep.get("api_name") == "_upload_preflight_ui"
+    )
+
+    assert len(preflight_dep["inputs"]) == 1
+
+
 def test_upload_sandbox_uses_topbar_popover_not_stage_accordion(monkeypatch):
     monkeypatch.setenv(viewer.ENGINE_URL_ENV, "http://127.0.0.1:9")
     monkeypatch.setenv(viewer.UPLOAD_SANDBOX_ENV, "1")

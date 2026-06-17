@@ -60,6 +60,49 @@ def test_save_scene_materializes_media_and_reloads_from_disk(tmp_path):
     assert _path_from_file_url(persisted["media"]["clip_url"]).is_file()
 
 
+def test_save_scene_materializes_existing_media_file_urls(tmp_path):
+    sources = {
+        "frame_url": tmp_path / "frame.jpg",
+        "card_url": tmp_path / "card.webp",
+        "audio_url": tmp_path / "voice.wav",
+        "clip_url": tmp_path / "clip.mp4",
+    }
+    for path in sources.values():
+        path.write_bytes(b"media")
+    scene = {
+        "scene_id": "modal-media-scene",
+        "title": "Modal Media",
+        "narration": "The modal result already has media URLs.",
+        "style_key": "deadpan",
+        "created_at": "2026-06-17T05:48:34+00:00",
+        "media": {key: f"{GRADIO_FILE_ROUTE}{path}" for key, path in sources.items()},
+    }
+
+    library = LocalUploadLibrary(tmp_path / "library")
+    saved = library.save_scene(scene)
+
+    for key, original in sources.items():
+        materialized = _path_from_file_url(saved["media"][key])
+        assert materialized.is_file()
+        assert materialized != original
+        assert library.root in materialized.parents
+
+    resaved = library.save_scene(saved)
+
+    assert resaved["scene_id"] == "modal-media-scene"
+
+
+def test_upload_library_defaults_under_configured_bucket_mount(monkeypatch, tmp_path):
+    mount = tmp_path / "bucket"
+    monkeypatch.delenv("SMALL_CUTS_UPLOAD_LIBRARY_DIR", raising=False)
+    monkeypatch.setenv("SMALL_CUTS_BUCKET_MOUNT_PATH", str(mount))
+
+    library = LocalUploadLibrary.from_env()
+
+    assert library.root == (mount / "space" / "upload-library").resolve()
+    library.close()
+
+
 def test_list_scenes_is_oldest_to_newest_and_limited(tmp_path):
     library = LocalUploadLibrary(tmp_path / "library")
     for index in range(3):

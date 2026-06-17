@@ -10,6 +10,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from .persistence import persistent_path
+
 UPLOAD_BUDGET_DB_ENV = "SMALL_CUTS_UPLOAD_BUDGET_DB"
 DAILY_GPU_BUDGET_SECONDS_ENV = "SMALL_CUTS_DAILY_GPU_BUDGET_SECONDS"
 GPU_RESERVATION_SECONDS_ENV = "SMALL_CUTS_GPU_SECONDS_PER_UPLOAD_RESERVATION"
@@ -50,7 +52,12 @@ class DailyProcessingBudget:
         reserve_s: float | None = None,
         now_fn: Callable[[], float] | None = None,
     ) -> None:
-        self.db_path = Path(db_path or os.environ.get(UPLOAD_BUDGET_DB_ENV) or DEFAULT_BUDGET_DB)
+        self.db_path = Path(
+            db_path
+            or os.environ.get(UPLOAD_BUDGET_DB_ENV)
+            or persistent_path("upload-budget.sqlite3")
+            or DEFAULT_BUDGET_DB
+        )
         self.db_path = self.db_path.expanduser().resolve()
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self.daily_limit_s = float(

@@ -19,6 +19,9 @@ def test_modal_client_submits_and_polls_result(tmp_path):
         calls.append((request.method, request.url.path))
         if request.method == "POST":
             assert request.headers["authorization"] == "Bearer secret"
+            body = request.content.decode("latin1")
+            assert 'name="scene_hint"' in body
+            assert "third coffee today" in body
             return httpx.Response(200, json={"job_id": "job-1"})
         if request.url.path.endswith("/job-1") and len(calls) == 2:
             return httpx.Response(202, json={"status": "running"})
@@ -31,7 +34,7 @@ def test_modal_client_submits_and_polls_result(tmp_path):
         poll_interval_s=0,
     )
 
-    assert client.submit_video(video)["scene_id"] == "s1"
+    assert client.submit_video(video, scene_hint="third coffee today")["scene_id"] == "s1"
     assert calls == [
         ("POST", "/v1/cuts"),
         ("GET", "/v1/cuts/job-1"),

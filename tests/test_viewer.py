@@ -1182,3 +1182,33 @@ def test_stage_html_embeds_duration_and_coerces_strings():
 def test_is_fresh(created_at, fresh):
     now = CREATED_AT + timedelta(seconds=30)
     assert viewer.is_fresh(created_at, now=now) is fresh
+
+
+def test_stage_html_has_lcp_optimizations():
+    video_html = viewer.render_stage_html(
+        "http://x/f.jpg", "caption", live=True, clip_src="http://x/c.mp4"
+    )
+    assert 'preload="auto"' in video_html
+    assert 'fetchpriority="high"' in video_html
+
+    image_html = viewer.render_stage_html("http://x/f.jpg", "caption", live=True)
+    assert 'fetchpriority="high"' in image_html
+
+
+def test_audio_html_has_lcp_optimizations():
+    audio_empty = viewer._audio_html(None)
+    assert 'preload="auto"' in audio_empty
+    assert 'fetchpriority="high"' in audio_empty
+
+    audio_src = viewer._audio_html("http://x/a.wav")
+    assert 'preload="auto"' in audio_src
+    assert 'fetchpriority="high"' in audio_src
+
+
+def test_build_viewer_app_has_preconnect_head(monkeypatch):
+    monkeypatch.delenv(viewer.ENGINE_URL_ENV, raising=False)
+    monkeypatch.setenv(viewer.RELAY_BUCKET_ENV, "build-small-hackathon/small-cuts-scenes")
+
+    app = viewer.build_viewer_app()
+    head_content = getattr(app, "head", None) or getattr(app, "_deprecated_head", None)
+    assert '<link rel="preconnect" href="https://huggingface.co" crossorigin>' in head_content

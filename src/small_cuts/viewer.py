@@ -1750,7 +1750,7 @@ PLAYBACK_SYNC_JS = """
     if (fill) fill.style.width = (p * 100).toFixed(1) + '%';
   }, 120);
 
-  // R4 + R5: between "Narrate this video" and the buffered reveal the user sees ONLY the
+  // R4 + R5: between "Make the cut" and the buffered reveal the user sees ONLY the
   // clapperboard loader. We mount the loader over the stage when the Narrate button is tapped,
   // keep it (re-mounting it when Gradio swaps in the result stage) until the result <video> is
   // fully buffered (canplaythrough / readyState>=3) or a timeout fires, then reveal + remove it.
@@ -2067,9 +2067,9 @@ def build_viewer_app() -> gr.Blocks:
                             elem_classes="sc-plain",
                             padding=False,
                         )
-                        # R2: full-width "Narrate this video" button below the hint.
+                        # R2: full-width "Make the cut" button below the hint.
                         go = gr.Button(
-                            "Narrate this video",
+                            "Make the cut",
                             variant="primary",
                             size="sm",
                             interactive=False,

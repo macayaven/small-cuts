@@ -19,7 +19,7 @@ from starlette.exceptions import StarletteDeprecationWarning
 ON_SPACE = bool(os.environ.get("SPACE_ID"))
 if ON_SPACE:
     # HF Spaces defaults Gradio SSR on; its Node proxy shadows custom FastAPI SSE routes.
-    os.environ.setdefault("GRADIO_SSR_MODE", "False")
+    os.environ["GRADIO_SSR_MODE"] = "False"
 
 import gradio as gr  # noqa: E402
 

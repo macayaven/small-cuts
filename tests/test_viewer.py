@@ -5,6 +5,7 @@ The NarratedScene fixture is the golden sample from test_contracts.py, so the
 viewer's formatter is pinned to the same shape the contract suite enforces.
 """
 
+import inspect
 import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -851,6 +852,44 @@ def test_poll_engine_hydrates_current_bucket_scene_media_lazily():
     assert "/tmp/frame.jpg" in stage
     assert "/tmp/clip.mp4" in stage
     assert "/tmp/voice.wav" in audio
+
+
+def test_engine_scene_control_outputs_hydrates_raw_relay_media():
+    class LazyBucketClient:
+        base_url = ""
+
+        def media_url(self, path):
+            return f"/gradio_api/file=/tmp/{Path(path).name}" if path else None
+
+    raw_scene = {
+        **GOLDEN_SCENE,
+        "media": {
+            "frame_url": "media/scene/frame.jpg",
+            "clip_url": "media/scene/clip.mp4",
+            "audio_url": "media/scene/voice.wav",
+        },
+    }
+
+    _header, stage, audio, state, _visibility = viewer._engine_scene_control_outputs(
+        raw_scene,
+        LazyBucketClient(),
+        [raw_scene],
+        viewer._pack_engine_ui_state([raw_scene], None, None, None),
+        pinned_id=raw_scene["scene_id"],
+        restart_audio=True,
+    )
+
+    assert "/tmp/frame.jpg" in stage
+    assert "/tmp/clip.mp4" in stage
+    assert "/tmp/voice.wav" in audio
+    assert state["pinned_id"] == raw_scene["scene_id"]
+    assert state["playing_id"] == raw_scene["scene_id"]
+
+
+def test_engine_gallery_callbacks_do_not_format_raw_relay_scenes_directly():
+    source = inspect.getsource(viewer.build_viewer_app)
+
+    assert "payload = format_stage(scene, engine.base_url)" not in source
 
 
 def test_poll_engine_finished_scene_shows_title():

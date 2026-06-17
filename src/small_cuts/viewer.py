@@ -1269,6 +1269,53 @@ def _pack_engine_ui_state(
     }
 
 
+def _engine_scene_control_outputs(
+    scene: dict[str, Any] | None,
+    engine: EngineClient | BucketSceneClient,
+    scenes: list[dict[str, Any]],
+    state: Any,
+    *,
+    pinned_id: str | None,
+    restart_audio: bool,
+    empty_on_missing: bool = False,
+) -> tuple[Any, ...]:
+    state_payload = _engine_ui_state(state)
+    if scene is None and not empty_on_missing:
+        return (gr.skip(),) * 5
+    scene_for_stage = _scene_with_media_urls(scene, engine) if scene is not None else None
+    payload = format_stage(scene_for_stage, engine.base_url)
+    playing_id = state_payload["playing_id"]
+    if restart_audio:
+        audio_update = _audio_html(payload["audio_src"]) if payload["audio_src"] else gr.skip()
+        if payload["audio_src"]:
+            playing_id = payload["scene_id"]
+    elif payload["audio_src"] and payload["scene_id"] != playing_id:
+        audio_update, playing_id = _audio_html(payload["audio_src"]), payload["scene_id"]
+    else:
+        audio_update = gr.skip()
+    return (
+        render_header_html(payload["title"], payload["style_label"], payload["live"]),
+        render_stage_html(
+            payload["frame_src"],
+            payload["caption"],
+            payload["live"],
+            clip_src=payload["clip_src"],
+            duration=payload["duration"],
+            source_icon=payload["source_icon"],
+        ),
+        audio_update,
+        _pack_engine_ui_state(
+            scenes,
+            pinned_id,
+            payload["scene_id"],
+            playing_id,
+            previous=state_payload,
+            upload_scene=None,
+        ),
+        gr.update(value=payload["visibility"]) if payload["visibility"] else gr.skip(),
+    )
+
+
 def _modal_upload_warning_response(message: str, state: Any) -> tuple[Any, ...]:
     gr.Warning(message)
     state_payload = _engine_ui_state(state)
@@ -2475,29 +2522,13 @@ def build_viewer_app() -> gr.Blocks:
                 state = _engine_ui_state(state)
                 scenes = state["scenes"]
                 scene = _library_scene_at_index(scenes, evt.index)
-                if scene is None:
-                    return (gr.skip(),) * 5
-                payload = format_stage(scene, engine.base_url)
-                return (
-                    render_header_html(payload["title"], payload["style_label"], payload["live"]),
-                    render_stage_html(
-                        payload["frame_src"],
-                        payload["caption"],
-                        payload["live"],
-                        clip_src=payload["clip_src"],
-                        duration=payload["duration"],
-                        source_icon=payload["source_icon"],
-                    ),
-                    _audio_html(payload["audio_src"]) if payload["audio_src"] else gr.skip(),
-                    _pack_engine_ui_state(
-                        scenes,
-                        payload["scene_id"],
-                        payload["scene_id"],
-                        payload["scene_id"],
-                        previous=state,
-                        upload_scene=None,
-                    ),
-                    gr.update(value=payload["visibility"]) if payload["visibility"] else gr.skip(),
+                return _engine_scene_control_outputs(
+                    scene,
+                    engine,
+                    scenes,
+                    state,
+                    pinned_id=str(scene.get("scene_id")) if scene is not None else None,
+                    restart_audio=True,
                 )
 
             shelf.select(
@@ -2517,64 +2548,27 @@ def build_viewer_app() -> gr.Blocks:
                 state = _engine_ui_state(state)
                 scenes = state["scenes"]
                 scene = _stepped_scene(scenes, state["pinned_id"], delta)
-                if scene is None:
-                    return (gr.skip(),) * 5
-                payload = format_stage(scene, engine.base_url)
-                return (
-                    render_header_html(payload["title"], payload["style_label"], payload["live"]),
-                    render_stage_html(
-                        payload["frame_src"],
-                        payload["caption"],
-                        payload["live"],
-                        clip_src=payload["clip_src"],
-                        duration=payload["duration"],
-                        source_icon=payload["source_icon"],
-                    ),
-                    _audio_html(payload["audio_src"]) if payload["audio_src"] else gr.skip(),
-                    _pack_engine_ui_state(
-                        scenes,
-                        payload["scene_id"],
-                        payload["scene_id"],
-                        payload["scene_id"],
-                        previous=state,
-                        upload_scene=None,
-                    ),
-                    gr.update(value=payload["visibility"]) if payload["visibility"] else gr.skip(),
+                return _engine_scene_control_outputs(
+                    scene,
+                    engine,
+                    scenes,
+                    state,
+                    pinned_id=str(scene.get("scene_id")) if scene is not None else None,
+                    restart_audio=True,
                 )
 
             def _back_to_live_engine(state):
                 state = _engine_ui_state(state)
                 scenes = state["scenes"]
                 scene = scenes[-1] if scenes else None
-                payload = format_stage(scene, engine.base_url)
-                playing_id = state["playing_id"]
-                if payload["audio_src"] and payload["scene_id"] != playing_id:
-                    audio_update, playing_id = (
-                        _audio_html(payload["audio_src"]),
-                        payload["scene_id"],
-                    )
-                else:
-                    audio_update = gr.skip()
-                return (
-                    render_header_html(payload["title"], payload["style_label"], payload["live"]),
-                    render_stage_html(
-                        payload["frame_src"],
-                        payload["caption"],
-                        payload["live"],
-                        clip_src=payload["clip_src"],
-                        duration=payload["duration"],
-                        source_icon=payload["source_icon"],
-                    ),
-                    audio_update,
-                    _pack_engine_ui_state(
-                        scenes,
-                        None,
-                        payload["scene_id"],
-                        playing_id,
-                        previous=state,
-                        upload_scene=None,
-                    ),
-                    gr.update(value=payload["visibility"]) if payload["visibility"] else gr.skip(),
+                return _engine_scene_control_outputs(
+                    scene,
+                    engine,
+                    scenes,
+                    state,
+                    pinned_id=None,
+                    restart_audio=False,
+                    empty_on_missing=True,
                 )
 
             step_outputs_e = [

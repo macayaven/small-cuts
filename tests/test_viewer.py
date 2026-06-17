@@ -465,7 +465,7 @@ def test_upload_submit_starts_disabled_until_video_change(monkeypatch, tmp_path)
     go_buttons = [
         component
         for component in components
-        if component["type"] == "button" and component["props"].get("value") == "Narrate this video"
+        if component["type"] == "button" and component["props"].get("value") == "Make the cut"
     ]
 
     assert len(go_buttons) == 1

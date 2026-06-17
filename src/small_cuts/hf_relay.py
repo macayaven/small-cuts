@@ -21,6 +21,8 @@ from urllib.parse import quote, urlparse
 
 import httpx
 
+from .persistence import bucket_mount_path
+
 RELAY_BUCKET_ENV = "SMALL_CUTS_RELAY_BUCKET"
 RELAY_PREFIX_ENV = "SMALL_CUTS_RELAY_PREFIX"
 DEFAULT_RELAY_PREFIX = "relay"
@@ -87,6 +89,13 @@ class BucketSceneClient:
         if self.prefix:
             self.root = f"{self.root}/{self.prefix}"
         self._fs = fs
+        mount = bucket_mount_path()
+        self.bucket_mount_path = mount.expanduser().resolve() if mount is not None else None
+        self.mounted_root = (
+            self.bucket_mount_path / self.prefix
+            if self.bucket_mount_path is not None and self.prefix
+            else self.bucket_mount_path
+        )
         self.cache_dir = (
             Path(cache_dir)
             if cache_dir is not None
@@ -96,7 +105,10 @@ class BucketSceneClient:
             self.cache_dir = self.cache_dir / self.prefix
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         if register_static_paths is not None:
-            register_static_paths([self.cache_dir])
+            static_paths = [self.cache_dir]
+            if self.bucket_mount_path is not None:
+                static_paths.append(self.bucket_mount_path)
+            register_static_paths(static_paths)
         self.manifest_cache_ttl_s = manifest_cache_ttl_s
         self.cache_max_bytes = cache_max_bytes
         self._manifest_lock = threading.Lock()
@@ -121,21 +133,16 @@ class BucketSceneClient:
             ):
                 return copy.deepcopy(self._manifest_cache[1][-limit:])
             try:
-                raw = self.fs.cat(f"{self.root}/{RELAY_MANIFEST}")
-            except FileNotFoundError:
-                self._manifest_cache = (now, [])
-                return []
-            try:
-                manifest = json.loads(raw.decode("utf-8"))
-                scenes = manifest.get("scenes", [])
-                if not isinstance(scenes, list):
-                    raise ValueError("relay manifest scenes must be a list")
+                raw = self._read_manifest()
+                scenes = self._manifest_scenes(raw) if raw is not None else []
                 hydrated = []
                 for scene in scenes:
                     try:
                         hydrated.append(self._hydrate_scene(scene))
                     except FileNotFoundError:
                         continue
+                uploaded = self._uploaded_scenes()
+                hydrated = _merge_bucket_scenes(hydrated, uploaded)
                 self._manifest_cache = (now, hydrated)
                 return copy.deepcopy(hydrated[-limit:])
             except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
@@ -143,12 +150,58 @@ class BucketSceneClient:
                     f"could not read relay bucket {self.bucket_id}: {exc}"
                 ) from exc
 
+    def _manifest_scenes(self, raw: bytes) -> list[dict[str, Any]]:
+        manifest = json.loads(raw.decode("utf-8"))
+        scenes = manifest.get("scenes", [])
+        if not isinstance(scenes, list):
+            raise ValueError("relay manifest scenes must be a list")
+        return scenes
+
+    def _read_manifest(self) -> bytes | None:
+        local_manifest = self._mounted_file(RELAY_MANIFEST)
+        if local_manifest is not None and local_manifest.is_file():
+            return local_manifest.read_bytes()
+        try:
+            return self.fs.cat(f"{self.root}/{RELAY_MANIFEST}")
+        except FileNotFoundError:
+            return None
+
+    def _uploaded_scenes(self) -> list[dict[str, Any]]:
+        mounted_paths = self._mounted_upload_scene_paths()
+        if mounted_paths is not None:
+            uploaded = []
+            for scene_path in mounted_paths:
+                scene = json.loads(scene_path.read_bytes().decode("utf-8"))
+                if isinstance(scene, dict):
+                    uploaded.append(self._hydrate_scene(scene))
+            return uploaded
+        glob = getattr(self.fs, "glob", None)
+        if glob is None:
+            return []
+        try:
+            scene_paths = glob(f"{self.root}/uploads/*/scene.json")
+        except FileNotFoundError:
+            return []
+        uploaded = []
+        for scene_path in sorted(str(path) for path in scene_paths):
+            try:
+                raw = self.fs.cat(scene_path)
+                scene = json.loads(raw.decode("utf-8"))
+                if isinstance(scene, dict):
+                    uploaded.append(self._hydrate_scene(scene))
+            except FileNotFoundError:
+                continue
+        return uploaded
+
     def media_url(self, path: str | None) -> str | None:
         if not path:
             return None
         if path.startswith(("http://", "https://", "data:", GRADIO_FILE_ROUTE)):
             return path
         relative = self._relative_media_path(path)
+        mounted = self._mounted_file(relative)
+        if mounted is not None and mounted.is_file():
+            return gradio_file_url(mounted)
         target = self.cache_dir / relative
         with self._media_lock:
             if not target.exists():
@@ -180,6 +233,22 @@ class BucketSceneClient:
         if relative.is_absolute() or ".." in relative.parts:
             raise ValueError(f"unsafe bucket media path: {path}")
         return relative
+
+    def _mounted_file(self, relative: str | Path) -> Path | None:
+        if self.mounted_root is None:
+            return None
+        path = self.mounted_root / Path(relative)
+        if path.is_absolute() and self.mounted_root not in [path, *path.parents]:
+            raise ValueError(f"unsafe mounted bucket path: {relative}")
+        return path
+
+    def _mounted_upload_scene_paths(self) -> list[Path] | None:
+        if self.mounted_root is None or not self.mounted_root.exists():
+            return None
+        uploads_dir = self.mounted_root / "uploads"
+        if not uploads_dir.exists():
+            return []
+        return sorted(uploads_dir.glob("*/scene.json"))
 
     def _prune_cache(self, protected: Path | None = None) -> None:
         if self.cache_max_bytes <= 0 or not self.cache_dir.exists():
@@ -304,3 +373,17 @@ def _relay_media_path(url: str, scene_dir: str) -> Path:
 def _safe_path_segment(value: str) -> str:
     cleaned = "".join(ch if ch.isalnum() or ch in ("-", "_", ".") else "-" for ch in value)
     return cleaned.strip(".-") or "item"
+
+
+def _merge_bucket_scenes(
+    manifest_scenes: list[dict[str, Any]], uploaded_scenes: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    by_id: dict[str, dict[str, Any]] = {}
+    for scene in [*manifest_scenes, *uploaded_scenes]:
+        scene_id = str(scene.get("scene_id") or "")
+        if scene_id:
+            by_id[scene_id] = scene
+    return sorted(
+        by_id.values(),
+        key=lambda scene: (str(scene.get("created_at") or ""), str(scene.get("scene_id") or "")),
+    )

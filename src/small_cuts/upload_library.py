@@ -15,12 +15,19 @@ from urllib.parse import unquote
 from PIL import Image
 
 from .hf_relay import GRADIO_FILE_ROUTE, gradio_file_url
+from .persistence import persistent_path
 
 UPLOAD_LIBRARY_DIR_ENV = "SMALL_CUTS_UPLOAD_LIBRARY_DIR"
 DEFAULT_UPLOAD_LIBRARY_DIR = "~/.small-cuts/uploads"
 SOURCE = "upload"
 
 _DATA_URI_RE = re.compile(r"^data:(?P<mime>[-\w./+]+);base64,(?P<body>.*)$", re.DOTALL)
+_MEDIA_FILENAMES = {
+    "frame_url": "frame.jpg",
+    "card_url": "card.webp",
+    "audio_url": "voice.wav",
+    "clip_url": "clip.mp4",
+}
 _SCHEMA = """\
 CREATE TABLE IF NOT EXISTS upload_scenes (
     scene_id TEXT PRIMARY KEY,
@@ -34,7 +41,12 @@ class LocalUploadLibrary:
     """Persistent upload shelf backed by SQLite plus stable media files."""
 
     def __init__(self, root: str | Path | None = None) -> None:
-        base = root or os.environ.get(UPLOAD_LIBRARY_DIR_ENV) or DEFAULT_UPLOAD_LIBRARY_DIR
+        base = (
+            root
+            or os.environ.get(UPLOAD_LIBRARY_DIR_ENV)
+            or persistent_path("upload-library")
+            or DEFAULT_UPLOAD_LIBRARY_DIR
+        )
         self.root = Path(base).expanduser().resolve()
         self.media_dir = self.root / "media"
         self.media_dir.mkdir(parents=True, exist_ok=True)
@@ -59,6 +71,10 @@ class LocalUploadLibrary:
 
         media = payload.get("media") if isinstance(payload.get("media"), dict) else {}
         payload["media"] = dict(media)
+        for key, filename in _MEDIA_FILENAMES.items():
+            value = payload["media"].get(key)
+            if isinstance(value, str):
+                payload["media"][key] = self._materialize_value(value, scene_dir, filename)
 
         frame_src = payload.pop("frame_src", None)
         if isinstance(frame_src, str):
@@ -150,7 +166,8 @@ class LocalUploadLibrary:
 
     def _copy_file(self, source: Path, scene_dir: Path, filename: str) -> str:
         target = scene_dir / _safe_path_segment(filename)
-        shutil.copy2(source, target)
+        if source.resolve() != target.resolve():
+            shutil.copy2(source, target)
         return gradio_file_url(target)
 
 

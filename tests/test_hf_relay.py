@@ -151,6 +151,94 @@ def test_bucket_scene_client_caches_manifest_and_media(tmp_path):
     )
 
 
+def test_bucket_scene_client_discovers_modal_upload_scene_files(tmp_path):
+    relay_scene = {
+        **GOLDEN["narrated-scene.schema.json"],
+        "scene_id": "relay-scene",
+        "created_at": "2026-06-16T10:00:00+00:00",
+        "media": {"frame_url": "media/relay-scene/frame.jpg"},
+    }
+    upload_scene = {
+        **GOLDEN["narrated-scene.schema.json"],
+        "scene_id": "modal-upload",
+        "created_at": "2026-06-17T05:48:34+00:00",
+        "source": "upload",
+        "media": {"frame_url": "uploads/modal-upload/media/frame.jpg"},
+    }
+
+    class FakeFs:
+        def __init__(self):
+            self.root = "hf://buckets/macayaven/small-cuts-scenes-dev/relay"
+
+        def cat(self, path):
+            if path == f"{self.root}/manifest.json":
+                return json.dumps({"scenes": [relay_scene]}).encode()
+            if path == f"{self.root}/uploads/modal-upload/scene.json":
+                return json.dumps(upload_scene).encode()
+            if path.endswith("/media/relay-scene/frame.jpg"):
+                return b"relay-frame"
+            if path.endswith("/uploads/modal-upload/media/frame.jpg"):
+                return b"upload-frame"
+            raise FileNotFoundError(path)
+
+        def glob(self, pattern):
+            assert pattern == f"{self.root}/uploads/*/scene.json"
+            return [f"{self.root}/uploads/modal-upload/scene.json"]
+
+    client = hf_relay.BucketSceneClient(
+        "macayaven/small-cuts-scenes-dev",
+        prefix="relay",
+        fs=FakeFs(),
+        cache_dir=tmp_path,
+    )
+
+    scenes = client.list_scenes()
+
+    assert [scene["scene_id"] for scene in scenes] == ["relay-scene", "modal-upload"]
+    assert scenes[1]["source"] == "upload"
+    assert scenes[1]["media"]["frame_url"].startswith("/gradio_api/file=")
+
+
+def test_bucket_scene_client_reads_uploads_from_configured_bucket_mount(monkeypatch, tmp_path):
+    mount = tmp_path / "bucket"
+    relay_root = mount / "relay"
+    upload_root = relay_root / "uploads" / "modal-upload"
+    media_path = upload_root / "media" / "frame.jpg"
+    media_path.parent.mkdir(parents=True)
+    media_path.write_bytes(b"frame")
+    (relay_root / "manifest.json").write_text(json.dumps({"scenes": []}))
+    (upload_root / "scene.json").write_text(
+        json.dumps(
+            {
+                **GOLDEN["narrated-scene.schema.json"],
+                "scene_id": "modal-upload",
+                "source": "upload",
+                "media": {"frame_url": "uploads/modal-upload/media/frame.jpg"},
+            }
+        )
+    )
+    monkeypatch.setenv("SMALL_CUTS_BUCKET_MOUNT_PATH", str(mount))
+
+    class UnusedFs:
+        def cat(self, path):
+            raise AssertionError(f"unexpected bucket cat: {path}")
+
+        def glob(self, pattern):
+            raise AssertionError(f"unexpected bucket glob: {pattern}")
+
+    client = hf_relay.BucketSceneClient(
+        "macayaven/small-cuts-scenes-dev",
+        prefix="relay",
+        fs=UnusedFs(),
+        cache_dir=tmp_path / "cache",
+    )
+
+    scenes = client.list_scenes()
+
+    assert [scene["scene_id"] for scene in scenes] == ["modal-upload"]
+    assert scenes[0]["media"]["frame_url"] == hf_relay.gradio_file_url(media_path)
+
+
 def test_bucket_scene_client_serializes_concurrent_media_cache_writes(tmp_path):
     class FakeFs:
         def __init__(self):

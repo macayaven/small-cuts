@@ -3,6 +3,17 @@ from __future__ import annotations
 from small_cuts.upload_budget import DailyProcessingBudget
 
 
+def test_daily_budget_defaults_under_configured_bucket_mount(monkeypatch, tmp_path):
+    mount = tmp_path / "bucket"
+    monkeypatch.delenv("SMALL_CUTS_UPLOAD_BUDGET_DB", raising=False)
+    monkeypatch.setenv("SMALL_CUTS_BUCKET_MOUNT_PATH", str(mount))
+
+    budget = DailyProcessingBudget.from_env()
+
+    assert budget.db_path == (mount / "space" / "upload-budget.sqlite3").resolve()
+    budget.close()
+
+
 def test_daily_budget_reserves_capacity_and_charges_elapsed_processing_time(tmp_path):
     current = 1_800_000_000.0
     budget = DailyProcessingBudget(

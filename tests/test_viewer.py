@@ -754,6 +754,17 @@ def test_playback_js_uses_trusted_dom_click_for_audio():
     assert "audio play blocked" in viewer.PLAYBACK_SYNC_JS
 
 
+def test_playback_clock_uses_intended_state_during_audio_startup():
+    assert (
+        "const shouldPlay = window.__scUserWantsPlayback && !window.__scPausedForVideoBuffer;"
+        in viewer.PLAYBACK_SYNC_JS
+    )
+    assert (
+        "if (audio.paused) {\n        if (!window.__scPausedForVideoBuffer"
+        " && !video.paused) video.pause();" not in viewer.PLAYBACK_SYNC_JS
+    )
+
+
 def test_playback_js_pauses_voice_when_video_stalls():
     assert "__scUserWantsPlayback" in viewer.PLAYBACK_SYNC_JS
     assert "video.addEventListener('waiting'" in viewer.PLAYBACK_SYNC_JS

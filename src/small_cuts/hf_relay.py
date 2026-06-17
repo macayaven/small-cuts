@@ -38,6 +38,19 @@ HTTP_TIMEOUT_S = 20.0
 MANIFEST_CACHE_TTL_S = 5.0
 RELAY_CACHE_MAX_BYTES = 512 * 1024 * 1024
 
+_MISSING_SHELF_MEDIA_SVG = (
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 180">'
+    '<rect width="320" height="180" fill="#101014"/>'
+    '<rect x="20" y="20" width="280" height="140" rx="10" fill="none" '
+    'stroke="#2f2f38" stroke-width="2" stroke-dasharray="8 8"/>'
+    '<text x="160" y="92" fill="#d4af37" font-family="monospace" '
+    'font-size="18" text-anchor="middle">ROLLING</text>'
+    '<text x="160" y="118" fill="#8a8894" font-family="monospace" '
+    'font-size="12" text-anchor="middle">media still landing</text>'
+    "</svg>"
+)
+MISSING_SHELF_MEDIA_PLACEHOLDER = f"data:image/svg+xml,{quote(_MISSING_SHELF_MEDIA_SVG, safe='')}"
+
 
 class BucketFileSystem(Protocol):
     def cat(self, path: str) -> bytes: ...
@@ -115,9 +128,7 @@ class BucketSceneClient:
         self.manifest_cache_ttl_s = manifest_cache_ttl_s
         self.cache_max_bytes = cache_max_bytes
         self.direct_media_urls = (
-            _env_flag(RELAY_DIRECT_MEDIA_URLS_ENV)
-            if direct_media_urls is None
-            else bool(direct_media_urls)
+            _default_direct_media_urls() if direct_media_urls is None else bool(direct_media_urls)
         )
         self._manifest_lock = threading.Lock()
         self._media_lock = threading.Lock()
@@ -243,8 +254,16 @@ class BucketSceneClient:
             hydrated["media"] = {}
             return hydrated
         for key in keys:
-            media[key] = self.media_url(media.get(key))
+            try:
+                media[key] = self.media_url(media.get(key))
+            except FileNotFoundError:
+                media[key] = self._missing_media_url(key)
         return hydrated
+
+    def _missing_media_url(self, key: str) -> str | None:
+        if key in SHELF_MEDIA_KEYS:
+            return MISSING_SHELF_MEDIA_PLACEHOLDER
+        return None
 
     def _list_media_keys(self) -> tuple[str, ...]:
         return MEDIA_KEYS if self.direct_media_urls else SHELF_MEDIA_KEYS
@@ -415,3 +434,12 @@ def _merge_bucket_scenes(
 
 def _env_flag(name: str) -> bool:
     return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _default_direct_media_urls() -> bool:
+    configured = os.environ.get(RELAY_DIRECT_MEDIA_URLS_ENV)
+    if configured is not None and configured.strip():
+        return _env_flag(RELAY_DIRECT_MEDIA_URLS_ENV)
+    return bool(
+        os.environ.get("SPACE_ID", "").strip() and os.environ.get(RELAY_BUCKET_ENV, "").strip()
+    )

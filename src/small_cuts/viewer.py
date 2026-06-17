@@ -1826,14 +1826,18 @@ PLAYBACK_SYNC_JS = """
     const playBtn = document.querySelector('.sc-play-btn');
     scWireVideoBufferEvents(video);
 
-    // couple the muted video to the voice's play/pause state (a muted video may play()
-    // programmatically without a user gesture; the voice itself is unlocked by the play tap)
+    // Couple the muted video to the user's intended play state, not the transient
+    // audio.paused flag. During audio startup/buffering, audio.paused can remain true
+    // for a few ticks after the user tapped play; treating that as a pause command
+    // creates the play -> instant pause -> play race that makes the video stutter.
     if (audio && video) {
-      if (audio.paused) {
-        if (!window.__scPausedForVideoBuffer && !video.paused) video.pause();
-      } else {
+      const shouldPlay = window.__scUserWantsPlayback && !window.__scPausedForVideoBuffer;
+      if (shouldPlay) {
         scSyncVideoToAudio(audio, video);
         if (video.paused) video.play().catch(() => {});
+      } else {
+        if (!video.paused) video.pause();
+        if (!audio.paused) audio.pause();
       }
     }
     // the play button shows the action it WILL do: play icon when paused, pause icon when playing

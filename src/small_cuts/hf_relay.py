@@ -25,6 +25,7 @@ from .persistence import bucket_mount_path
 
 RELAY_BUCKET_ENV = "SMALL_CUTS_RELAY_BUCKET"
 RELAY_PREFIX_ENV = "SMALL_CUTS_RELAY_PREFIX"
+RELAY_DIRECT_MEDIA_URLS_ENV = "SMALL_CUTS_RELAY_DIRECT_MEDIA_URLS"
 DEFAULT_RELAY_PREFIX = "relay"
 RELAY_MANIFEST = "manifest.json"
 RELAY_CACHE_DIR = Path(tempfile.gettempdir()) / "small-cuts-hf-relay"
@@ -80,6 +81,7 @@ class BucketSceneClient:
         register_static_paths: Any | None = None,
         manifest_cache_ttl_s: float = MANIFEST_CACHE_TTL_S,
         cache_max_bytes: int = RELAY_CACHE_MAX_BYTES,
+        direct_media_urls: bool | None = None,
     ) -> None:
         self.bucket_id = bucket_id.strip()
         if not self.bucket_id:
@@ -111,6 +113,11 @@ class BucketSceneClient:
             register_static_paths(static_paths)
         self.manifest_cache_ttl_s = manifest_cache_ttl_s
         self.cache_max_bytes = cache_max_bytes
+        self.direct_media_urls = (
+            _env_flag(RELAY_DIRECT_MEDIA_URLS_ENV)
+            if direct_media_urls is None
+            else bool(direct_media_urls)
+        )
         self._manifest_lock = threading.Lock()
         self._media_lock = threading.Lock()
         self._manifest_cache: tuple[float, list[dict[str, Any]]] | None = None
@@ -199,6 +206,8 @@ class BucketSceneClient:
         if path.startswith(("http://", "https://", "data:", GRADIO_FILE_ROUTE)):
             return path
         relative = self._relative_media_path(path)
+        if self.direct_media_urls:
+            return self._hf_resolve_url(relative)
         mounted = self._mounted_file(relative)
         if mounted is not None and mounted.is_file():
             return gradio_file_url(mounted)
@@ -214,6 +223,15 @@ class BucketSceneClient:
                     tmp.unlink(missing_ok=True)
                 self._prune_cache(protected=target)
         return gradio_file_url(target)
+
+    def _hf_resolve_url(self, relative: str | Path) -> str:
+        path = Path(relative).as_posix()
+        if self.prefix:
+            path = f"{self.prefix}/{path}"
+        return (
+            f"https://huggingface.co/buckets/{quote(self.bucket_id, safe='/')}"
+            f"/resolve/{quote(path, safe='/')}"
+        )
 
     def _hydrate_scene(self, scene: dict[str, Any]) -> dict[str, Any]:
         hydrated = copy.deepcopy(scene)
@@ -387,3 +405,7 @@ def _merge_bucket_scenes(
         by_id.values(),
         key=lambda scene: (str(scene.get("created_at") or ""), str(scene.get("scene_id") or "")),
     )
+
+
+def _env_flag(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}

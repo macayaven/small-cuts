@@ -57,3 +57,64 @@ def test_modal_client_rejects_missing_scene(tmp_path):
 
     with pytest.raises(ModalUploadError, match="scene"):
         client.submit_video(video)
+
+
+def test_modal_client_wraps_submit_http_detail(tmp_path):
+    video = tmp_path / "clip.mp4"
+    video.write_bytes(b"fake")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.method == "POST"
+        return httpx.Response(401, json={"detail": "unauthorized"})
+
+    client = ModalUploadClient(
+        "https://modal.example",
+        "secret",
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    with pytest.raises(
+        ModalUploadError, match="Modal upload request failed \\(401\\).*unauthorized"
+    ):
+        client.submit_video(video)
+
+
+def test_modal_client_wraps_poll_http_detail(tmp_path):
+    video = tmp_path / "clip.mp4"
+    video.write_bytes(b"fake")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "POST":
+            return httpx.Response(200, json={"job_id": "job-1"})
+        return httpx.Response(422, json={"detail": [{"msg": "could not decode video"}]})
+
+    client = ModalUploadClient(
+        "https://modal.example",
+        "secret",
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    with pytest.raises(
+        ModalUploadError, match="Modal upload status failed \\(422\\).*decode video"
+    ):
+        client.submit_video(video)
+
+
+def test_modal_client_wraps_transport_error_without_raw_request(tmp_path):
+    video = tmp_path / "clip.mp4"
+    video.write_bytes(b"fake")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("connection refused", request=request)
+
+    client = ModalUploadClient(
+        "https://modal.example",
+        "secret",
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    with pytest.raises(ModalUploadError) as exc_info:
+        client.submit_video(video)
+
+    assert "Modal upload request failed: ConnectError" in str(exc_info.value)
+    assert exc_info.value.__cause__ is None

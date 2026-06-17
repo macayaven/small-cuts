@@ -59,11 +59,14 @@ def test_daily_budget_resets_on_next_utc_day(tmp_path):
     assert next_day.token is not None
 
 
-def test_unfinished_reservation_counts_against_hard_limit(tmp_path):
+def test_unfinished_reservation_counts_against_hard_limit_until_ttl(tmp_path):
+    current = 1_800_000_000.0
     budget = DailyProcessingBudget(
         tmp_path / "budget.sqlite3",
         daily_limit_s=60,
         reserve_s=60,
+        reservation_ttl_s=120,
+        now_fn=lambda: current,
     )
 
     first = budget.try_reserve()
@@ -71,3 +74,9 @@ def test_unfinished_reservation_counts_against_hard_limit(tmp_path):
 
     assert first.allowed is True
     assert second.allowed is False
+
+    current += 121
+    third = budget.try_reserve()
+
+    assert third.allowed is True
+    assert third.token is not None

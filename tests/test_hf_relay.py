@@ -151,6 +151,41 @@ def test_bucket_scene_client_caches_manifest_and_media(tmp_path):
     )
 
 
+def test_bucket_scene_client_can_use_hf_resolve_media_urls(tmp_path):
+    scene = {
+        **GOLDEN["narrated-scene.schema.json"],
+        "media": {
+            "frame_url": "media/scene 1/frame.jpg",
+            "clip_url": "media/scene 1/clip.mp4",
+        },
+    }
+
+    class FakeFs:
+        def cat(self, path):
+            if path.endswith("/manifest.json"):
+                return json.dumps({"scenes": [scene]}).encode()
+            raise AssertionError(f"unexpected media fetch through fs: {path}")
+
+    client = hf_relay.BucketSceneClient(
+        "macayaven/small-cuts-scenes-dev",
+        prefix="relay",
+        fs=FakeFs(),
+        cache_dir=tmp_path,
+        direct_media_urls=True,
+    )
+
+    media = client.list_scenes()[0]["media"]
+
+    assert media["clip_url"] == (
+        "https://huggingface.co/buckets/macayaven/small-cuts-scenes-dev"
+        "/resolve/relay/media/scene%201/clip.mp4"
+    )
+    assert media["frame_url"] == (
+        "https://huggingface.co/buckets/macayaven/small-cuts-scenes-dev"
+        "/resolve/relay/media/scene%201/frame.jpg"
+    )
+
+
 def test_bucket_scene_client_discovers_modal_upload_scene_files(tmp_path):
     relay_scene = {
         **GOLDEN["narrated-scene.schema.json"],

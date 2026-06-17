@@ -15,9 +15,11 @@ from .persistence import persistent_path
 UPLOAD_BUDGET_DB_ENV = "SMALL_CUTS_UPLOAD_BUDGET_DB"
 DAILY_GPU_BUDGET_SECONDS_ENV = "SMALL_CUTS_DAILY_GPU_BUDGET_SECONDS"
 GPU_RESERVATION_SECONDS_ENV = "SMALL_CUTS_GPU_SECONDS_PER_UPLOAD_RESERVATION"
+UPLOAD_RESERVATION_TTL_SECONDS_ENV = "SMALL_CUTS_UPLOAD_RESERVATION_TTL_SECONDS"
 DEFAULT_BUDGET_DB = "~/.small-cuts/upload-budget.sqlite3"
 DEFAULT_DAILY_LIMIT_S = 20 * 60
 DEFAULT_RESERVE_S = 60
+DEFAULT_RESERVATION_TTL_S = 30 * 60
 
 _SCHEMA = """\
 CREATE TABLE IF NOT EXISTS upload_daily_budget (
@@ -50,6 +52,7 @@ class DailyProcessingBudget:
         *,
         daily_limit_s: float | None = None,
         reserve_s: float | None = None,
+        reservation_ttl_s: float | None = None,
         now_fn: Callable[[], float] | None = None,
     ) -> None:
         self.db_path = Path(
@@ -70,6 +73,11 @@ class DailyProcessingBudget:
             if reserve_s is not None
             else os.environ.get(GPU_RESERVATION_SECONDS_ENV, DEFAULT_RESERVE_S)
         )
+        self.reservation_ttl_s = float(
+            reservation_ttl_s
+            if reservation_ttl_s is not None
+            else os.environ.get(UPLOAD_RESERVATION_TTL_SECONDS_ENV, DEFAULT_RESERVATION_TTL_S)
+        )
         self._now = now_fn or time.time
         self._lock = threading.Lock()
         self._db = sqlite3.connect(self.db_path, check_same_thread=False)
@@ -85,6 +93,7 @@ class DailyProcessingBudget:
         day = self._day_key()
         with self._lock:
             self._ensure_day(day)
+            self._expire_stale_reservation(day)
             used_s, reserved_s = self._totals(day)
             committed_s = used_s + reserved_s
             remaining_s = max(0.0, self.daily_limit_s - committed_s)
@@ -98,10 +107,10 @@ class DailyProcessingBudget:
                 self._db.execute(
                     """
                     UPDATE upload_daily_budget
-                    SET reserved_s = reserved_s + ?, updated_at = datetime('now')
+                    SET reserved_s = reserved_s + ?, updated_at = ?
                     WHERE day = ?
                     """,
-                    (reserve, day),
+                    (reserve, self._now_iso(), day),
                 )
             return BudgetDecision(
                 allowed=True,
@@ -128,10 +137,10 @@ class DailyProcessingBudget:
                             WHEN reserved_s >= ? THEN reserved_s - ?
                             ELSE 0
                         END,
-                        updated_at = datetime('now')
+                        updated_at = ?
                     WHERE day = ?
                     """,
-                    (elapsed, reserved_s, reserved_s, day),
+                    (elapsed, reserved_s, reserved_s, self._now_iso(), day),
                 )
 
     def seconds_used_today(self) -> float:
@@ -145,6 +154,7 @@ class DailyProcessingBudget:
         with self._lock:
             day = self._day_key()
             self._ensure_day(day)
+            self._expire_stale_reservation(day)
             used_s, reserved_s = self._totals(day)
         return used_s + reserved_s
 
@@ -154,14 +164,17 @@ class DailyProcessingBudget:
     def _day_key(self) -> str:
         return datetime.fromtimestamp(self._now(), tz=timezone.utc).date().isoformat()
 
+    def _now_iso(self) -> str:
+        return datetime.fromtimestamp(self._now(), tz=timezone.utc).isoformat()
+
     def _ensure_day(self, day: str) -> None:
         with self._db:
             self._db.execute(
                 """
                 INSERT OR IGNORE INTO upload_daily_budget (day, used_s, reserved_s, updated_at)
-                VALUES (?, 0, 0, datetime('now'))
+                VALUES (?, 0, 0, ?)
                 """,
-                (day,),
+                (day, self._now_iso()),
             )
 
     def _totals(self, day: str) -> tuple[float, float]:
@@ -171,3 +184,38 @@ class DailyProcessingBudget:
         if row is None:
             return 0.0, 0.0
         return float(row[0]), float(row[1])
+
+    def _expire_stale_reservation(self, day: str) -> None:
+        if self.reservation_ttl_s <= 0:
+            return
+        row = self._db.execute(
+            "SELECT reserved_s, updated_at FROM upload_daily_budget WHERE day = ?", (day,)
+        ).fetchone()
+        if row is None or float(row[0]) <= 0:
+            return
+        updated_at = _parse_updated_at(str(row[1]))
+        if updated_at is None:
+            return
+        if self._now() - updated_at.timestamp() <= self.reservation_ttl_s:
+            return
+        with self._db:
+            self._db.execute(
+                """
+                UPDATE upload_daily_budget
+                SET reserved_s = 0, updated_at = ?
+                WHERE day = ?
+                """,
+                (self._now_iso(), day),
+            )
+
+
+def _parse_updated_at(value: str) -> datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)

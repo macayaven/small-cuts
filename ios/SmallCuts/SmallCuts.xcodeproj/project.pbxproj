@@ -55,6 +55,7 @@
 		EE17CB9889FAFF62B6F77ECE /* EngineSessionClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5910940C59EA51CEC91C7620 /* EngineSessionClient.swift */; };
 		EE971BCEF016CCE69A07E8BA /* MockWearables.swift in Sources */ = {isa = PBXBuildFile; fileRef = 583D4D6DCDF90B7420BE0024 /* MockWearables.swift */; };
 		EEDB9A7934E9685829CBDF2F /* EngineLoopSmokeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3143196467D93336B0F1931D /* EngineLoopSmokeTests.swift */; };
+		F28B3D3BF43E815385A3F917 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 142EEE87270AD2A90F8BB878 /* Assets.xcassets */; };
 		F9599D64A7597113D90E946A /* MWDATCamera in Frameworks */ = {isa = PBXBuildFile; productRef = 3A4B9694967767D9D973C300 /* MWDATCamera */; };
 		F9BA4C88FC745596D86E0CD7 /* RUNBOOK.md in Resources */ = {isa = PBXBuildFile; fileRef = ED209A474A73B74D05F32C0D /* RUNBOOK.md */; };
 		FA58DF1C05AD498ADD0FB3F5 /* SmallCutsLiteApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24421D79404844AE4D330B82 /* SmallCutsLiteApp.swift */; };
@@ -81,6 +82,7 @@
 /* Begin PBXFileReference section */
 		0CA6E6EA32023B901FF0F493 /* MomentBuilderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MomentBuilderTests.swift; sourceTree = "<group>"; };
 		107424152F0CCCDC3612560C /* SmallCutsTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = SmallCutsTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		142EEE87270AD2A90F8BB878 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		14A3B63EA4047A7EF2043167 /* ModalUploadClientTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModalUploadClientTests.swift; sourceTree = "<group>"; };
 		1CCFC48652A528A61022090D /* LiteCaptureView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiteCaptureView.swift; sourceTree = "<group>"; };
 		23376BABE4247CA323AE33CA /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
@@ -250,6 +252,7 @@
 		8D472B1B90A63FD36050D463 /* SmallCutsLite */ = {
 			isa = PBXGroup;
 			children = (
+				142EEE87270AD2A90F8BB878 /* Assets.xcassets */,
 				7F4361AAC9E7E4BF1CB79F33 /* Info.plist */,
 				ED209A474A73B74D05F32C0D /* RUNBOOK.md */,
 				1B67EBF67ED5D0F8D56872DE /* App */,
@@ -490,6 +493,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				F28B3D3BF43E815385A3F917 /* Assets.xcassets in Resources */,
 				F9BA4C88FC745596D86E0CD7 /* RUNBOOK.md in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

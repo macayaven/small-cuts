@@ -7,7 +7,7 @@ script is **`RUNBOOK.md`** (right here); design + decisions are in the **KB**
 ## What's here
 - Capture path: `FrameSource`/`SimulatedFrameSource` → `SceneGate` → `MomentBuilder` →
   `EngineSessionClient` (WS + un-acked resend) → `VoicePlayer` (D9: no overlap, drop stale `play_by`).
-  `CaptureCoordinator` orchestrates; `ContentView` is the SwiftUI surface. 19 XCTests.
+  `CaptureCoordinator` orchestrates; `ContentView` is the SwiftUI surface. ~66 XCTest cases across 10 suites.
 
 ## Build / test
 - XcodeGen owns the project: edit **`project.yml`**, then regenerate. Use the full Xcode (not CLT):

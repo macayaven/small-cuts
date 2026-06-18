@@ -1,7 +1,7 @@
 # Inter-team contracts
 
 These schemas are the **only coupling** between the three teams
-([product architecture](../product/architecture.md)). Each team optimizes
+([architecture](../architecture.md)). Each team optimizes
 freely inside its boundary; the contracts keep the system aligned.
 Current contract set: **1.1.0** (post adversarial review — Codex + Gemini,
 2026-06-12).

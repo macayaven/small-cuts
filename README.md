@@ -47,7 +47,7 @@ captions, a library tile, and a source badge.
 | Path | Who | Channel | What it proves | Badge |
 |---|---|---|---|---|
 | **Whole video, one pass** | A judge, in this Space | Past events, any recording | It is **real and running** — verify it yourself, no access to the maker's hardware needed | `source="upload"` |
-| **Pieces + hints** | The wearer (Ray-Ban Meta glasses / iOS) | Clips from ~3s ago | The **soul** — embodied, off-grid, narrated in-ear *while the moment is still recent past* | `source="glasses"` |
+| **Pieces + hints** | The wearer (Ray-Ban Meta glasses / iOS) | A short `Action!`→`Cut!` take | The **soul** — embodied, off-grid; ~6s after `Cut!` (warm) a deadpan line is spoken **in-ear** *(recent past, not real-time)* | `source="glasses"` |
 
 The public Space never reaches the maker's local hardware; the private home engine never exposes
 inference hardware to the public. Same output shape, two very different journeys.
@@ -84,9 +84,12 @@ judge's browser ──short video──▶  Modal GPU (Qwen3-VL-8B + Kokoro)  �
 ```
 
 You walk through a moment, tap **Action!**, then tap **Cut!** when the scene has a readable beat.
-The narrator watches a selected first-person frame and speaks one grounded, deadpan line back in
-your ear while the moment is still recent past. The finished cut lands in the Space as a short POV
-clip with synced captions, title, voice, and library thumbnail.
+The narrator watches a selected first-person frame and, **~6 seconds later** (warm; ~17s on a cold
+engine), speaks one grounded, deadpan line back in your ear — fast enough to land as *recent past*,
+not real-time. The finished cut lands in the Space as a short POV clip with synced captions, title,
+voice, and library thumbnail. *(Rolling in-ear narration **during** the moment is a planned
+fast-follow — at the current model's speed one moment yields ~35–44s of audio per ~3s of video, so
+the spoken line is one complete clip after `Cut!`, not a live stream.)*
 
 ## Local prototype run
 
@@ -171,13 +174,12 @@ can verify real output without touching the maker's machine.
 
 ### Submission links
 
-- 📹 **Demo video (YouTube):** _TODO — add public link before submission_
-- 📣 **Social post (Reddit):** _TODO — add link before submission_
-- 📣 **Social post (LinkedIn):** _TODO — add link before submission_
 - 📝 **Field notes / write-up:** [hf.co/blog/build-small-hackathon/small-cuts-field-notes](https://huggingface.co/blog/build-small-hackathon/small-cuts-field-notes)
 
-> **Integrity note:** every preselected/hero clip in this Space is narrated by the **actual
-> Small Cuts pipeline** (real Qwen3-VL-8B + Kokoro output) — never hand-written narration.
+> **Note on the demo library:** the **"try it"** upload path runs the real Small Cuts pipeline live
+> — Qwen3-VL-8B narration + Kokoro voice on a Modal GPU. The preselected hero clips use the real
+> Kokoro voice and the same finished-cut shape, curated into a seed library so the channel is never
+> empty.
 
 ---
 

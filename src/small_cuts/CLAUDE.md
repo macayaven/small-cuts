@@ -45,15 +45,14 @@ the canonical command list, and the architecture live in the **root `CLAUDE.md`*
   live capture, and is the clickable **back-to-live** affordance (the button is hidden, JS-forwarded).
 - **`SMALL_CUTS_SHOW_FEED`** (default off) revives the dropped narrator-chat feed (a future
   "see transcription" surface for non-live clips).
-- **One playback clock (`PLAYBACK_SYNC_JS`):** gr.Audio's native `<audio>` is the **sole authority** —
-  the muted `<video>` and the captions/progress follow its **play/pause + `currentTime`**, so play runs
-  video+voice+captions together and pause freezes all three on the same frame. **Boots PAUSED** (no
-  `autoplay` on the player or the video — audible autoplay is browser-blocked anyway): poster + first
-  caption + 0% until the first user gesture (tap play). gr.Audio is kept only as the Python→browser
-  audio plumbing — `container=False` + `buttons=[]` + CSS strip it to play/pause + volume.
-- **Deferred (Tier-2, fast-follow PR):** swap gr.Audio → a custom slim `<audio>` for the pixel-faithful
-  gold pill + a real seekable bar. Gate it on a live-Space audio test. (Review-3 took the lower-risk
-  strip-and-couple path instead of the swap, since the swap touches Space file-serving.)
+- **One playback clock (`PLAYBACK_SYNC_JS`):** media is **decoupled** and the **browser owns each
+  element's clock** — there is **no `gr.Audio`** (it can't be the clock; wavesurfer leaves its
+  `<audio>` unreadable). Narration is a hidden custom `<audio id="sc-voice">` (re-rendered per scene),
+  authoritative when present, else the muted looping `<video>`. The gold pill / progress / captions
+  are painted from **native media events** (`play`/`pause`/`timeupdate`) — **no `setInterval`, no
+  drift correction**; the muted b-roll free-runs. Captions ride `data-sc-cues`/`data-sc-chunks`
+  attributes on the subtitle div. **Boots PAUSED.** (Design-of-record: the 2026-06-17 native
+  single-clock player rewrite, in the KB.)
 
 ## ZeroGPU gotchas (hard-won — see KB `…/space/`)
 - **HF deployment safety override (2026-06-15):** do not deploy this viewer, run upload smokes, or

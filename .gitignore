@@ -35,3 +35,4 @@ docs/superpowers/
 *.log
 docs/reviews/**/proposals/raw/
 docs/reviews/**/proposals/PROMPT.txt
+docs/reviews/

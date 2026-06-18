@@ -38,7 +38,7 @@ the canonical command list, and the architecture live in the **root `CLAUDE.md`*
     and fallback demos, not the active public relay architecture.
 - **Layout (Review-3 theater):** full-width top bar (Voice-Cut brand mark + upload icon), then a
   two-column **theater** — left: 9:16 stage (ratio is a hard invariant) + display-only progress bar +
-  control **pill** (rewind/forward = **clip-to-clip**; gr.Audio stripped to **play/pause + volume**;
+  control **pill** (rewind/forward = **clip-to-clip**; custom player controls = **play/pause + volume**;
   like no-count toggle + flag now **inside** the pill); right: the **Library** rail (gallery). Fits one
   viewport — **no main scrollbar**; a `@media (max-width:860px)` query collapses to one column with a
   horizontal gallery rail on mobile. Header = auto-title for finished cuts / **"● Happening now"** for

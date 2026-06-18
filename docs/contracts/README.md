@@ -58,10 +58,11 @@ Current contract set: **1.1.0** (post adversarial review — Codex + Gemini,
 
 The engine owns session memory. Capture apps contribute only what is inside
 `MomentEnvelope.context` + the chronology chain (`captured_at`,
-`prev_moment_id`). The prompt builder may use: recent narrations for the
-session, time-of-day (via `tz_offset_min`), `location_label`, `user_hint`,
-gate trigger. Token budget for injected context: ≤ 400 tokens (inference
-team owns the selection policy — #20).
+`prev_moment_id`). **v1 consumes `style_key` + `user_hint`; the other fields
+below are reserved for future versions.** The prompt builder may use: recent
+narrations for the session, time-of-day (via `tz_offset_min`), `location_label`,
+`user_hint`, gate trigger. Token budget for injected context: ≤ 400 tokens
+(inference team owns the selection policy — #20).
 
 ## Enforcement
 

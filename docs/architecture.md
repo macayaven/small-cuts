@@ -48,13 +48,14 @@ just past, the gate keeps moments sparse, and the captions mirror it line-for-li
 `created_at + 60 s`) is the D9 *drop-stale* freshness guard, **not** the latency budget.
 
 ## The four viewer modes (env-selected, `viewer.py`)
-Build-time, by precedence `ENGINE_URL > RELAY_BUCKET > local`:
+Build-time, by precedence `ENGINE_URL > RELAY_BUCKET > local` (off-Space, engine mode can also
+auto-activate if a local engine on `:8077` responds, unless `SMALL_CUTS_DISABLE_ENGINE_AUTODETECT`):
 
 | Mode | Env | What it is |
 |---|---|---|
 | **Engine** | `SMALL_CUTS_ENGINE_URL` | Polls a home/engine `GET /v1/scenes` (local/ops mode). |
 | **Pure relay** | `SMALL_CUTS_RELAY_BUCKET` (no upload) | Viewer-only; reads a finished-scene manifest + media from an HF bucket. The safe public posture. |
-| **Hybrid relay + upload** | `SMALL_CUTS_RELAY_BUCKET` + `SMALL_CUTS_ENABLE_UPLOAD_SANDBOX=1` | Relay library + a Modal-backed "try it" upload for judges. |
+| **Hybrid relay + upload** | `RELAY_BUCKET` + `ENABLE_UPLOAD_SANDBOX=1` (+ `MODAL_API_URL` / `MODAL_API_TOKEN`) | Relay library + a Modal-backed "try it" upload for judges. |
 | **Upload (local)** | neither set | Local "try it" dropzone with the mock pipeline; dev/fallback. |
 
 ## The real-time loop (one narrated moment)

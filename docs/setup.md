@@ -43,8 +43,9 @@ uv run ruff check . && uv run ruff format --check . && uv run pytest
 | `SMALL_CUTS_ENABLE_UPLOAD_SANDBOX` | — | with a relay bucket, enable the Modal-backed "try it" upload |
 
 The four viewer modes (engine / pure-relay / hybrid-relay+upload / local-upload) are selected from
-these at build time — see [`architecture.md`](architecture.md). The real-time home engine runs with
-`python -m small_cuts.engine` (see the root [`CLAUDE.md`](../CLAUDE.md)).
+these at build time — see [`architecture.md`](architecture.md). The hybrid upload path also needs
+`SMALL_CUTS_MODAL_API_URL` + `SMALL_CUTS_MODAL_API_TOKEN` (the Modal endpoint + its Bearer token). The
+real-time home engine runs with `python -m small_cuts.engine` (see the root [`CLAUDE.md`](../CLAUDE.md)).
 
 ## Secrets
 

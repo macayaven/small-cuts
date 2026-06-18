@@ -62,9 +62,9 @@ The Space is the **view platform + library** half of the loop:
   advancing with the voice-over.
 - **Voice-over replay** in a compact custom player whose video, sound, captions, and progress all
   share one audio clock.
-- **A public library** of real Ray-Ban Meta glasses moments, generated through the same local
-  engine path so the channel is never empty. Source clips and mark points are curated; the visible
-  titles, narration, voice, thumbnails, and clips are **produced by Small Cuts**.
+- **A public library** of curated real Ray-Ban Meta glasses moments, so the channel is never empty —
+  real POV clips with the real **Kokoro** voice, hand-curated into a seed library (not regenerated at
+  runtime).
 - **"Try it"** — a tucked-away upload drawer. Drop a short video and, while the shared demo budget
   still has capacity, a private **Modal** GPU service can run the real Qwen + Kokoro pipeline and
   replay the generated cut in the same theater. Local prototypes can use the mock narrator/TTS

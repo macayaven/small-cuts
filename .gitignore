@@ -24,6 +24,8 @@ flagged/
 # Env — never commit secrets
 .env
 .env.*
+# iOS Lite embedded Modal token — copy from Secrets.example.swift, never commit
+ios/SmallCuts/SmallCutsLite/Config/Secrets.swift
 .playwright-mcp/
 ui-proposal.jpeg
 aimode-content.yml

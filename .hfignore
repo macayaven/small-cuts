@@ -3,6 +3,7 @@
 .github/
 .claude/
 ios/
+android/
 kb/
 docs/
 modal_app/

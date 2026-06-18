@@ -26,6 +26,8 @@ from .persistence import bucket_mount_path
 RELAY_BUCKET_ENV = "SMALL_CUTS_RELAY_BUCKET"
 RELAY_PREFIX_ENV = "SMALL_CUTS_RELAY_PREFIX"
 RELAY_DIRECT_MEDIA_URLS_ENV = "SMALL_CUTS_RELAY_DIRECT_MEDIA_URLS"
+RELAY_READ_TOKEN_ENV = "SMALL_CUTS_RELAY_READ_TOKEN"
+RELAY_BUCKET_PRIVATE_ENV = "SMALL_CUTS_RELAY_BUCKET_PRIVATE"
 DEFAULT_RELAY_PREFIX = "relay"
 RELAY_MANIFEST = "manifest.json"
 RELAY_CACHE_DIR = Path(tempfile.gettempdir()) / "small-cuts-hf-relay"
@@ -130,6 +132,14 @@ class BucketSceneClient:
         self.direct_media_urls = (
             _default_direct_media_urls() if direct_media_urls is None else bool(direct_media_urls)
         )
+        self._read_token = os.environ.get(RELAY_READ_TOKEN_ENV, "").strip() or None
+        self.bucket_private = _env_flag(RELAY_BUCKET_PRIVATE_ENV)
+        if self.bucket_private and self.direct_media_urls:
+            raise BucketRelayError(
+                f"refusing to start: direct-media (resolve) URLs against private bucket "
+                f"{self.bucket_id} would 404 for anonymous clients and leak the bucket path "
+                f"into client HTML; set {RELAY_DIRECT_MEDIA_URLS_ENV}=0 to serve same-origin"
+            )
         self._manifest_lock = threading.Lock()
         self._media_lock = threading.Lock()
         self._manifest_cache: tuple[float, list[dict[str, Any]]] | None = None
@@ -140,7 +150,7 @@ class BucketSceneClient:
         if self._fs is None:
             from huggingface_hub import HfFileSystem
 
-            self._fs = HfFileSystem()
+            self._fs = HfFileSystem(token=self._read_token)
         return self._fs
 
     def list_scenes(self, limit: int = DEFAULT_SCENE_LIMIT) -> list[dict[str, Any]]:
@@ -266,7 +276,12 @@ class BucketSceneClient:
         return None
 
     def _list_media_keys(self) -> tuple[str, ...]:
-        return MEDIA_KEYS if self.direct_media_urls else SHELF_MEDIA_KEYS
+        # A private bucket is proxied entirely same-origin (clip + audio too, not just the
+        # shelf thumbnails) so Safari can load and seek the video; existing engine/upload
+        # proxy modes keep serving only the shelf keys (media arrives via a mount).
+        if self.direct_media_urls or self.bucket_private:
+            return MEDIA_KEYS
+        return SHELF_MEDIA_KEYS
 
     def _relative_media_path(self, path: str) -> Path:
         value = path.strip().lstrip("/")

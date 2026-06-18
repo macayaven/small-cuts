@@ -99,7 +99,7 @@ testing, or the final run.
 - [x] Modal secret `small-cuts-postcut` exists in Modal environment `main` with keys `HF_TOKEN` and
   `SMALL_CUTS_MODAL_API_TOKEN`; no token values were written to repo docs.
 - [x] Private Modal app `small-cuts-postcut` deployed at
-  `https://macayaven--small-cuts-postcut-api.modal.run`.
+  `https://<modal-account>--small-cuts-postcut-api.modal.run` (Bearer-gated; account name redacted).
 - [x] Modal GPU policy encoded as H100 -> A100-80GB -> L40S, with cost-control defaults
   `min_containers=0`, `buffer_containers=0`, `scaledown_window=60`, `max_containers=4`, and no
   same-container GPU concurrency on the Qwen/Kokoro worker.

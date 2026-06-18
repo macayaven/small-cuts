@@ -101,14 +101,13 @@ gh pr merge --auto --squash
   Client-facing endpoints use **Tailnet MagicDNS HTTPS** (e.g. `https://mac-studio.tail48bab7.ts.net/…`),
   never raw IPs.
 
-## Coordination (see KB `10-projects/small-cuts/coordination/`)
-- **Roles:** orchestrator = **Opus 4.8** (assumed the lead vacated by **Fable 5**, pending Carlos's
-  confirmation) · implementer = **Codex (GPT-5.x)** · reviewer = **GLM / opencode** · eval judge =
-  **agy (Gemini)** · optional independent check = **GPT-5.x red-teams the plan**. Keep orchestrator ≠
-  implementer (different model families).
-- **Peers:** codex, agy, agent, opencode, + Carlos.
-- **Surfaces:** GitHub Project board **#8**; epics **#36** team-space / **#37** team-mobile /
-  **#38** team-inference; labels `team-*` + `contract-change`.
+## Coordination
+- **Author / director:** Carlos sets the brief, makes the calls, and owns the result. The roles below
+  describe the **multi-model process he directs** — not a team that owns the work.
+- **Process:** pose a brief → fan it out across independent models for diverse takes (a lead model
+  orchestrates; a *different* model family implements, kept distinct from the orchestrator to avoid
+  shared blind spots; others review and adversarially verify) → Carlos ratifies the design-of-record.
+- **Surfaces:** GitHub Project board **#8**; labels `team-*` + `contract-change`.
 
 ## Pointers
 - **KB tree** (via `knowledge-base` MCP, under `10-projects/small-cuts/`): `00-overview`,

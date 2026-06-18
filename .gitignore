@@ -27,3 +27,11 @@ flagged/
 .playwright-mcp/
 ui-proposal.jpeg
 aimode-content.yml
+
+# Pre-publish hygiene (internal/dev artifacts — keep out of the public repo)
+.claude/
+docs/submission/
+docs/superpowers/
+*.log
+docs/reviews/**/proposals/raw/
+docs/reviews/**/proposals/PROMPT.txt

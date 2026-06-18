@@ -43,8 +43,8 @@ def test_stage_renders_video_when_clip_present():
         "data:image/jpeg;base64,xxx", "a caption", live=False, clip_src="/gradio_api/file=/x/c.mp4"
     )
     assert "<video" in html and "/gradio_api/file=/x/c.mp4" in html
-    # Muted + looping + inline, but NOT autoplay: the video is driven by the shared play/pause
-    # clock (PLAYBACK_SYNC_JS) so it starts/freezes with the voice instead of running free.
+    # Muted + looping + inline, but NOT autoplay: the trusted play handler starts/stops it.
+    # It free-runs on its own clock instead of mirroring narration currentTime.
     assert "muted loop playsinline" in html
     assert "autoplay" not in html
     # no clip → falls back to a still image

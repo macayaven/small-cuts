@@ -14,8 +14,14 @@ import sys
 import warnings
 from pathlib import Path
 
-import gradio as gr
 from starlette.exceptions import StarletteDeprecationWarning
+
+ON_SPACE = bool(os.environ.get("SPACE_ID"))
+if ON_SPACE:
+    # HF Spaces defaults Gradio SSR on; its Node proxy shadows custom FastAPI SSE routes.
+    os.environ["GRADIO_SSR_MODE"] = "False"
+
+import gradio as gr  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent
 SRC = ROOT / "src"
@@ -28,7 +34,6 @@ warnings.filterwarnings(
     category=StarletteDeprecationWarning,
 )
 
-ON_SPACE = bool(os.environ.get("SPACE_ID"))
 ENGINE_MODE = bool(os.environ.get("SMALL_CUTS_ENGINE_URL", "").strip())
 
 from small_cuts.hf_relay import RELAY_BUCKET_ENV  # noqa: E402
@@ -97,5 +102,10 @@ except Exception as exc:
     STARTUP_ERROR = str(exc)
     demo = _degraded_app(STARTUP_ERROR)
 
+
+def launch_demo():
+    return demo.launch(theme=THEME, _app=demo.app)
+
+
 if __name__ == "__main__":
-    demo.launch(theme=THEME)
+    launch_demo()

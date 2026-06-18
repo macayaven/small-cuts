@@ -7,6 +7,7 @@ import os
 import re
 import shutil
 import sqlite3
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -15,12 +16,19 @@ from urllib.parse import unquote
 from PIL import Image
 
 from .hf_relay import GRADIO_FILE_ROUTE, gradio_file_url
+from .persistence import persistent_path
 
 UPLOAD_LIBRARY_DIR_ENV = "SMALL_CUTS_UPLOAD_LIBRARY_DIR"
 DEFAULT_UPLOAD_LIBRARY_DIR = "~/.small-cuts/uploads"
 SOURCE = "upload"
 
 _DATA_URI_RE = re.compile(r"^data:(?P<mime>[-\w./+]+);base64,(?P<body>.*)$", re.DOTALL)
+_MEDIA_FILENAMES = {
+    "frame_url": "frame.jpg",
+    "card_url": "card.webp",
+    "audio_url": "voice.wav",
+    "clip_url": "clip.mp4",
+}
 _SCHEMA = """\
 CREATE TABLE IF NOT EXISTS upload_scenes (
     scene_id TEXT PRIMARY KEY,
@@ -34,10 +42,16 @@ class LocalUploadLibrary:
     """Persistent upload shelf backed by SQLite plus stable media files."""
 
     def __init__(self, root: str | Path | None = None) -> None:
-        base = root or os.environ.get(UPLOAD_LIBRARY_DIR_ENV) or DEFAULT_UPLOAD_LIBRARY_DIR
+        base = (
+            root
+            or os.environ.get(UPLOAD_LIBRARY_DIR_ENV)
+            or persistent_path("upload-library")
+            or DEFAULT_UPLOAD_LIBRARY_DIR
+        )
         self.root = Path(base).expanduser().resolve()
         self.media_dir = self.root / "media"
         self.media_dir.mkdir(parents=True, exist_ok=True)
+        self._lock = threading.Lock()
         self._db = sqlite3.connect(self.root / "uploads.sqlite3", check_same_thread=False)
         self._db.execute(_SCHEMA)
         self._db.commit()
@@ -59,6 +73,10 @@ class LocalUploadLibrary:
 
         media = payload.get("media") if isinstance(payload.get("media"), dict) else {}
         payload["media"] = dict(media)
+        for key, filename in _MEDIA_FILENAMES.items():
+            value = payload["media"].get(key)
+            if isinstance(value, str):
+                payload["media"][key] = self._materialize_value(value, scene_dir, filename)
 
         frame_src = payload.pop("frame_src", None)
         if isinstance(frame_src, str):
@@ -95,7 +113,7 @@ class LocalUploadLibrary:
         payload["source_icon"] = SOURCE
 
         stored_at = _now_iso()
-        with self._db:
+        with self._lock, self._db:
             self._db.execute(
                 """
                 INSERT INTO upload_scenes (scene_id, created_at, stored_at, payload)
@@ -115,25 +133,27 @@ class LocalUploadLibrary:
         return copy.deepcopy(payload)
 
     def list_scenes(self, limit: int = 60) -> list[dict[str, Any]]:
-        rows = self._db.execute(
-            """
-            SELECT payload FROM (
-                SELECT created_at, scene_id, payload
-                FROM upload_scenes
-                ORDER BY created_at DESC, scene_id DESC
-                LIMIT ?
-            )
-            ORDER BY created_at ASC, scene_id ASC
-            """,
-            (int(limit),),
-        ).fetchall()
+        with self._lock:
+            rows = self._db.execute(
+                """
+                SELECT payload FROM (
+                    SELECT created_at, scene_id, payload
+                    FROM upload_scenes
+                    ORDER BY created_at DESC, scene_id DESC
+                    LIMIT ?
+                )
+                ORDER BY created_at ASC, scene_id ASC
+                """,
+                (int(limit),),
+            ).fetchall()
         return [json.loads(row[0]) for row in rows]
 
     def static_paths(self) -> list[Path]:
         return [self.root]
 
     def close(self) -> None:
-        self._db.close()
+        with self._lock:
+            self._db.close()
 
     def _materialize_value(self, value: str, scene_dir: Path, filename: str) -> str:
         if value.startswith(("http://", "https://")):
@@ -150,7 +170,8 @@ class LocalUploadLibrary:
 
     def _copy_file(self, source: Path, scene_dir: Path, filename: str) -> str:
         target = scene_dir / _safe_path_segment(filename)
-        shutil.copy2(source, target)
+        if source.resolve() != target.resolve():
+            shutil.copy2(source, target)
         return gradio_file_url(target)
 
 

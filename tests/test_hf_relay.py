@@ -151,6 +151,202 @@ def test_bucket_scene_client_caches_manifest_and_media(tmp_path):
     )
 
 
+def test_bucket_scene_client_can_use_hf_resolve_media_urls(tmp_path):
+    scene = {
+        **GOLDEN["narrated-scene.schema.json"],
+        "media": {
+            "frame_url": "media/scene 1/frame.jpg",
+            "clip_url": "media/scene 1/clip.mp4",
+        },
+    }
+
+    class FakeFs:
+        def cat(self, path):
+            if path.endswith("/manifest.json"):
+                return json.dumps({"scenes": [scene]}).encode()
+            raise AssertionError(f"unexpected media fetch through fs: {path}")
+
+    client = hf_relay.BucketSceneClient(
+        "macayaven/small-cuts-scenes-dev",
+        prefix="relay",
+        fs=FakeFs(),
+        cache_dir=tmp_path,
+        direct_media_urls=True,
+    )
+
+    media = client.list_scenes()[0]["media"]
+
+    assert media["clip_url"] == (
+        "https://huggingface.co/buckets/macayaven/small-cuts-scenes-dev"
+        "/resolve/relay/media/scene%201/clip.mp4"
+    )
+    assert media["frame_url"] == (
+        "https://huggingface.co/buckets/macayaven/small-cuts-scenes-dev"
+        "/resolve/relay/media/scene%201/frame.jpg"
+    )
+    assert "/resolve/main/" not in media["frame_url"]
+
+
+def test_bucket_scene_client_defaults_to_direct_media_urls_on_space_relay(monkeypatch, tmp_path):
+    scene = {
+        **GOLDEN["narrated-scene.schema.json"],
+        "media": {"frame_url": "media/scene-1/frame.jpg"},
+    }
+    monkeypatch.setenv("SPACE_ID", "build-small-hackathon/small-cuts-live")
+    monkeypatch.setenv(hf_relay.RELAY_BUCKET_ENV, "build-small-hackathon/small-cuts-scenes")
+    monkeypatch.delenv(hf_relay.RELAY_DIRECT_MEDIA_URLS_ENV, raising=False)
+
+    class FakeFs:
+        def cat(self, path):
+            if path.endswith("/manifest.json"):
+                return json.dumps({"scenes": [scene]}).encode()
+            raise AssertionError(f"unexpected media fetch through fs: {path}")
+
+    client = hf_relay.BucketSceneClient(
+        "build-small-hackathon/small-cuts-scenes",
+        prefix="relay",
+        fs=FakeFs(),
+        cache_dir=tmp_path,
+    )
+
+    media = client.list_scenes()[0]["media"]
+
+    assert media["frame_url"] == (
+        "https://huggingface.co/buckets/build-small-hackathon/small-cuts-scenes"
+        "/resolve/relay/media/scene-1/frame.jpg"
+    )
+
+
+def test_bucket_scene_client_list_scenes_does_not_eagerly_fetch_audio_or_clip(tmp_path):
+    scene = {
+        **GOLDEN["narrated-scene.schema.json"],
+        "media": {
+            "frame_url": "media/scene-1/frame.jpg",
+            "audio_url": "media/scene-1/voice.wav",
+            "clip_url": "media/scene-1/clip.mp4",
+        },
+    }
+
+    class FakeFs:
+        def __init__(self):
+            self.calls = []
+
+        def cat(self, path):
+            self.calls.append(path)
+            if path.endswith("/manifest.json"):
+                return json.dumps({"scenes": [scene]}).encode()
+            if path.endswith("/media/scene-1/frame.jpg"):
+                return b"frame"
+            raise AssertionError(f"unexpected eager media fetch: {path}")
+
+    fs = FakeFs()
+    client = hf_relay.BucketSceneClient(
+        "macayaven/small-cuts-scenes-dev",
+        prefix="relay",
+        fs=fs,
+        cache_dir=tmp_path,
+    )
+
+    (listed,) = client.list_scenes()
+
+    assert listed["media"]["frame_url"].startswith("/gradio_api/file=")
+    assert listed["media"]["audio_url"] == "media/scene-1/voice.wav"
+    assert listed["media"]["clip_url"] == "media/scene-1/clip.mp4"
+    assert fs.calls == [
+        "hf://buckets/macayaven/small-cuts-scenes-dev/relay/manifest.json",
+        "hf://buckets/macayaven/small-cuts-scenes-dev/relay/media/scene-1/frame.jpg",
+    ]
+
+
+def test_bucket_scene_client_discovers_modal_upload_scene_files(tmp_path):
+    relay_scene = {
+        **GOLDEN["narrated-scene.schema.json"],
+        "scene_id": "relay-scene",
+        "created_at": "2026-06-16T10:00:00+00:00",
+        "media": {"frame_url": "media/relay-scene/frame.jpg"},
+    }
+    upload_scene = {
+        **GOLDEN["narrated-scene.schema.json"],
+        "scene_id": "modal-upload",
+        "created_at": "2026-06-17T05:48:34+00:00",
+        "source": "upload",
+        "media": {"frame_url": "uploads/modal-upload/media/frame.jpg"},
+    }
+
+    class FakeFs:
+        def __init__(self):
+            self.root = "hf://buckets/macayaven/small-cuts-scenes-dev/relay"
+
+        def cat(self, path):
+            if path == f"{self.root}/manifest.json":
+                return json.dumps({"scenes": [relay_scene]}).encode()
+            if path == f"{self.root}/uploads/modal-upload/scene.json":
+                return json.dumps(upload_scene).encode()
+            if path.endswith("/media/relay-scene/frame.jpg"):
+                return b"relay-frame"
+            if path.endswith("/uploads/modal-upload/media/frame.jpg"):
+                return b"upload-frame"
+            raise FileNotFoundError(path)
+
+        def glob(self, pattern):
+            assert pattern == f"{self.root}/uploads/*/scene.json"
+            return [f"{self.root}/uploads/modal-upload/scene.json"]
+
+    client = hf_relay.BucketSceneClient(
+        "macayaven/small-cuts-scenes-dev",
+        prefix="relay",
+        fs=FakeFs(),
+        cache_dir=tmp_path,
+        direct_media_urls=False,
+    )
+
+    scenes = client.list_scenes()
+
+    assert [scene["scene_id"] for scene in scenes] == ["relay-scene", "modal-upload"]
+    assert scenes[1]["source"] == "upload"
+    assert scenes[1]["media"]["frame_url"].startswith("/gradio_api/file=")
+
+
+def test_bucket_scene_client_reads_uploads_from_configured_bucket_mount(monkeypatch, tmp_path):
+    mount = tmp_path / "bucket"
+    relay_root = mount / "relay"
+    upload_root = relay_root / "uploads" / "modal-upload"
+    media_path = upload_root / "media" / "frame.jpg"
+    media_path.parent.mkdir(parents=True)
+    media_path.write_bytes(b"frame")
+    (relay_root / "manifest.json").write_text(json.dumps({"scenes": []}))
+    (upload_root / "scene.json").write_text(
+        json.dumps(
+            {
+                **GOLDEN["narrated-scene.schema.json"],
+                "scene_id": "modal-upload",
+                "source": "upload",
+                "media": {"frame_url": "uploads/modal-upload/media/frame.jpg"},
+            }
+        )
+    )
+    monkeypatch.setenv("SMALL_CUTS_BUCKET_MOUNT_PATH", str(mount))
+
+    class UnusedFs:
+        def cat(self, path):
+            raise AssertionError(f"unexpected bucket cat: {path}")
+
+        def glob(self, pattern):
+            raise AssertionError(f"unexpected bucket glob: {pattern}")
+
+    client = hf_relay.BucketSceneClient(
+        "macayaven/small-cuts-scenes-dev",
+        prefix="relay",
+        fs=UnusedFs(),
+        cache_dir=tmp_path / "cache",
+    )
+
+    scenes = client.list_scenes()
+
+    assert [scene["scene_id"] for scene in scenes] == ["modal-upload"]
+    assert scenes[0]["media"]["frame_url"] == hf_relay.gradio_file_url(media_path)
+
+
 def test_bucket_scene_client_serializes_concurrent_media_cache_writes(tmp_path):
     class FakeFs:
         def __init__(self):
@@ -177,7 +373,7 @@ def test_bucket_scene_client_serializes_concurrent_media_cache_writes(tmp_path):
     assert (tmp_path / "media/scene-1/frame.jpg").read_bytes() == b"frame"
 
 
-def test_bucket_scene_client_skips_scene_with_missing_media_instead_of_blanking_all(tmp_path):
+def test_bucket_scene_client_keeps_scene_with_missing_shelf_media(tmp_path):
     broken = {
         **GOLDEN["narrated-scene.schema.json"],
         "scene_id": "broken",
@@ -202,9 +398,14 @@ def test_bucket_scene_client_skips_scene_with_missing_media_instead_of_blanking_
         prefix="relay",
         fs=FakeFs(),
         cache_dir=tmp_path,
+        direct_media_urls=False,
     )
 
-    assert [scene["scene_id"] for scene in client.list_scenes()] == ["good"]
+    scenes = client.list_scenes()
+
+    assert [scene["scene_id"] for scene in scenes] == ["broken", "good"]
+    assert scenes[0]["media"]["frame_url"].startswith("data:image/svg+xml")
+    assert scenes[1]["media"]["frame_url"].startswith("/gradio_api/file=")
 
 
 def test_bucket_scene_client_prunes_old_cache_files_after_media_write(tmp_path):

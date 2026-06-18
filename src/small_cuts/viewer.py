@@ -18,9 +18,10 @@ runs on the hackathon Space unchanged.
 from __future__ import annotations
 
 import base64
-import hmac
 import html
 import io
+import json
+import math
 import os
 import sys
 import tempfile
@@ -65,7 +66,6 @@ ENGINE_URL_ENV = "SMALL_CUTS_ENGINE_URL"
 DISABLE_ENGINE_AUTODETECT_ENV = "SMALL_CUTS_DISABLE_ENGINE_AUTODETECT"
 MODAL_API_URL_ENV = "SMALL_CUTS_MODAL_API_URL"
 MODAL_API_TOKEN_ENV = "SMALL_CUTS_MODAL_API_TOKEN"
-OWNER_UPLOAD_PASSCODE_ENV = "SMALL_CUTS_OWNER_UPLOAD_PASSCODE"
 UPLOAD_SANDBOX_ENV = "SMALL_CUTS_ENABLE_UPLOAD_SANDBOX"
 UPLOAD_MAX_SECONDS_ENV = "SMALL_CUTS_UPLOAD_MAX_SECONDS"
 UPLOAD_MAX_BYTES = 80 * 1024 * 1024
@@ -88,6 +88,7 @@ UPLOAD_QUEUE_MAX_SIZE = 8
 UPLOAD_CONCURRENCY_ID = "small-cuts-modal-upload"
 VISIBILITIES = ("private", "shared", "public")
 _KEEP_UPLOAD_SCENE = object()
+_KEEP_UPLOAD_ERROR = object()
 SOURCE_ICON_LABELS = {
     "glasses": "Glasses capture",
     "upload": "Space upload",
@@ -243,9 +244,15 @@ footer { display: none !important; }
   padding: 0 !important; }
 .sc-upload-entry .block { width: auto !important; min-width: 0 !important; }
 .sc-upload.sc-icbtn { cursor: pointer !important; margin-left: 0 !important; }
+.sc-upload.sc-icbtn { font-size: 0 !important; line-height: 0 !important;
+  overflow: hidden !important; }
 .sc-upload-cta { display: block; color: #8a8894; font-family: 'IBM Plex Mono', monospace;
   font-size: .58rem; line-height: 1; letter-spacing: .08em; text-transform: uppercase;
   white-space: nowrap; }
+@media (min-width: 861px) {
+  .sc-topbar.sc-hf-header-present { padding-top: 48px !important; }
+  #sc-upload-popover.sc-hf-header-present { top: 100px !important; }
+}
 .sc-header { justify-content: center; text-align: center; }
 .sc-progress { max-width: 560px; height: 4px; margin: 12px auto 2px; border-radius: 3px;
   background: #2A292F; overflow: hidden; }
@@ -324,6 +331,11 @@ footer { display: none !important; }
   color: #8a8894 !important; }
 #sc-upload-popover .sc-narrate-btn button, #sc-upload-popover .sc-narrate-btn {
   width: 100% !important; min-height: 38px !important; }
+#sc-upload-popover button.sc-narrate-btn:disabled,
+#sc-upload-popover button.sc-narrate-btn.sc-upload-submit-locked,
+#sc-upload-popover .sc-narrate-btn button:disabled,
+#sc-upload-popover .sc-narrate-btn button.sc-upload-submit-locked {
+  opacity: .58 !important; cursor: not-allowed !important; filter: saturate(.72) !important; }
 #sc-upload-popover button { width: 100% !important; min-height: 26px !important; }
 .sc-upload-status { min-height: 22px; display: flex; align-items: center; gap: 8px;
   color: #8a8894; font-size: .78rem; line-height: 1.3; }
@@ -395,9 +407,8 @@ body.sc-generating .loading-overlay, body.sc-generating .loading-spinner,
 body.sc-generating .spinner, body.sc-generating .show-progress { display: none !important; }
 body.sc-generating .wrap.generating, body.sc-generating .wrap.translucent {
   opacity: 0 !important; background: transparent !important; }
-/* custom file-backed player (Review-3): the master clock is a hidden <audio id="sc-voice"> in
-   .sc-audio-host. gr.Audio can't serve as the clock — it plays via wavesurfer, leaving its own
-   <audio> element empty/unreadable. The pill's play/pause + volume drive #sc-voice via JS. */
+/* custom file-backed player (Review-3): the hidden <audio id="sc-voice"> carries narration.
+   Browser media events drive the pill/progress/captions; the decorative muted video free-runs. */
 .sc-audio-host { display: none !important; }
 .sc-vol-ctl { display: inline-flex; align-items: center; flex: 0 0 auto; }
 .sc-vol { -webkit-appearance: none; appearance: none; width: 62px; height: 4px; border-radius: 3px;
@@ -407,9 +418,10 @@ body.sc-generating .wrap.generating, body.sc-generating .wrap.translucent {
 .sc-vol::-moz-range-thumb { width: 12px; height: 12px; border: none; border-radius: 50%;
   background: #D4AF37; cursor: pointer; }
 
-/* --- Review-3 theater layout: fit one viewport (no scroll), stage + gallery rail --- */
-/* Lock the page to a single viewport so the main container never scrolls (#4). The gallery
-   lives in a side rail inside this height, so nothing is clipped. */
+/* --- Review-3 theater layout: fit one viewport (no scroll), stage + library carousel --- */
+/* Lock the page to a single viewport so the main container never scrolls (#4). The library
+   lives in a bounded horizontal rail beside the player, so a growing shelf never pushes the
+   active clip farther away. */
 html, body { overflow: hidden; height: 100%; }
 .gradio-container { height: 100dvh !important; }
 .gradio-container .main.fillable.app { max-height: 100dvh !important; overflow: hidden !important;
@@ -419,7 +431,8 @@ html, body { overflow: hidden; height: 100%; }
 .gradio-container .contain > .column { min-height: 0 !important; }
 .sc-soul { display: none; }   /* the poetic subline costs vertical budget; brand stays */
 
-.sc-theater { flex: 1 1 auto !important; min-height: 0 !important; align-items: stretch !important;
+.sc-theater { flex-direction: row !important; flex-wrap: nowrap !important;
+  flex: 1 1 auto !important; min-height: 0 !important; align-items: stretch !important;
   gap: 22px !important; max-width: 1180px; margin: 6px auto 0 !important; width: 100%; }
 .sc-stage-col { display: flex !important; flex-direction: column; min-height: 0 !important;
   align-items: center; flex: 1 1 auto !important; gap: 4px !important; }
@@ -432,17 +445,38 @@ html, body { overflow: hidden; height: 100%; }
    ratio is preserved and the controls below it always stay on-screen. The aspect-ratio must
    NOT drive height off the column width (that overflowed the viewport). */
 .sc-stage-block .sc-stage-shell { height: clamp(300px, 48dvh, 430px) !important;
-  max-height: 430px; width: auto; max-width: min(100%, calc(100vw - 380px));
+  max-height: 430px; width: auto; max-width: min(100%, calc(100vw - 620px));
   flex: 0 0 auto; }
-.sc-rail-col { flex: 0 0 286px !important; min-height: 0 !important; display: flex !important;
-  flex-direction: column; }
+.sc-rail-col { flex: 0 0 auto !important; width: clamp(360px, 44vw, 520px) !important;
+  min-width: 0 !important; min-height: 0 !important; display: flex !important;
+  flex-direction: column; overflow: hidden !important; }
 .sc-rail-head { display: flex; align-items: center; gap: 4px; color: #8a8894;
   font-family: 'IBM Plex Mono', monospace; font-size: .72rem; letter-spacing: .16em;
-  text-transform: uppercase; padding: 4px 2px 8px; }
-.sc-rail-col .sc-shelf { flex: 1 1 auto; min-height: 0; }
-.sc-rail-col .sc-shelf .grid-wrap { grid-template-columns: repeat(2, 1fr) !important;
-  height: 100% !important; max-height: 100% !important; overflow-y: auto !important;
-  overflow-x: hidden !important; }
+  text-transform: uppercase; padding: 0 2px 8px; }
+.sc-rail-col .sc-shelf { flex: 0 0 auto !important; width: 100% !important;
+  height: 154px !important; min-height: 0 !important; overflow: hidden !important; }
+.sc-rail-col .sc-shelf .gallery-container .grid-wrap.fixed-height {
+  width: 100% !important; max-width: 100% !important;
+  height: 154px !important; min-height: 0 !important; max-height: 154px !important;
+  overflow-x: auto !important; overflow-y: hidden !important;
+  scroll-snap-type: x mandatory; overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch; padding-bottom: 8px !important;
+  scrollbar-width: thin; scrollbar-color: rgba(212,175,55,.75) transparent; }
+.sc-rail-col .sc-shelf .gallery-container .grid-wrap.fixed-height::-webkit-scrollbar {
+  height: 6px; }
+.sc-rail-col .sc-shelf .gallery-container .grid-wrap.fixed-height::-webkit-scrollbar-track {
+  background: transparent; }
+.sc-rail-col .sc-shelf .gallery-container .grid-wrap.fixed-height::-webkit-scrollbar-thumb {
+  background: rgba(212,175,55,.75); border-radius: 999px; }
+.sc-rail-col .sc-shelf .grid-wrap .grid-container {
+  display: grid !important; grid-template-columns: none !important;
+  grid-auto-flow: column !important; grid-auto-columns: minmax(150px, 168px) !important;
+  grid-template-rows: 1fr !important; grid-auto-rows: 1fr !important;
+  width: max-content !important; min-width: 100% !important;
+  height: 146px !important; max-height: 146px !important; }
+.sc-rail-col .sc-shelf .gallery-item { width: 100% !important; height: 146px !important;
+  scroll-snap-align: start; }
+.sc-rail-col .sc-shelf .thumbnail-item { width: 100% !important; height: 100% !important; }
 
 /* header doubles as the "back to live" affordance (the standalone button is hidden) */
 .sc-header { cursor: pointer; }
@@ -606,6 +640,10 @@ def render_upload_status_html(state: str = "idle", message: str | None = None) -
     return f'<div class="sc-upload-status {html.escape(state, quote=True)}">{body}</div>'
 
 
+def _upload_status_is_running(status_html: Any) -> bool:
+    return isinstance(status_html, str) and "sc-upload-status running" in status_html
+
+
 def _toggle_upload_panel(is_open: bool) -> tuple[Any, ...]:
     next_open = not bool(is_open)
     if next_open:
@@ -613,8 +651,7 @@ def _toggle_upload_panel(is_open: bool) -> tuple[Any, ...]:
             True,
             gr.update(visible=True),
             render_upload_status_html(),
-            gr.update(interactive=True),
-            gr.skip(),
+            gr.update(interactive=False),
             gr.skip(),
             gr.skip(),
         )
@@ -622,17 +659,19 @@ def _toggle_upload_panel(is_open: bool) -> tuple[Any, ...]:
         False,
         gr.update(visible=False),
         render_upload_status_html(),
-        gr.update(interactive=True),
+        gr.update(interactive=False),
         gr.update(value=None),
-        gr.update(value=""),
         gr.update(value=""),
     )
 
 
-def _owner_upload_passcode_valid(passcode: str | None) -> bool:
-    secret = os.environ.get(OWNER_UPLOAD_PASSCODE_ENV, "").strip()
-    candidate = str(passcode or "").strip()
-    return bool(secret and candidate and hmac.compare_digest(candidate, secret))
+def _sync_upload_submit_ready_ui(video_path: str | None) -> tuple[Any, str]:
+    if video_path:
+        return gr.update(interactive=True), render_upload_status_html()
+    return (
+        gr.update(interactive=False),
+        render_upload_status_html("blocked", "Upload a video clip first."),
+    )
 
 
 def _upload_budget_warning(decision: BudgetDecision) -> str:
@@ -780,6 +819,38 @@ def _subtitle_chunks(text: str, max_words: int = 5) -> list[str]:
     return chunks or [text.strip()]
 
 
+def caption_cues(text: str, duration: float | str | None) -> list[tuple[float, float, str]]:
+    """Evenly distribute subtitle chunks across a known media duration."""
+    if not text.strip():
+        return []
+    try:
+        total = float(duration)
+    except (TypeError, ValueError):
+        return []
+    if not math.isfinite(total) or total <= 0:
+        return []
+    chunks = [chunk for chunk in _subtitle_chunks(text.strip()) if chunk.strip()]
+    if not chunks:
+        return []
+    window = total / len(chunks)
+    cues: list[tuple[float, float, str]] = []
+    for index, chunk in enumerate(chunks):
+        start = index * window
+        end = total if index == len(chunks) - 1 else (index + 1) * window
+        cues.append((start, end, chunk))
+    return cues
+
+
+def _caption_data_attr(value: Any) -> str:
+    """JSON compacted + HTML-escaped for safe embedding in a `data-*` attribute.
+
+    Caption cue/chunk lists ride on the subtitle div's data attributes rather than an inert
+    `<script>` island: Gradio warns about (and may not surface) `<script>` tags inside gr.HTML, but
+    attributes always survive innerHTML insertion and sanitization.
+    """
+    return html.escape(json.dumps(value, separators=(",", ":")), quote=True)
+
+
 def render_stage_html(
     frame_src: str | None,
     caption: str,
@@ -795,24 +866,31 @@ def render_stage_html(
     """
     if clip_src:
         poster = f' poster="{html.escape(frame_src, quote=True)}"' if frame_src else ""
-        # No `autoplay`: the video is muted and driven by the shared play/pause clock
-        # (PLAYBACK_SYNC_JS) so it starts/freezes with the voice. It loops while playing so a
-        # short clip keeps moving under a longer narration; on pause it freezes on its frame.
+        # No `autoplay`: the trusted play gesture starts/stops this decorative b-roll.
+        # It loops on its own native clock; narration audio is not allowed to snap its currentTime.
         body = (
             f'<video src="{html.escape(clip_src, quote=True)}"{poster} '
-            "muted loop playsinline></video>"
+            'muted loop playsinline preload="auto" fetchpriority="high"></video>'
         )
     elif frame_src:
-        body = f'<img src="{html.escape(frame_src, quote=True)}" alt="">'
+        body = f'<img src="{html.escape(frame_src, quote=True)}" alt="" fetchpriority="high">'
     else:
         body = '<div class="sc-stage-empty">🎬</div>'
     if caption and caption.strip():
-        spans = "".join(
-            f'<span class="sc-sub-line"{"" if i == 0 else " hidden"}>{html.escape(c)}</span>'
-            for i, c in enumerate(_subtitle_chunks(caption))
-        )
+        chunks = [chunk for chunk in _subtitle_chunks(caption.strip()) if chunk.strip()]
+        cues = caption_cues(caption, duration)
+        first_caption = cues[0][2] if cues else (chunks[0] if chunks else caption.strip())
         dur_attr = f' data-duration="{float(duration):.1f}"' if duration else ""
-        caption_html = f'<div class="sc-subtitle" id="sc-subtitle"{dur_attr}>{spans}</div>'
+        # Timed cues (when the scene's duration is known server-side) are preferred by the painter;
+        # the chunk list is ALWAYS embedded so captions still advance off the browser's live clock
+        # for scenes whose duration is only known in the browser (e.g. seed scenes).
+        cues_attr = f' data-sc-cues="{_caption_data_attr(cues)}"' if cues else ""
+        chunks_attr = f' data-sc-chunks="{_caption_data_attr(chunks)}"' if chunks else ""
+        caption_html = (
+            f'<div class="sc-subtitle" id="sc-subtitle"{dur_attr}{cues_attr}{chunks_attr}>'
+            f'<span class="sc-sub-line">{html.escape(first_caption)}</span>'
+            "</div>"
+        )
     else:
         caption_html = ""
     if source_icon in SOURCE_ICON_LABELS:
@@ -1011,7 +1089,8 @@ def poll_engine(
     channel_live = is_fresh(newest.get("created_at"), now=now)
     by_id = {scene.get("scene_id"): scene for scene in scenes}
     current = by_id.get(pinned_id) or by_id.get(current_id) or newest
-    payload = format_stage(current, client.base_url, now=now)
+    current_for_stage = _scene_with_media_urls(current, client)
+    payload = format_stage(current_for_stage, client.base_url, now=now)
     on_air = channel_live and current.get("scene_id") == newest.get("scene_id")
     notice = "New cut available" if channel_live and not on_air else None
 
@@ -1128,7 +1207,7 @@ def _go_live_handler(
     card, narration = _narrate_core(frame, style_key, scene_hint or "", empty_caption)
     scene = make_local_scene(frame, card, narration, style_key, source_video_path=video_path)
     # Voice-over is on by default — narrate, then voice. A TTS hiccup must not crash the stage;
-    # the voice is written to a served WAV so the <audio> master clock can replay it from the shelf.
+    # the voice is written to a served WAV so the hidden <audio> can replay it from the shelf.
     try:
         speech = speak(narration)
         scene["duration"] = len(speech.audio) / speech.sample_rate if speech.sample_rate else None
@@ -1193,12 +1272,16 @@ def _engine_ui_state(value: Any) -> dict[str, Any]:
     data = value if isinstance(value, dict) else {}
     scenes = data.get("scenes")
     upload_scene = data.get("upload_scene")
+    upload_error_message = data.get("upload_error_message")
     return {
         "scenes": scenes if isinstance(scenes, list) else [],
         "pinned_id": data.get("pinned_id"),
         "current_id": data.get("current_id"),
         "playing_id": data.get("playing_id"),
         "upload_scene": upload_scene if isinstance(upload_scene, dict) else None,
+        "upload_error_message": upload_error_message
+        if isinstance(upload_error_message, str)
+        else "",
     }
 
 
@@ -1209,6 +1292,7 @@ def _pack_engine_ui_state(
     playing_id: Any,
     previous: dict[str, Any] | None = None,
     upload_scene: Any = _KEEP_UPLOAD_SCENE,
+    upload_error_message: Any = _KEEP_UPLOAD_ERROR,
 ) -> dict[str, Any]:
     prev = _engine_ui_state(previous)
     return {
@@ -1219,18 +1303,70 @@ def _pack_engine_ui_state(
         "upload_scene": prev["upload_scene"]
         if upload_scene is _KEEP_UPLOAD_SCENE
         else upload_scene,
+        "upload_error_message": prev["upload_error_message"]
+        if upload_error_message is _KEEP_UPLOAD_ERROR
+        else (upload_error_message if isinstance(upload_error_message, str) else ""),
     }
+
+
+def _engine_scene_control_outputs(
+    scene: dict[str, Any] | None,
+    engine: EngineClient | BucketSceneClient,
+    scenes: list[dict[str, Any]],
+    state: Any,
+    *,
+    pinned_id: str | None,
+    restart_audio: bool,
+    empty_on_missing: bool = False,
+) -> tuple[Any, ...]:
+    state_payload = _engine_ui_state(state)
+    if scene is None and not empty_on_missing:
+        return (gr.skip(),) * 5
+    scene_for_stage = _scene_with_media_urls(scene, engine) if scene is not None else None
+    payload = format_stage(scene_for_stage, engine.base_url)
+    playing_id = state_payload["playing_id"]
+    if restart_audio:
+        audio_update = _audio_html(payload["audio_src"]) if payload["audio_src"] else gr.skip()
+        if payload["audio_src"]:
+            playing_id = payload["scene_id"]
+    elif payload["audio_src"] and payload["scene_id"] != playing_id:
+        audio_update, playing_id = _audio_html(payload["audio_src"]), payload["scene_id"]
+    else:
+        audio_update = gr.skip()
+    return (
+        render_header_html(payload["title"], payload["style_label"], payload["live"]),
+        render_stage_html(
+            payload["frame_src"],
+            payload["caption"],
+            payload["live"],
+            clip_src=payload["clip_src"],
+            duration=payload["duration"],
+            source_icon=payload["source_icon"],
+        ),
+        audio_update,
+        _pack_engine_ui_state(
+            scenes,
+            pinned_id,
+            payload["scene_id"],
+            playing_id,
+            previous=state_payload,
+            upload_scene=None,
+        ),
+        gr.update(value=payload["visibility"]) if payload["visibility"] else gr.skip(),
+    )
 
 
 def _modal_upload_warning_response(message: str, state: Any) -> tuple[Any, ...]:
     gr.Warning(message)
+    state_payload = _engine_ui_state(state)
+    state_payload["upload_error_message"] = message
     return (
         gr.skip(),
         gr.skip(),
         gr.skip(),
         gr.skip(),
         gr.skip(),
-        _engine_ui_state(state),
+        state_payload,
         gr.skip(),
     )
 
@@ -1271,7 +1407,13 @@ def _submit_modal_upload(
             scene_hint=scene_hint,
         )
     except (ModalUploadError, httpx.HTTPError) as exc:
+        capture_exception(exc)
         return _modal_upload_warning_response(f"Modal upload failed: {exc}", state)
+    except Exception as exc:
+        capture_exception(exc)
+        return _modal_upload_warning_response(
+            "Upload failed before processing. Please try again.", state
+        )
 
     scene = _scene_with_media_urls(raw_scene, media_client)
     current_state = _engine_ui_state(state)
@@ -1298,6 +1440,7 @@ def _submit_modal_upload(
             scene_id,
             previous=current_state,
             upload_scene=scene,
+            upload_error_message=None,
         ),
         gr.update(value=payload["visibility"]) if payload["visibility"] else gr.skip(),
     )
@@ -1398,7 +1541,8 @@ def _clamp_index(evt_index: Any, length: int) -> int:
 
 
 # Generated voice-overs are written here as served WAV files (ephemeral, not the library) so the
-# custom <audio> master clock can stream them — see _write_voice. Registered via set_static_paths.
+# custom <audio> narration element can stream them — see _write_voice. Registered via
+# set_static_paths.
 GENERATED_AUDIO_DIR = Path(tempfile.gettempdir()) / "small_cuts_voice"
 
 
@@ -1414,13 +1558,18 @@ def _audio_url(src: str | None) -> str | None:
 
 
 def _audio_html(src: str | None) -> str:
-    """The hidden master-clock `<audio>` element — no native controls; the pill drives it via JS
-    (PLAYBACK_SYNC_JS). Re-rendered into its host on each scene change so the source swaps with the
-    cut. gr.Audio can't serve as the clock: it plays via wavesurfer, leaving its `<audio>` empty."""
+    """The hidden narration `<audio>` element — no native controls.
+
+    Re-rendered into its host on each scene change so the source swaps with the cut. gr.Audio can't
+    serve this role: it plays via wavesurfer, leaving its `<audio>` empty.
+    """
     url = _audio_url(src)
     if not url:
-        return '<audio id="sc-voice" preload="auto"></audio>'
-    return f'<audio id="sc-voice" src="{html.escape(url, quote=True)}" preload="auto"></audio>'
+        return '<audio id="sc-voice" preload="auto" fetchpriority="high"></audio>'
+    return (
+        f'<audio id="sc-voice" src="{html.escape(url, quote=True)}" '
+        'preload="auto" fetchpriority="high"></audio>'
+    )
 
 
 def _write_voice(samples: Any, sample_rate: int, scene_id: str) -> str | None:
@@ -1457,12 +1606,10 @@ def _audio_duration(path: str | None) -> float | None:
         return None
 
 
-# One clock for the whole stage (Review-3 #3). gr.Audio's native <audio> is the master:
-# the (muted) video and the captions/progress follow ITS play/pause + currentTime, so play
-# runs all three and pause freezes all three on the same frame. Replaces the old three-clock
-# arrangement (video autoplay-loop + gr.Audio + a Date.now() caption estimate) that let the
-# video drift free of the narration. Also injects the Voice-Cut favicon and wires the header
-# as the "back to live" affordance (the standalone button is hidden).
+# Browser-native playback wiring for the stage. Narration audio is authoritative when it has
+# a source; otherwise the muted looping video is authoritative. Captions/progress/icon state
+# are painted from media events, while the b-roll free-runs on its own native clock.
+# Also injects the Voice-Cut favicon and wires the header as the "back to live" affordance.
 PLAYBACK_SYNC_JS = """
 () => {
   if (window.__scInit) return;
@@ -1492,6 +1639,18 @@ PLAYBACK_SYNC_JS = """
     link.type = 'image/svg+xml';
     link.href = 'data:image/svg+xml,' + encodeURIComponent(svg);
   } catch (e) {}
+
+  const scSyncHfHeaderSafeZone = () => {
+    const hasHeader = !!document.querySelector('#huggingface-space-header');
+    document.querySelectorAll('.sc-topbar, #sc-upload-popover').forEach((node) => {
+      node.classList.toggle('sc-hf-header-present', hasHeader);
+    });
+  };
+  scSyncHfHeaderSafeZone();
+  if (!window.__scHfHeaderObs && document.body) {
+    window.__scHfHeaderObs = new MutationObserver(scSyncHfHeaderSafeZone);
+    window.__scHfHeaderObs.observe(document.body, { childList: true, subtree: true });
+  }
 
   // header click = back to live (un-pin / re-follow); forwards to the hidden Gradio button
   document.addEventListener('click', (e) => {
@@ -1534,18 +1693,183 @@ PLAYBACK_SYNC_JS = """
       }
       if (!hint.getAttribute('autocomplete')) hint.setAttribute('autocomplete', 'off');
     }
-    const owner = panel.querySelector('.sc-owner-passcode input, input[type="password"]');
-    if (owner) {
-      if (!owner.id) owner.id = 'sc-owner-upload-passcode';
-      if (!owner.getAttribute('name')) owner.setAttribute('name', 'small_cuts_owner_passcode');
-      if (!owner.getAttribute('autocomplete')) owner.setAttribute('autocomplete', 'off');
-    }
   };
   scFixUploadFormFields();
   if (!window.__scUploadFormObs && document.body) {
     window.__scUploadFormObs = new MutationObserver(scFixUploadFormFields);
     window.__scUploadFormObs.observe(document.body, { childList: true, subtree: true });
   }
+
+  if (typeof window.__scUploadSubmitLocked !== 'boolean') {
+    window.__scUploadSubmitLocked = false;
+  }
+  if (typeof window.__scUserWantsPlayback !== 'boolean') {
+    window.__scUserWantsPlayback = false;
+  }
+  const scUploadSubmitButton = () => (
+    document.querySelector('#sc-upload-popover button.sc-narrate-btn')
+    || document.querySelector('#sc-upload-popover .sc-narrate-btn button')
+  );
+  const scUploadPreviewReady = () => {
+    const video = document.querySelector('#sc-upload-popover .sc-upload-video video');
+    if (!video) return false;
+    const source = video.currentSrc || video.getAttribute('src')
+      || (video.querySelector('source') && video.querySelector('source').src);
+    return !!source && video.readyState >= 1;
+  };
+  const scUploadRunning = () => (
+    !!document.querySelector('#sc-upload-popover .sc-upload-status.running')
+  );
+  const scSetUploadSubmitDisabled = (disabled) => {
+    const button = scUploadSubmitButton();
+    if (!button) return;
+    const ariaDisabled = disabled ? 'true' : 'false';
+    if (button.disabled !== disabled) button.disabled = disabled;
+    if (button.getAttribute('aria-disabled') !== ariaDisabled) {
+      button.setAttribute('aria-disabled', ariaDisabled);
+    }
+    if (button.classList.contains('sc-upload-submit-locked') !== disabled) {
+      button.classList.toggle('sc-upload-submit-locked', disabled);
+    }
+  };
+  const scSyncUploadSubmitState = () => {
+    scSetUploadSubmitDisabled(
+      window.__scUploadSubmitLocked || scUploadRunning() || !scUploadPreviewReady()
+    );
+  };
+  window.__scSyncUploadSubmitState = scSyncUploadSubmitState;
+  scSyncUploadSubmitState();
+  if (!window.__scUploadSubmitObs && document.body) {
+    window.__scUploadSubmitObs = new MutationObserver(scSyncUploadSubmitState);
+    window.__scUploadSubmitObs.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['src'],
+    });
+  }
+  document.addEventListener('loadedmetadata', (e) => {
+    if (e.target && e.target.closest && e.target.closest('#sc-upload-popover .sc-upload-video')) {
+      scSyncUploadSubmitState();
+    }
+  }, true);
+  document.addEventListener('click', (e) => {
+    const button = e.target.closest
+      && e.target.closest(
+        '#sc-upload-popover button.sc-narrate-btn, #sc-upload-popover .sc-narrate-btn button'
+      );
+    if (!button) return;
+    if (window.__scUploadSubmitLocked || scUploadRunning() || !scUploadPreviewReady()) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      scSyncUploadSubmitState();
+      return;
+    }
+    window.__scUploadSubmitLocked = true;
+    setTimeout(scSyncUploadSubmitState, 0);
+  }, true);
+
+  const scHasMediaSrc = (el) => !!(el && (el.currentSrc || el.getAttribute('src')));
+  const scAuthoritativeMedia = () => {
+    const audio = document.querySelector('#sc-voice');
+    const video = document.querySelector('.sc-stage-shell video');
+    const hasAudio = scHasMediaSrc(audio);
+    const clock = hasAudio ? audio : video;
+    return { audio, video, hasAudio, clock };
+  };
+  const scSetPlayIcon = (playing) => {
+    const playBtn = document.querySelector('.sc-play-btn');
+    if (!playBtn) return;
+    playBtn.classList.toggle('sc-ico-pause', playing);
+    playBtn.classList.toggle('sc-ico-play', !playing);
+  };
+  const scSubtitleData = (key) => {
+    const sub = document.querySelector('#sc-subtitle');
+    const raw = sub && sub.dataset ? sub.dataset[key] : '';
+    if (!raw) return [];
+    try {
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (err) {
+      return [];
+    }
+  };
+  const scCaptionCues = () => scSubtitleData('scCues');
+  const scCaptionChunks = () => scSubtitleData('scChunks');
+  const scCueText = (cues, t) => {
+    let active = null;
+    cues.some((cue, index) => {
+      const start = Number(cue[0]);
+      const end = Number(cue[1]);
+      if (!Number.isFinite(start) || !Number.isFinite(end)) return false;
+      const isLast = index === cues.length - 1;
+      if (t >= start && (t < end || (isLast && t <= end + 0.25))) {
+        active = cue;
+        return true;
+      }
+      return false;
+    });
+    const lastCue = cues[cues.length - 1];
+    if (!active && lastCue && t >= Number(lastCue[1])) active = lastCue;
+    return active ? (active[2] || '') : null;
+  };
+  // Captions advance on the authoritative clock. Server cues (with timings, when the scene's
+  // duration is known) win; otherwise evenly index the chunk list by the LIVE media duration, so
+  // captions still track scenes whose duration is only known in the browser (e.g. seed scenes).
+  const scPaintCaption = (time, duration) => {
+    const sub = document.querySelector('#sc-subtitle');
+    if (!sub) return;
+    const line = sub.querySelector('.sc-sub-line');
+    if (!line) return;
+    const t = Number.isFinite(time) ? time : 0;
+    const cues = scCaptionCues();
+    let text = null;
+    if (cues.length) {
+      text = scCueText(cues, t);
+    } else {
+      const chunks = scCaptionChunks();
+      if (chunks.length) {
+        if (Number.isFinite(duration) && duration > 0) {
+          const p = Math.max(0, Math.min(1, t / duration));
+          text = chunks[Math.min(chunks.length - 1, Math.floor(p * chunks.length))];
+        } else {
+          text = chunks[0];
+        }
+      }
+    }
+    // Write ONLY on change. scRefreshPlaybackChrome runs from a MutationObserver watching
+    // childList/subtree, and setting textContent is itself a childList mutation — writing
+    // unconditionally re-fires the observer in an infinite loop that pegs the main thread and
+    // hangs the tab. The change-guards below make every paint idempotent and self-limiting.
+    if (text != null) {
+      if (line.textContent !== text) line.textContent = text;
+      if (line.hidden) line.hidden = false;
+    } else if (!line.hidden) {
+      line.hidden = true;
+    }
+  };
+  const scPaintProgressAndCaption = (clock) => {
+    const fill = document.querySelector('#sc-progress-fill');
+    let progress = 0;
+    let time = 0;
+    let duration = 0;
+    if (clock) {
+      time = Number.isFinite(clock.currentTime) ? clock.currentTime : 0;
+      duration = Number.isFinite(clock.duration) ? clock.duration : 0;
+      if (duration > 0) {
+        progress = Math.max(0, Math.min(1, time / duration));
+      }
+    }
+    const widthPct = (progress * 100).toFixed(1) + '%';
+    if (fill && fill.style.width !== widthPct) fill.style.width = widthPct;
+    scPaintCaption(time, duration);
+  };
+  const scRefreshPlaybackChrome = () => {
+    const media = scAuthoritativeMedia();
+    const playing = !!(media.clock && !media.clock.paused && !media.clock.ended);
+    scSetPlayIcon(playing);
+    scPaintProgressAndCaption(media.clock);
+  };
 
   // play/pause must be bound directly to the trusted DOM gesture. A gr.Button.click(js=...)
   // callback runs through Gradio's event layer, which can lose browser user activation and
@@ -1555,29 +1879,68 @@ PLAYBACK_SYNC_JS = """
   const togglePlayback = (e) => {
     const playBtn = e.target.closest && e.target.closest('.sc-play-btn');
     if (!playBtn) return;
-    const audio = document.querySelector('#sc-voice');
-    const video = document.querySelector('.sc-stage-shell video');
+    const media = scAuthoritativeMedia();
+    const { audio, video, hasAudio, clock } = media;
+    if (!clock) return;
 
-    if (!audio || !audio.getAttribute('src')) {
-      if (!video) return;
-      if (video.paused) video.play().catch(() => {});
-      else video.pause();
-      return;
-    }
-
-    if (audio.paused) {
-      if (video && isFinite(video.duration) && video.duration > 0) {
-        try { video.currentTime = audio.currentTime % video.duration; } catch (err) {}
+    if (clock.paused || clock.ended) {
+      window.__scUserWantsPlayback = true;
+      if (hasAudio && audio) {
+        audio.play().catch((err) => {
+          console.warn('small_cuts.viewer: audio play blocked', err);
+        });
+        if (video) video.play().catch(() => {});
+      } else if (video) {
+        video.play().catch(() => {});
       }
-      audio.play().catch((err) => {
-        console.warn('small_cuts.viewer: audio play blocked', err);
-      });
-      if (video) video.play().catch(() => {});
     } else {
-      audio.pause();
-      if (video) video.pause();
+      window.__scUserWantsPlayback = false;
+      clock.pause();
+      if (hasAudio && video) video.pause();
     }
   };
+  document.addEventListener('play', (e) => {
+    const media = scAuthoritativeMedia();
+    if (!media.clock || e.target !== media.clock) return;
+    window.__scUserWantsPlayback = true;
+    scSetPlayIcon(true);
+    if (media.hasAudio && media.video && media.video.paused) {
+      media.video.play().catch(() => {});
+    }
+  }, true);
+  document.addEventListener('pause', (e) => {
+    const media = scAuthoritativeMedia();
+    if (!media.clock || e.target !== media.clock) return;
+    window.__scUserWantsPlayback = false;
+    scSetPlayIcon(false);
+    if (media.hasAudio && media.video && !media.video.paused) {
+      media.video.pause();
+    }
+    scPaintProgressAndCaption(media.clock);
+  }, true);
+  document.addEventListener('timeupdate', (e) => {
+    const media = scAuthoritativeMedia();
+    if (!media.clock || e.target !== media.clock) return;
+    scPaintProgressAndCaption(media.clock);
+  }, true);
+  document.addEventListener('loadedmetadata', (e) => {
+    const media = scAuthoritativeMedia();
+    if (media.clock && e.target === media.clock) scRefreshPlaybackChrome();
+  }, true);
+  document.addEventListener('durationchange', (e) => {
+    const media = scAuthoritativeMedia();
+    if (media.clock && e.target === media.clock) scRefreshPlaybackChrome();
+  }, true);
+  if (!window.__scPlaybackChromeObs && document.body) {
+    window.__scPlaybackChromeObs = new MutationObserver(scRefreshPlaybackChrome);
+    window.__scPlaybackChromeObs.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['src'],
+    });
+  }
+  scRefreshPlaybackChrome();
   document.addEventListener('pointerdown', (e) => {
     if (e.pointerType === 'mouse') return;
     if (!(e.target.closest && e.target.closest('.sc-play-btn'))) return;
@@ -1590,40 +1953,7 @@ PLAYBACK_SYNC_JS = """
     togglePlayback(e);
   }, true);
 
-  window.__scClock = setInterval(() => {
-    const audio = document.querySelector('#sc-voice');   // our own master clock <audio>
-    const video = document.querySelector('.sc-stage-shell video');
-    const sub = document.querySelector('#sc-subtitle');
-    const fill = document.querySelector('#sc-progress-fill');
-    const playBtn = document.querySelector('.sc-play-btn');
-
-    // couple the muted video to the voice's play/pause state (a muted video may play()
-    // programmatically without a user gesture; the voice itself is unlocked by the play tap)
-    if (audio && video) {
-      if (audio.paused) { if (!video.paused) video.pause(); }
-      else if (video.paused) { video.play().catch(() => {}); }
-    }
-    // the play button shows the action it WILL do: play icon when paused, pause icon when playing
-    if (playBtn) {
-      const playing = !!(audio && !audio.paused);
-      playBtn.classList.toggle('sc-ico-pause', playing);
-      playBtn.classList.toggle('sc-ico-play', !playing);
-    }
-
-    // captions + progress advance on the REAL voice clock — true currentTime sync
-    if (!sub) { if (fill) fill.style.width = '0%'; return; }
-    const lines = sub.querySelectorAll('.sc-sub-line');
-    if (!lines.length) return;
-    let p = 0;
-    if (audio && isFinite(audio.duration) && audio.duration > 0) {
-      p = Math.max(0, Math.min(1, audio.currentTime / audio.duration));
-    }
-    const idx = Math.min(lines.length - 1, Math.floor(p * lines.length));
-    lines.forEach((l, i) => { l.hidden = (i !== idx); });
-    if (fill) fill.style.width = (p * 100).toFixed(1) + '%';
-  }, 120);
-
-  // R4 + R5: between "Narrate this video" and the buffered reveal the user sees ONLY the
+  // R4 + R5: between "Make the cut" and the buffered reveal the user sees ONLY the
   // clapperboard loader. We mount the loader over the stage when the Narrate button is tapped,
   // keep it (re-mounting it when Gradio swaps in the result stage) until the result <video> is
   // fully buffered (canplaythrough / readyState>=3) or a timeout fires, then reveal + remove it.
@@ -1659,6 +1989,8 @@ PLAYBACK_SYNC_JS = """
       if (loader) loader.remove();
     }
     window.__scGenerating = false;
+    window.__scUploadSubmitLocked = false;
+    if (window.__scSyncUploadSubmitState) window.__scSyncUploadSubmitState();
     document.body.classList.remove('sc-generating');
     if (window.__scRevealTimer) {
       clearTimeout(window.__scRevealTimer);
@@ -1727,9 +2059,10 @@ PLAYBACK_SYNC_JS = PLAYBACK_SYNC_JS.replace(
 PLAYBACK_SYNC_ON_LOAD_JS = f"({PLAYBACK_SYNC_JS})();"
 
 START_GENERATION_IF_PREFLIGHT_OK_JS = """
-() => {
+(...args) => {
   const status = document.querySelector('.sc-upload-status.running');
   if (status && window.__scStartGeneration) window.__scStartGeneration();
+  return args;
 }
 """
 
@@ -1812,7 +2145,11 @@ def build_viewer_app() -> gr.Blocks:
         # as the launch-time fallback — passing it here keeps the de-Gradio
         # CSS attached however the Space launches the demo.
         warnings.filterwarnings("ignore", message=".*moved from the Blocks constructor.*")
-        blocks = gr.Blocks(title=TITLE, css=VIEWER_CSS)
+        blocks = gr.Blocks(
+            title=TITLE,
+            css=VIEWER_CSS,
+            head="""<link rel="preconnect" href="https://huggingface.co" crossorigin>""",
+        )
 
     with blocks as demo:
         scenes_state = gr.State(
@@ -1836,7 +2173,8 @@ def build_viewer_app() -> gr.Blocks:
             if upload_enabled:
                 with gr.Column(elem_classes="sc-upload-entry", min_width=0):
                     upload_btn = gr.Button(
-                        "", elem_classes=["sc-icbtn", "sc-upload", "sc-ico-upload"]
+                        "Upload a clip",
+                        elem_classes=["sc-icbtn", "sc-upload", "sc-ico-upload"],
                     )
                     gr.HTML(render_upload_cta_html(), elem_classes="sc-plain", padding=False)
         # Theater layout (Review-3): stage + controls on the left, the library as a side rail on
@@ -1879,7 +2217,7 @@ def build_viewer_app() -> gr.Blocks:
                         report_btn = gr.Button(
                             "", elem_classes=["sc-icbtn", "sc-ico-flag", "sc-report-btn"]
                         )
-                    # hidden master-clock <audio> host (re-rendered on each scene change)
+                    # hidden narration <audio> host (re-rendered on each scene change)
                     audio = gr.HTML(boot_audio, elem_classes="sc-audio-host", padding=False)
                 # The play tap is handled by PLAYBACK_SYNC_JS as a delegated DOM click so the
                 # browser keeps user activation for audio.play().
@@ -1931,24 +2269,17 @@ def build_viewer_app() -> gr.Blocks:
                             max_lines=2,
                             elem_classes="sc-upload-hint",
                         )
-                        owner_passcode = gr.Textbox(
-                            show_label=False,
-                            placeholder="Owner passcode (optional)",
-                            lines=1,
-                            max_lines=1,
-                            type="password",
-                            elem_classes=["sc-upload-hint", "sc-owner-passcode"],
-                        )
                         upload_status = gr.HTML(
                             render_upload_status_html(),
                             elem_classes="sc-plain",
                             padding=False,
                         )
-                        # R2: full-width "Narrate this video" button below the hint.
+                        # R2: full-width "Make the cut" button below the hint.
                         go = gr.Button(
-                            "Narrate this video",
+                            "Make the cut",
                             variant="primary",
                             size="sm",
+                            interactive=False,
                             elem_classes="sc-narrate-btn",
                         )
             with gr.Column(elem_classes="sc-rail-col"):
@@ -1998,25 +2329,17 @@ def build_viewer_app() -> gr.Blocks:
                     go,
                     drop_video,
                     hint,
-                    owner_passcode,
                 ],
                 queue=False,
             )
 
-            def _upload_preflight_ui(video_path, passcode):
+            def _upload_preflight_ui(video_path):
                 if not video_path:
                     return (
                         False,
                         None,
                         render_upload_status_html("blocked", "Upload a video clip first."),
                         gr.update(interactive=True),
-                    )
-                if _owner_upload_passcode_valid(passcode):
-                    return (
-                        True,
-                        None,
-                        render_upload_status_html("running"),
-                        gr.update(interactive=False),
                     )
                 decision = (
                     upload_budget.try_reserve()
@@ -2037,6 +2360,14 @@ def build_viewer_app() -> gr.Blocks:
                     gr.update(interactive=False),
                 )
 
+            drop_video.change(
+                _sync_upload_submit_ready_ui,
+                inputs=[drop_video],
+                outputs=[go, upload_status],
+                queue=False,
+                show_progress="hidden",
+            )
+
         if client is not None:
             engine = client  # narrow the type for the closures below
 
@@ -2049,8 +2380,14 @@ def build_viewer_app() -> gr.Blocks:
                     style_key,
                     scene_hint,
                     state,
+                    upload_status_html,
                 ):
                     if not can_run:
+                        status_update = gr.skip()
+                        if video_path and _upload_status_is_running(upload_status_html):
+                            status_update = render_upload_status_html(
+                                "blocked", "Upload did not start. Please try again."
+                            )
                         return (
                             gr.skip(),
                             gr.skip(),
@@ -2059,7 +2396,7 @@ def build_viewer_app() -> gr.Blocks:
                             gr.skip(),
                             _engine_ui_state(state),
                             gr.skip(),
-                            gr.skip(),
+                            status_update,
                             gr.update(interactive=True),
                             gr.skip(),
                             gr.skip(),
@@ -2122,6 +2459,7 @@ def build_viewer_app() -> gr.Blocks:
                                     saved_scene["scene_id"],
                                     previous=result_state,
                                     upload_scene=saved_scene,
+                                    upload_error_message=None,
                                 ),
                                 gr.update(value=payload["visibility"])
                                 if payload["visibility"]
@@ -2130,13 +2468,16 @@ def build_viewer_app() -> gr.Blocks:
                     status = (
                         render_upload_status_html("complete")
                         if succeeded
-                        else render_upload_status_html()
+                        else render_upload_status_html(
+                            "blocked",
+                            _engine_ui_state(result[5])["upload_error_message"]
+                            or "Upload could not be processed. Please try again.",
+                        )
                     )
                     # R3: on SUCCESS clear the video + hint so a second upload works immediately;
                     # on soft-fail keep the user's file and what they typed.
                     video_reset = gr.update(value=None) if succeeded else gr.skip()
                     hint_reset = gr.update(value="") if succeeded else gr.skip()
-                    passcode_reset = gr.update(value="") if succeeded else gr.skip()
                     # Close the popover on success; keep it open on soft-fail so the user can retry.
                     panel_reset = gr.update(visible=False) if succeeded else gr.skip()
                     panel_open_reset = False if succeeded else gr.skip()
@@ -2148,17 +2489,14 @@ def build_viewer_app() -> gr.Blocks:
                         hint_reset,
                         panel_reset,
                         panel_open_reset,
-                        passcode_reset,
                     )
 
                 go.click(
                     _upload_preflight_ui,
-                    inputs=[drop_video, owner_passcode],
+                    inputs=[drop_video],
                     outputs=[upload_run_allowed, upload_budget_token, upload_status, go],
                     queue=False,
                     show_progress="hidden",
-                ).then(
-                    js=START_GENERATION_IF_PREFLIGHT_OK_JS,
                 ).then(
                     _go_modal_upload_ui,
                     inputs=[
@@ -2168,6 +2506,7 @@ def build_viewer_app() -> gr.Blocks:
                         style,
                         hint,
                         scenes_state,
+                        upload_status,
                     ],
                     outputs=[
                         header,
@@ -2183,11 +2522,11 @@ def build_viewer_app() -> gr.Blocks:
                         hint,
                         upload_panel,
                         upload_panel_open,
-                        owner_passcode,
                     ],
                     concurrency_limit=1,
                     concurrency_id=UPLOAD_CONCURRENCY_ID,
                     show_progress="hidden",
+                    js=START_GENERATION_IF_PREFLIGHT_OK_JS,
                 ).then(
                     # Deterministic "generation done" signal (success or soft-fail): now that the
                     # server has responded, collapse the clapperboard hang-backstop to a short grace
@@ -2281,29 +2620,13 @@ def build_viewer_app() -> gr.Blocks:
                 state = _engine_ui_state(state)
                 scenes = state["scenes"]
                 scene = _library_scene_at_index(scenes, evt.index)
-                if scene is None:
-                    return (gr.skip(),) * 5
-                payload = format_stage(scene, engine.base_url)
-                return (
-                    render_header_html(payload["title"], payload["style_label"], payload["live"]),
-                    render_stage_html(
-                        payload["frame_src"],
-                        payload["caption"],
-                        payload["live"],
-                        clip_src=payload["clip_src"],
-                        duration=payload["duration"],
-                        source_icon=payload["source_icon"],
-                    ),
-                    _audio_html(payload["audio_src"]) if payload["audio_src"] else gr.skip(),
-                    _pack_engine_ui_state(
-                        scenes,
-                        payload["scene_id"],
-                        payload["scene_id"],
-                        payload["scene_id"],
-                        previous=state,
-                        upload_scene=None,
-                    ),
-                    gr.update(value=payload["visibility"]) if payload["visibility"] else gr.skip(),
+                return _engine_scene_control_outputs(
+                    scene,
+                    engine,
+                    scenes,
+                    state,
+                    pinned_id=str(scene.get("scene_id")) if scene is not None else None,
+                    restart_audio=True,
                 )
 
             shelf.select(
@@ -2323,64 +2646,27 @@ def build_viewer_app() -> gr.Blocks:
                 state = _engine_ui_state(state)
                 scenes = state["scenes"]
                 scene = _stepped_scene(scenes, state["pinned_id"], delta)
-                if scene is None:
-                    return (gr.skip(),) * 5
-                payload = format_stage(scene, engine.base_url)
-                return (
-                    render_header_html(payload["title"], payload["style_label"], payload["live"]),
-                    render_stage_html(
-                        payload["frame_src"],
-                        payload["caption"],
-                        payload["live"],
-                        clip_src=payload["clip_src"],
-                        duration=payload["duration"],
-                        source_icon=payload["source_icon"],
-                    ),
-                    _audio_html(payload["audio_src"]) if payload["audio_src"] else gr.skip(),
-                    _pack_engine_ui_state(
-                        scenes,
-                        payload["scene_id"],
-                        payload["scene_id"],
-                        payload["scene_id"],
-                        previous=state,
-                        upload_scene=None,
-                    ),
-                    gr.update(value=payload["visibility"]) if payload["visibility"] else gr.skip(),
+                return _engine_scene_control_outputs(
+                    scene,
+                    engine,
+                    scenes,
+                    state,
+                    pinned_id=str(scene.get("scene_id")) if scene is not None else None,
+                    restart_audio=True,
                 )
 
             def _back_to_live_engine(state):
                 state = _engine_ui_state(state)
                 scenes = state["scenes"]
                 scene = scenes[-1] if scenes else None
-                payload = format_stage(scene, engine.base_url)
-                playing_id = state["playing_id"]
-                if payload["audio_src"] and payload["scene_id"] != playing_id:
-                    audio_update, playing_id = (
-                        _audio_html(payload["audio_src"]),
-                        payload["scene_id"],
-                    )
-                else:
-                    audio_update = gr.skip()
-                return (
-                    render_header_html(payload["title"], payload["style_label"], payload["live"]),
-                    render_stage_html(
-                        payload["frame_src"],
-                        payload["caption"],
-                        payload["live"],
-                        clip_src=payload["clip_src"],
-                        duration=payload["duration"],
-                        source_icon=payload["source_icon"],
-                    ),
-                    audio_update,
-                    _pack_engine_ui_state(
-                        scenes,
-                        None,
-                        payload["scene_id"],
-                        playing_id,
-                        previous=state,
-                        upload_scene=None,
-                    ),
-                    gr.update(value=payload["visibility"]) if payload["visibility"] else gr.skip(),
+                return _engine_scene_control_outputs(
+                    scene,
+                    engine,
+                    scenes,
+                    state,
+                    pinned_id=None,
+                    restart_audio=False,
+                    empty_on_missing=True,
                 )
 
             step_outputs_e = [
@@ -2568,7 +2854,6 @@ def build_viewer_app() -> gr.Blocks:
                     gr.update(value=""),
                     gr.update(visible=False),
                     False,
-                    gr.update(value=""),
                 )
 
             def _like_current(scenes, pinned_id, liked_ids, reported_ids):
@@ -2621,12 +2906,10 @@ def build_viewer_app() -> gr.Blocks:
             # would double-narrate (and double the TTS work) the moment a file lands.
             go.click(
                 _upload_preflight_ui,
-                inputs=[drop_video, owner_passcode],
+                inputs=[drop_video],
                 outputs=[upload_run_allowed, upload_budget_token, upload_status, go],
                 queue=False,
                 show_progress="hidden",
-            ).then(
-                js=START_GENERATION_IF_PREFLIGHT_OK_JS,
             ).then(
                 _go_live_ui,
                 inputs=go_inputs,
@@ -2638,9 +2921,9 @@ def build_viewer_app() -> gr.Blocks:
                     hint,
                     upload_panel,
                     upload_panel_open,
-                    owner_passcode,
                 ],
                 show_progress="hidden",
+                js=START_GENERATION_IF_PREFLIGHT_OK_JS,
             ).then(
                 js=FINISH_OR_CANCEL_GENERATION_JS,
             )

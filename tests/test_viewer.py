@@ -5,6 +5,8 @@ The NarratedScene fixture is the golden sample from test_contracts.py, so the
 viewer's formatter is pinned to the same shape the contract suite enforces.
 """
 
+import html
+import inspect
 import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -81,6 +83,18 @@ def test_uploaded_scene_is_preserved_in_engine_state():
     )
 
     assert state["upload_scene"]["scene_id"] == "modal-upload-1"
+
+
+def test_upload_error_message_is_preserved_in_engine_state():
+    state = viewer._pack_engine_ui_state(
+        scenes=[],
+        pinned_id=None,
+        current_id=None,
+        playing_id=None,
+        previous={"upload_error_message": "Modal upload failed: unavailable"},
+    )
+
+    assert state["upload_error_message"] == "Modal upload failed: unavailable"
 
 
 def test_upload_video_cap_defaults_to_sixty_seconds(monkeypatch):
@@ -255,6 +269,7 @@ def test_submit_modal_upload_pins_returned_scene(monkeypatch):
 
 def test_submit_modal_upload_modal_failure_warns_instead_of_raising(monkeypatch):
     warnings = []
+    captured = []
 
     class FailingModalUploadClient:
         def submit_video(self, video_path, *, style_key, scene_hint):
@@ -262,6 +277,7 @@ def test_submit_modal_upload_modal_failure_warns_instead_of_raising(monkeypatch)
 
     monkeypatch.setattr(viewer, "_video_duration_s", lambda _path: 7.5)
     monkeypatch.setattr(viewer, "_modal_upload_client", lambda: FailingModalUploadClient())
+    monkeypatch.setattr(viewer, "capture_exception", lambda exc: captured.append(exc))
     monkeypatch.setattr(viewer.gr, "Warning", lambda message: warnings.append(message))
 
     outputs = viewer._submit_modal_upload(
@@ -273,7 +289,111 @@ def test_submit_modal_upload_modal_failure_warns_instead_of_raising(monkeypatch)
     )
 
     assert warnings == ["Modal upload failed: modal unavailable"]
+    assert len(captured) == 1
+    assert isinstance(captured[0], viewer.ModalUploadError)
     assert outputs[5]["scenes"] == []
+    assert outputs[5]["upload_error_message"] == "Modal upload failed: modal unavailable"
+
+
+def test_submit_modal_upload_unexpected_failure_warns_and_reports(monkeypatch):
+    warnings = []
+    captured = []
+
+    class FailingModalUploadClient:
+        def submit_video(self, video_path, *, style_key, scene_hint):
+            raise RuntimeError("unexpected modal client crash")
+
+    monkeypatch.setattr(viewer, "_video_duration_s", lambda _path: 7.5)
+    monkeypatch.setattr(viewer, "_modal_upload_client", lambda: FailingModalUploadClient())
+    monkeypatch.setattr(viewer, "capture_exception", lambda exc: captured.append(exc))
+    monkeypatch.setattr(viewer.gr, "Warning", lambda message: warnings.append(message))
+
+    outputs = viewer._submit_modal_upload(
+        "clip.mp4",
+        "deadpan",
+        "",
+        viewer._pack_engine_ui_state([], None, None, None),
+        fake_client(lambda _request: httpx.Response(200, json={"scenes": []})),
+    )
+
+    assert warnings == ["Upload failed before processing. Please try again."]
+    assert len(captured) == 1
+    assert isinstance(captured[0], RuntimeError)
+    assert outputs[5]["scenes"] == []
+    assert (
+        outputs[5]["upload_error_message"] == "Upload failed before processing. Please try again."
+    )
+
+
+def test_modal_upload_soft_failure_renders_inline_status(monkeypatch, tmp_path):
+    monkeypatch.setenv(viewer.ENGINE_URL_ENV, "http://127.0.0.1:9")
+    monkeypatch.setenv(viewer.UPLOAD_SANDBOX_ENV, "1")
+    monkeypatch.setenv(viewer.MODAL_API_URL_ENV, "https://example.modal.run")
+    monkeypatch.setenv("SMALL_CUTS_UPLOAD_BUDGET_DB", str(tmp_path / "budget.sqlite3"))
+
+    state = viewer._pack_engine_ui_state([], None, None, None)
+
+    def fail_upload(*_args, **_kwargs):
+        return (
+            viewer.gr.skip(),
+            viewer.gr.skip(),
+            viewer.gr.skip(),
+            viewer.gr.skip(),
+            viewer.gr.skip(),
+            {**state, "upload_error_message": "Modal upload failed: modal unavailable"},
+            viewer.gr.skip(),
+        )
+
+    monkeypatch.setattr(viewer, "_submit_modal_upload", fail_upload)
+    app = viewer.build_viewer_app()
+    upload_dep = next(
+        dep
+        for dep in app.config["dependencies"]
+        if dep.get("backend_fn") and dep.get("api_name") == "_go_modal_upload_ui"
+    )
+    upload_fn = app.fns[upload_dep["id"]].fn
+
+    outputs = upload_fn(
+        True,
+        None,
+        "clip.mp4",
+        "deadpan",
+        "",
+        state,
+        viewer.render_upload_status_html("running"),
+    )
+
+    assert "sc-upload-status blocked" in outputs[7]
+    assert "Modal upload failed: modal unavailable" in outputs[7]
+    assert outputs[8]["interactive"] is True
+
+
+def test_modal_upload_missing_preflight_state_clears_running_status(monkeypatch, tmp_path):
+    monkeypatch.setenv(viewer.ENGINE_URL_ENV, "http://127.0.0.1:9")
+    monkeypatch.setenv(viewer.UPLOAD_SANDBOX_ENV, "1")
+    monkeypatch.setenv(viewer.MODAL_API_URL_ENV, "https://example.modal.run")
+    monkeypatch.setenv("SMALL_CUTS_UPLOAD_BUDGET_DB", str(tmp_path / "budget.sqlite3"))
+
+    app = viewer.build_viewer_app()
+    upload_dep = next(
+        dep
+        for dep in app.config["dependencies"]
+        if dep.get("backend_fn") and dep.get("api_name") == "_go_modal_upload_ui"
+    )
+    upload_fn = app.fns[upload_dep["id"]].fn
+
+    outputs = upload_fn(
+        False,
+        None,
+        "clip.mp4",
+        "deadpan",
+        "",
+        viewer._pack_engine_ui_state([], None, None, None),
+        viewer.render_upload_status_html("running"),
+    )
+
+    assert "sc-upload-status blocked" in outputs[7]
+    assert "Upload did not start" in outputs[7]
 
 
 def test_upload_sandbox_bounds_queue_and_upload_concurrency(monkeypatch):
@@ -312,6 +432,77 @@ def test_upload_sandbox_bounds_queue_and_upload_concurrency(monkeypatch):
     assert target_event == "relay_scene"
     assert components_by_id[target_id]["type"] == "html"
     assert components_by_id[target_id]["props"]["elem_classes"] == ["sc-relay-events"]
+
+
+def test_upload_sandbox_chains_backend_upload_directly_after_preflight(monkeypatch, tmp_path):
+    monkeypatch.setenv(viewer.ENGINE_URL_ENV, "http://127.0.0.1:9")
+    monkeypatch.setenv(viewer.UPLOAD_SANDBOX_ENV, "1")
+    monkeypatch.setenv(viewer.MODAL_API_URL_ENV, "https://example.modal.run")
+    monkeypatch.setenv("SMALL_CUTS_UPLOAD_BUDGET_DB", str(tmp_path / "budget.sqlite3"))
+
+    app = viewer.build_viewer_app()
+    preflight_dep = next(
+        dep
+        for dep in app.config["dependencies"]
+        if dep.get("backend_fn") and dep.get("api_name") == "_upload_preflight_ui"
+    )
+    upload_dep = next(
+        dep
+        for dep in app.config["dependencies"]
+        if dep.get("backend_fn") and dep.get("api_name") == "_go_modal_upload_ui"
+    )
+
+    assert upload_dep["trigger_after"] == preflight_dep["id"]
+    assert "window.__scStartGeneration" in upload_dep["js"]
+
+
+def test_upload_submit_starts_disabled_until_video_change(monkeypatch, tmp_path):
+    monkeypatch.setenv(viewer.ENGINE_URL_ENV, "http://127.0.0.1:9")
+    monkeypatch.setenv(viewer.UPLOAD_SANDBOX_ENV, "1")
+    monkeypatch.setenv(viewer.MODAL_API_URL_ENV, "https://example.modal.run")
+    monkeypatch.setenv("SMALL_CUTS_UPLOAD_BUDGET_DB", str(tmp_path / "budget.sqlite3"))
+
+    app = viewer.build_viewer_app()
+    components = app.config["components"]
+    go_buttons = [
+        component
+        for component in components
+        if component["type"] == "button" and component["props"].get("value") == "Make the cut"
+    ]
+
+    assert len(go_buttons) == 1
+    assert go_buttons[0]["props"]["interactive"] is False
+
+    ready_dep = next(
+        dep
+        for dep in app.config["dependencies"]
+        if dep.get("backend_fn") and dep.get("api_name") == "_sync_upload_submit_ready_ui"
+    )
+    ready_fn = app.fns[ready_dep["id"]].fn
+
+    enabled, status = ready_fn("clip.mp4")
+    assert enabled["interactive"] is True
+    assert "sc-upload-status idle" in status
+
+    disabled, status = ready_fn(None)
+    assert disabled["interactive"] is False
+    assert "Upload a video clip first." in status
+
+
+def test_upload_preflight_has_no_owner_passcode_bypass(monkeypatch, tmp_path):
+    monkeypatch.setenv(viewer.ENGINE_URL_ENV, "http://127.0.0.1:9")
+    monkeypatch.setenv(viewer.UPLOAD_SANDBOX_ENV, "1")
+    monkeypatch.setenv(viewer.MODAL_API_URL_ENV, "https://example.modal.run")
+    monkeypatch.setenv("SMALL_CUTS_UPLOAD_BUDGET_DB", str(tmp_path / "budget.sqlite3"))
+
+    app = viewer.build_viewer_app()
+    preflight_dep = next(
+        dep
+        for dep in app.config["dependencies"]
+        if dep.get("backend_fn") and dep.get("api_name") == "_upload_preflight_ui"
+    )
+
+    assert len(preflight_dep["inputs"]) == 1
 
 
 def test_upload_sandbox_uses_topbar_popover_not_stage_accordion(monkeypatch):
@@ -368,6 +559,7 @@ def test_upload_sandbox_renders_plain_upload_icon_without_login(monkeypatch):
     ]
     assert len(upload_buttons) == 1
     assert upload_buttons[0]["props"]["visible"] is not False
+    assert upload_buttons[0]["props"]["value"] == "Upload a clip"
     assert "disabled" not in upload_buttons[0]["props"].get("elem_classes", [])
 
 
@@ -397,7 +589,7 @@ def test_relay_event_bridge_listens_for_hook_events():
     assert ".sc-relay-refresh" not in viewer.RELAY_EVENT_BRIDGE_JS
 
 
-def test_bucket_scene_client_reads_manifest_and_caches_media(tmp_path, monkeypatch):
+def test_bucket_scene_client_reads_manifest_and_caches_shelf_media(tmp_path, monkeypatch):
     class FakeBucketFs:
         def __init__(self, files):
             self.files = files
@@ -437,7 +629,8 @@ def test_bucket_scene_client_reads_manifest_and_caches_media(tmp_path, monkeypat
     frame_url = hydrated["media"]["frame_url"]
     assert frame_url.startswith("/gradio_api/file=")
     assert Path(unquote(frame_url.removeprefix("/gradio_api/file="))).read_bytes() == b"frame"
-    assert (tmp_path / "media/9f1c7e4a/voice.wav").read_bytes() == b"voice"
+    assert hydrated["media"]["audio_url"] == "media/9f1c7e4a/voice.wav"
+    assert not (tmp_path / "media/9f1c7e4a/voice.wav").exists()
     assert f"{root}/manifest.json" in fake_fs.seen
 
 
@@ -562,6 +755,19 @@ def test_playback_js_uses_trusted_dom_click_for_audio():
     assert "audio play blocked" in viewer.PLAYBACK_SYNC_JS
 
 
+def test_playback_js_is_event_driven_without_clock_sync():
+    assert "setInterval" not in viewer.PLAYBACK_SYNC_JS
+    assert "scVideoTargetTime" not in viewer.PLAYBACK_SYNC_JS
+    assert "scSyncVideoToAudio" not in viewer.PLAYBACK_SYNC_JS
+    assert "currentTime % video.duration" not in viewer.PLAYBACK_SYNC_JS
+    assert "video.addEventListener('waiting'" not in viewer.PLAYBACK_SYNC_JS
+    assert "video.addEventListener('stalled'" not in viewer.PLAYBACK_SYNC_JS
+    assert "addEventListener('play'" in viewer.PLAYBACK_SYNC_JS
+    assert "addEventListener('pause'" in viewer.PLAYBACK_SYNC_JS
+    assert "addEventListener('timeupdate'" in viewer.PLAYBACK_SYNC_JS
+    assert "const clock = hasAudio ? audio : video;" in viewer.PLAYBACK_SYNC_JS
+
+
 def test_header_live_reads_happening_now_else_title():
     live = viewer.render_header_html("The Bicycle Is Mustard Yellow", "noir", live=True)
     assert "Happening now" in live
@@ -613,13 +819,83 @@ def test_poll_engine_renders_the_whole_page():
     assert "Happening now" in header  # fresh scene = live capture
     assert f"{ENGINE_URL}/media/9f1c7e4a/frame.jpg" in stage
     assert "mustard yellow" in feed
-    # audio is now the hidden master-clock <audio> element carrying the served voice URL
+    # audio is now the hidden narration <audio> element carrying the served voice URL
     assert "<audio" in audio and 'id="sc-voice"' in audio
     assert f"{ENGINE_URL}/media/9f1c7e4a/voice.wav" in audio
     assert shelf == [(f"{ENGINE_URL}/media/9f1c7e4a/frame.jpg", "The Bicycle Is Mustard Yellow")]
     assert scenes == [GOLDEN_SCENE]
     assert current == GOLDEN_SCENE["scene_id"]
     assert playing == GOLDEN_SCENE["scene_id"]
+
+
+def test_poll_engine_hydrates_current_bucket_scene_media_lazily():
+    class LazyBucketClient:
+        base_url = ""
+
+        def list_scenes(self, limit):
+            return [
+                {
+                    **GOLDEN_SCENE,
+                    "media": {
+                        "frame_url": "media/scene/frame.jpg",
+                        "clip_url": "media/scene/clip.mp4",
+                        "audio_url": "media/scene/voice.wav",
+                    },
+                }
+            ]
+
+        def media_url(self, path):
+            return f"/gradio_api/file=/tmp/{Path(path).name}" if path else None
+
+    _header, stage, _feed, audio, _shelf, _scenes, _current, _playing, _vis = viewer.poll_engine(
+        LazyBucketClient(),
+        [],
+        pinned_id=None,
+        playing_id=None,
+        now=CREATED_AT,
+    )
+
+    assert "/tmp/frame.jpg" in stage
+    assert "/tmp/clip.mp4" in stage
+    assert "/tmp/voice.wav" in audio
+
+
+def test_engine_scene_control_outputs_hydrates_raw_relay_media():
+    class LazyBucketClient:
+        base_url = ""
+
+        def media_url(self, path):
+            return f"/gradio_api/file=/tmp/{Path(path).name}" if path else None
+
+    raw_scene = {
+        **GOLDEN_SCENE,
+        "media": {
+            "frame_url": "media/scene/frame.jpg",
+            "clip_url": "media/scene/clip.mp4",
+            "audio_url": "media/scene/voice.wav",
+        },
+    }
+
+    _header, stage, audio, state, _visibility = viewer._engine_scene_control_outputs(
+        raw_scene,
+        LazyBucketClient(),
+        [raw_scene],
+        viewer._pack_engine_ui_state([raw_scene], None, None, None),
+        pinned_id=raw_scene["scene_id"],
+        restart_audio=True,
+    )
+
+    assert "/tmp/frame.jpg" in stage
+    assert "/tmp/clip.mp4" in stage
+    assert "/tmp/voice.wav" in audio
+    assert state["pinned_id"] == raw_scene["scene_id"]
+    assert state["playing_id"] == raw_scene["scene_id"]
+
+
+def test_engine_gallery_callbacks_do_not_format_raw_relay_scenes_directly():
+    source = inspect.getsource(viewer.build_viewer_app)
+
+    assert "payload = format_stage(scene, engine.base_url)" not in source
 
 
 def test_poll_engine_finished_scene_shows_title():
@@ -860,7 +1136,7 @@ def test_go_live_handler_writes_voice_file(monkeypatch):
     audio_src = scenes[0]["audio_src"]
     assert audio_src is not None and audio_src.endswith(".wav")
     assert Path(audio_src).exists()  # written to the served generated-audio dir
-    # the page's audio slot carries that file as the master-clock <audio> element
+    # the page's audio slot carries that file as the hidden narration <audio> element
     assert "<audio" in audio and "gradio_api/file=" in audio
 
 
@@ -876,6 +1152,26 @@ def test_subtitle_chunks_are_short_and_robust():
     assert viewer._subtitle_chunks(long_word) == [long_word]
 
 
+def test_caption_cues_cover_duration_with_even_windows():
+    cues = viewer.caption_cues(
+        "A long sentence that should be split into several small caption pieces here.",
+        8.0,
+    )
+
+    assert cues
+    assert cues[0][0] == 0.0
+    assert cues[-1][1] == 8.0
+    assert all(end > start for start, end, _text in cues)
+    assert [left[1] for left in cues[:-1]] == [right[0] for right in cues[1:]]
+    assert " ".join(text for _start, _end, text in cues).startswith("A long sentence")
+
+
+def test_caption_cues_skip_empty_or_invalid_duration():
+    assert viewer.caption_cues("   ", 8.0) == []
+    assert viewer.caption_cues("caption", 0) == []
+    assert viewer.caption_cues("caption", None) == []
+
+
 def test_stage_html_whitespace_caption_renders_no_subtitle():
     assert "sc-subtitle" not in viewer.render_stage_html("http://x/f.jpg", "   ", live=True)
 
@@ -886,6 +1182,53 @@ def test_stage_html_embeds_duration_and_coerces_strings():
     # a stringy duration from a loose payload must coerce, not TypeError
     stringy = viewer.render_stage_html("http://x/f.jpg", "Hi.", live=True, duration="12.0")
     assert 'data-duration="12.0"' in stringy
+
+
+def test_stage_html_embeds_caption_data_attrs_no_script_or_track():
+    out = viewer.render_stage_html(
+        "http://x/f.jpg",
+        "A tiny caption for timing.",
+        live=False,
+        duration=6.0,
+    )
+
+    assert "data-sc-cues=" in out
+    assert "data-sc-chunks=" in out  # always embedded as the client-side fallback
+    assert "<track" not in out
+    assert "setInterval" not in out
+    # caption data rides on data-* attrs, NOT a gr.HTML <script> island (which Gradio warns about)
+    assert "<script" not in out
+
+    raw = out.split('data-sc-cues="', 1)[1].split('"', 1)[0]
+    cues = json.loads(html.unescape(raw))
+    assert cues[0][0] == 0.0
+    assert cues[-1][1] == 6.0
+    assert "A tiny caption" in cues[0][2]
+
+
+def test_stage_html_without_duration_still_embeds_caption_chunks():
+    # Seed/boot scenes can lack a server-side duration; captions must still advance off the
+    # browser's live clock, so the chunk list is embedded even when no timed cues exist.
+    out = viewer.render_stage_html(
+        "http://x/f.jpg",
+        "First line here. Second line follows.",
+        live=False,
+    )
+    assert "data-sc-chunks=" in out
+    assert "data-sc-cues=" not in out
+    raw = out.split('data-sc-chunks="', 1)[1].split('"', 1)[0]
+    chunks = json.loads(html.unescape(raw))
+    assert len(chunks) >= 2
+    # the painter exposes a client-side fallback that indexes chunks by the live media duration
+    assert "scCaptionChunks" in viewer.PLAYBACK_SYNC_JS
+
+
+def test_caption_painter_guards_writes_against_observer_loop():
+    # The chrome MutationObserver watches childList/subtree; the caption painter MUST only write
+    # textContent on change, or it re-fires the observer in an infinite loop that hangs the tab.
+    js = viewer.PLAYBACK_SYNC_JS
+    assert "line.textContent !== text" in js
+    assert "MutationObserver" in js
 
 
 @pytest.mark.parametrize(
@@ -901,3 +1244,33 @@ def test_stage_html_embeds_duration_and_coerces_strings():
 def test_is_fresh(created_at, fresh):
     now = CREATED_AT + timedelta(seconds=30)
     assert viewer.is_fresh(created_at, now=now) is fresh
+
+
+def test_stage_html_has_lcp_optimizations():
+    video_html = viewer.render_stage_html(
+        "http://x/f.jpg", "caption", live=True, clip_src="http://x/c.mp4"
+    )
+    assert 'preload="auto"' in video_html
+    assert 'fetchpriority="high"' in video_html
+
+    image_html = viewer.render_stage_html("http://x/f.jpg", "caption", live=True)
+    assert 'fetchpriority="high"' in image_html
+
+
+def test_audio_html_has_lcp_optimizations():
+    audio_empty = viewer._audio_html(None)
+    assert 'preload="auto"' in audio_empty
+    assert 'fetchpriority="high"' in audio_empty
+
+    audio_src = viewer._audio_html("http://x/a.wav")
+    assert 'preload="auto"' in audio_src
+    assert 'fetchpriority="high"' in audio_src
+
+
+def test_build_viewer_app_has_preconnect_head(monkeypatch):
+    monkeypatch.delenv(viewer.ENGINE_URL_ENV, raising=False)
+    monkeypatch.setenv(viewer.RELAY_BUCKET_ENV, "build-small-hackathon/small-cuts-scenes")
+
+    app = viewer.build_viewer_app()
+    head_content = getattr(app, "head", None) or getattr(app, "_deprecated_head", None)
+    assert '<link rel="preconnect" href="https://huggingface.co" crossorigin>' in head_content

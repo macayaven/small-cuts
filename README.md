@@ -63,8 +63,8 @@ The Space is the **view platform + library** half of the loop:
 - **Voice-over replay** in a compact custom player whose video, sound, captions, and progress all
   share one audio clock.
 - **A public library** of curated real Ray-Ban Meta glasses moments, so the channel is never empty —
-  real POV clips with the real **Kokoro** voice, hand-curated into a seed library (not regenerated at
-  runtime).
+  the titles, narration, and voice were **produced by the real Small Cuts pipeline** (Qwen3-VL-8B +
+  Kokoro), captured into a seed library (not regenerated at runtime).
 - **"Try it"** — a tucked-away upload drawer. Drop a short video and, while the shared demo budget
   still has capacity, a private **Modal** GPU service can run the real Qwen + Kokoro pipeline and
   replay the generated cut in the same theater. Local prototypes can use the mock narrator/TTS
@@ -176,10 +176,9 @@ can verify real output without touching the maker's machine.
 
 - 📝 **Field notes / write-up:** [hf.co/blog/build-small-hackathon/small-cuts-field-notes](https://huggingface.co/blog/build-small-hackathon/small-cuts-field-notes)
 
-> **Note on the demo library:** the **"try it"** upload path runs the real Small Cuts pipeline live
-> — Qwen3-VL-8B narration + Kokoro voice on a Modal GPU. The preselected hero clips use the real
-> Kokoro voice and the same finished-cut shape, curated into a seed library so the channel is never
-> empty.
+> **Note on the demo library:** the hero clips' titles, narration, and voice were **produced by the
+> real Small Cuts pipeline** (Qwen3-VL-8B narration + Kokoro voice), captured into a seed library so
+> the channel is never empty. The **"try it"** upload path runs that same pipeline **live** on a Modal GPU.
 
 ---
 

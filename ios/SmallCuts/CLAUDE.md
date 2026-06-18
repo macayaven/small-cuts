@@ -8,6 +8,10 @@ script is **`RUNBOOK.md`** (right here); design + decisions are in the **KB**
 - Capture path: `FrameSource`/`SimulatedFrameSource` → `SceneGate` → `MomentBuilder` →
   `EngineSessionClient` (WS + un-acked resend) → `VoicePlayer` (D9: no overlap, drop stale `play_by`).
   `CaptureCoordinator` orchestrates; `ContentView` is the SwiftUI surface. ~66 XCTest cases across 10 suites.
+- **`SmallCutsLite/`** — a slim sibling app (separate `SmallCutsLite` scheme): record a clip on the
+  **phone camera or glasses** (`PhoneCameraRecorder` / `GlassesClipRecorder`) → upload to the **Modal**
+  post-cut API (`Upload/ModalUploadClient`) → get a finished cut back. The native counterpart to the
+  Space's browser "try it" upload; not part of the live home-engine loop. Its own `SmallCutsLite/RUNBOOK.md`.
 
 ## Build / test
 - XcodeGen owns the project: edit **`project.yml`**, then regenerate. Use the full Xcode (not CLT):

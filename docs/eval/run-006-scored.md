@@ -104,4 +104,4 @@ Cohen's kappa on the pass/fail decision per cell: **0.59** (moderate agreement).
 
 ## Method
 
-Same loop as run-004/005 (docs/eval/run-004-scored.md), run twice: photos relayed from the Spark, HEIC→JPEG, one judge call per photo with all six narrations + rubric, strict-JSON S/G/V, aggregated offline. Judge B uses the identical prompt with the photo opened from disk instead of attached.
+Same loop as runs 004/005, run twice: photos relayed from the Spark, HEIC→JPEG, one judge call per photo with all six narrations + rubric, strict-JSON S/G/V, aggregated offline. Judge B uses the identical prompt with the photo opened from disk instead of attached.

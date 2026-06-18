@@ -6,7 +6,7 @@ Build Small Hackathon AND/OR make this a portfolio-grade, door-opening applied-A
 the strategic successor to *Director's Cut*. Full essence, lineage, and the canonical architecture
 live in the **KB** — see Documentation map.
 
-> **Deadline: 2026-06-15 23:59 UTC.** Branch-of-record: `claude/adoring-clarke-49l3uk` → protected `main`.
+> **Status:** Build Small Hackathon submission (concluded 2026-06-15); now in portfolio polish. Default branch: `main`.
 
 ---
 
@@ -36,10 +36,9 @@ live in the **KB** — see Documentation map.
 - `src/small_cuts/engine/` — real-time home-node engine (FastAPI WS `/v1/session`, `library.py`
   sqlite+media, SSE stream). Launch: `python -m small_cuts.engine`.
 - `ios/SmallCuts/` — Meta-glasses capture app (XcodeGen, DAT 0.7). See its `RUNBOOK.md`.
-- `docs/` — `contracts/` (v1.1.0 schemas), `product/architecture.md` (D1–D9 + the loop),
-  `architecture.md`, `product-strategy.md`, `hackathon-rules.md`, `eval/`, `progress.md`, `specs/`.
-- `tests/` — pytest incl. golden-sample contract tests. `kb/` — legacy mirror notes (canonical KB
-  is the `knowledge-base` MCP).
+- `docs/` — `architecture.md` (the architecture-of-record), `setup.md`, `contracts/` (v1.1.0
+  schemas, runtime-validated). Strategy, decisions, and history live in the KB, not the repo.
+- `tests/` — pytest incl. golden-sample contract tests.
 
 ## Canonical commands (author-once; subprojects reference these)
 ```bash
@@ -71,23 +70,10 @@ gh pr merge --auto --squash
 ## Conventions
 - **Local gate must mirror CI**: `ruff check` **and** `ruff format --check` **and** `pytest`
   (CI also runs gitleaks). Never trust a piped `gh pr checks --watch` exit code.
-- **HF deployment safety override (2026-06-15):** all development, smoke tests, upload tests,
-  bucket writes, and Space deploys must use Carlos's personal HF profile (`macayaven/*`) only.
-  Do **not** deploy to, poll-test, unpause, mutate variables/secrets on, or write buckets under
-  `build-small-hackathon/*` during development. The only remaining org submission Space is
-  `build-small-hackathon/small-cuts-buffer-poc`; it is private/paused by Carlos, reserved for final
-  submission, and should only be renamed/made public after the personal-profile solution is fully
-  proven. Treat `build-small-hackathon/small-cuts-live` and org relay buckets as non-test targets.
-- **HF Space account-safety stop rule:** if any personal Space is `PAUSED` and restart/rebuild
-  returns `503`, stop all HF Space API actions immediately. Do not retry restarts, logs, status
-  polling, uploads, repo creation, variable/secrets changes, or smoke requests in a loop. Switch to
-  local-only and direct Modal verification, then wait for explicit human approval for one specific
-  next HF Space action.
-- **Current personal dev Space:** `macayaven/small-cuts-dev` is private, uses paid hardware above
-  CPU Basic, and has Dev Mode enabled for careful interactive work from Cursor/VS Code. Treat it as
-  the only active personal Space target, but do not deploy, restart, poll, mutate variables/secrets,
-  open Dev Mode sessions, or run smoke traffic there unless Carlos explicitly approves one specific
-  HF Space action.
+- **HF Space safety:** deploy/test only under personal `macayaven/*` Spaces + buckets, never against
+  the `build-small-hackathon/*` org targets. If a Space is `PAUSED` and a restart returns `503`, stop
+  all HF Space actions and fall back to local/Modal checks. (Full deployment-safety rules + current
+  dev-Space details live in the KB `coordination/` note.)
 - **No Space polling loop:** the Gradio Space must not refresh the relay by timer. A successful
   relay publish calls the protected Space hook (`/small-cuts/hooks/relay-scene`), and browser
   clients refresh once from the pushed SSE event (`/small-cuts/events`) through a
@@ -101,19 +87,17 @@ gh pr merge --auto --squash
   Client-facing endpoints use **Tailnet MagicDNS HTTPS** (e.g. `https://mac-studio.tail48bab7.ts.net/…`),
   never raw IPs.
 
-## Coordination (see KB `10-projects/small-cuts/coordination/`)
-- **Roles:** orchestrator = **Opus 4.8** (assumed the lead vacated by **Fable 5**, pending Carlos's
-  confirmation) · implementer = **Codex (GPT-5.x)** · reviewer = **GLM / opencode** · eval judge =
-  **agy (Gemini)** · optional independent check = **GPT-5.x red-teams the plan**. Keep orchestrator ≠
-  implementer (different model families).
-- **Peers:** codex, agy, agent, opencode, + Carlos.
-- **Surfaces:** GitHub Project board **#8**; epics **#36** team-space / **#37** team-mobile /
-  **#38** team-inference; labels `team-*` + `contract-change`.
+## Coordination
+- **Author / director:** Carlos sets the brief, makes the calls, and owns the result. The roles below
+  describe the **multi-model process he directs** — not a team that owns the work.
+- **Process:** pose a brief → fan it out across independent models for diverse takes (a lead model
+  orchestrates; a *different* model family implements, kept distinct from the orchestrator to avoid
+  shared blind spots; others review and adversarially verify) → Carlos ratifies the design-of-record.
+- **Surfaces:** GitHub Project board **#8**; labels `team-*` + `contract-change`.
 
 ## Pointers
 - **KB tree** (via `knowledge-base` MCP, under `10-projects/small-cuts/`): `00-overview`,
   `architecture/` (canonical + interactive `index.html`), `space/`, `mobile/`, `inference/`,
   `contracts/`, `product/`, `coordination/`. Predecessor: `10-projects/directors-cut/`.
-- **Live device test:** `ios/SmallCuts/RUNBOOK.md`. **Hackathon rules:** `docs/hackathon-rules.md`.
-- **HF targets:** development/testing happens only under `macayaven/*`; final submission reserves
-  `build-small-hackathon/small-cuts-buffer-poc`. **Model:** `Qwen/Qwen3-VL-8B-Instruct` (M1 pick).
+- **Live device test:** `ios/SmallCuts/RUNBOOK.md`.
+- **Models:** `Qwen/Qwen3-VL-8B-Instruct` (narrator) + Kokoro (voice).

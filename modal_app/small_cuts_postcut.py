@@ -41,7 +41,9 @@ image = (
 )
 
 app = modal.App("small-cuts-postcut")
-web_app = fastapi.FastAPI()
+# Disable the public auto-docs/schema routes: the upload endpoint is Bearer-gated
+# (see _require_bearer), but the browsable route map adds no value and is needless surface.
+web_app = fastapi.FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 
 
 def _require_bearer(authorization: str | None) -> None:

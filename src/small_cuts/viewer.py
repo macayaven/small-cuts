@@ -443,10 +443,13 @@ html, body { overflow: hidden; height: 100%; }
   justify-content: center; }
 /* Bind the stage to the viewport HEIGHT (chrome reserved), width derived from 9:16 — so the
    ratio is preserved and the controls below it always stay on-screen. The aspect-ratio must
-   NOT drive height off the column width (that overflowed the viewport). */
+   NOT drive height off the column width (that overflowed the viewport).
+   Width is computed explicitly from the same height clamp (× 9/16) rather than left as
+   `auto`: Safari/WebKit does not transfer `aspect-ratio` into a flex item's automatic main
+   size, so an `auto` width collapsed the stage to ~0px in Safari desktop. */
 .sc-stage-block .sc-stage-shell { height: clamp(300px, 48dvh, 430px) !important;
-  max-height: 430px; width: auto; max-width: min(100%, calc(100vw - 620px));
-  flex: 0 0 auto; }
+  max-height: 430px; width: calc(clamp(300px, 48dvh, 430px) * 9 / 16);
+  max-width: min(100%, calc(100vw - 620px)); flex: 0 0 auto; }
 .sc-rail-col { flex: 0 0 auto !important; width: clamp(360px, 44vw, 520px) !important;
   min-width: 0 !important; min-height: 0 !important; display: flex !important;
   flex-direction: column; overflow: hidden !important; }

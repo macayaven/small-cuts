@@ -269,7 +269,7 @@ def test_submit_modal_upload_pins_returned_scene(monkeypatch):
 
 def test_submit_modal_upload_routes_to_v2_with_language(monkeypatch):
     # With the v2 env flag set, the upload routes to submit_video_v2 carrying the chosen language
-    # (NOT the v1 submit_video/scene_hint path). Guards the env-gated branch + language threading.
+    # AND the free-text manner steer as `context` (Phase 5 step 1 — no longer dropped on v2).
     monkeypatch.setenv(viewer.MODAL_API_VERSION_ENV, "v2")
     scene = {
         "scene_id": "v2-1",
@@ -288,8 +288,8 @@ def test_submit_modal_upload_routes_to_v2_with_language(monkeypatch):
     calls = []
 
     class FakeV2Client:
-        def submit_video_v2(self, video_path, *, style_key, language):
-            calls.append(("v2", video_path, style_key, language))
+        def submit_video_v2(self, video_path, *, style_key, language, context):
+            calls.append(("v2", video_path, style_key, language, context))
             return scene
 
         def submit_video(self, *args, **kwargs):
@@ -307,13 +307,13 @@ def test_submit_modal_upload_routes_to_v2_with_language(monkeypatch):
     viewer._submit_modal_upload(
         "clip.mp4",
         "deadpan",
-        "ignored hint",
+        "like a noir detective",
         viewer._pack_engine_ui_state([], None, None, None),
         FakeMediaClient(),
         language="Catalan",
     )
 
-    assert calls == [("v2", "clip.mp4", "deadpan", "Catalan")]
+    assert calls == [("v2", "clip.mp4", "deadpan", "Catalan", "like a noir detective")]
 
 
 def test_submit_modal_upload_modal_failure_warns_instead_of_raising(monkeypatch):
@@ -554,6 +554,54 @@ def test_upload_preflight_has_no_owner_passcode_bypass(monkeypatch, tmp_path):
     )
 
     assert len(preflight_dep["inputs"]) == 1
+
+
+def test_v2_upload_chains_after_budget_preflight(monkeypatch, tmp_path):
+    # Phase 5 step 2: the v2 (/v2/narrate) upload inherits the SAME budget gate as v1 because the
+    # reservation runs in the shared preflight, UPSTREAM of the v1/v2 split in _submit_modal_upload.
+    # Lock it: even in v2 mode the backend upload triggers only AFTER _upload_preflight_ui.
+    monkeypatch.setenv(viewer.ENGINE_URL_ENV, "http://127.0.0.1:9")
+    monkeypatch.setenv(viewer.UPLOAD_SANDBOX_ENV, "1")
+    monkeypatch.setenv(viewer.MODAL_API_URL_ENV, "https://example.modal.run")
+    monkeypatch.setenv(viewer.MODAL_API_VERSION_ENV, "v2")
+    monkeypatch.setenv("SMALL_CUTS_UPLOAD_BUDGET_DB", str(tmp_path / "budget.sqlite3"))
+
+    app = viewer.build_viewer_app()
+    preflight_dep = next(
+        dep
+        for dep in app.config["dependencies"]
+        if dep.get("backend_fn") and dep.get("api_name") == "_upload_preflight_ui"
+    )
+    upload_dep = next(
+        dep
+        for dep in app.config["dependencies"]
+        if dep.get("backend_fn") and dep.get("api_name") == "_go_modal_upload_ui"
+    )
+    assert upload_dep["trigger_after"] == preflight_dep["id"]
+
+
+def test_v2_upload_preflight_denies_when_daily_budget_exhausted(monkeypatch, tmp_path):
+    # The gate is real, not a pass-through: with the daily GPU budget at 0, the v2 preflight blocks
+    # the upload (no reservation, no Modal spawn) — so misuse can't drain Modal credit.
+    monkeypatch.setenv(viewer.ENGINE_URL_ENV, "http://127.0.0.1:9")
+    monkeypatch.setenv(viewer.UPLOAD_SANDBOX_ENV, "1")
+    monkeypatch.setenv(viewer.MODAL_API_URL_ENV, "https://example.modal.run")
+    monkeypatch.setenv(viewer.MODAL_API_VERSION_ENV, "v2")
+    monkeypatch.setenv("SMALL_CUTS_UPLOAD_BUDGET_DB", str(tmp_path / "budget.sqlite3"))
+    monkeypatch.setenv("SMALL_CUTS_DAILY_GPU_BUDGET_SECONDS", "0")
+
+    app = viewer.build_viewer_app()
+    preflight_dep = next(
+        dep
+        for dep in app.config["dependencies"]
+        if dep.get("backend_fn") and dep.get("api_name") == "_upload_preflight_ui"
+    )
+    preflight_fn = app.fns[preflight_dep["id"]].fn
+
+    allowed, token, status, *_ = preflight_fn("clip.mp4")
+    assert allowed is False  # budget exhausted → upload blocked before any Modal call
+    assert token is None
+    assert "budget" in status.lower()
 
 
 def test_upload_sandbox_uses_topbar_popover_not_stage_accordion(monkeypatch):
@@ -1272,6 +1320,63 @@ def test_stage_html_without_duration_still_embeds_caption_chunks():
     assert len(chunks) >= 2
     # the painter exposes a client-side fallback that indexes chunks by the live media duration
     assert "scCaptionChunks" in viewer.PLAYBACK_SYNC_JS
+
+
+def test_format_stage_surfaces_timed_captions():
+    scene = {
+        "scene_id": "s1",
+        "title": "t",
+        "narration": "hola",
+        "style_key": "deadpan",
+        "created_at": "2026-06-19T12:00:00+00:00",
+        "media": {"frame_url": "/f.jpg"},
+        "timed_captions": [{"t_start": 0.0, "t_end": 1.0, "text": "hola"}],
+    }
+    assert viewer.format_stage(scene)["timed_captions"] == scene["timed_captions"]
+
+
+def test_format_stage_no_scene_has_null_timed_captions():
+    assert viewer.format_stage(None)["timed_captions"] is None
+
+
+def test_stage_html_prefers_aligner_timed_captions_as_tuples():
+    # The aligner emits OBJECT cues {t_start,t_end,text}; the JS painter reads TUPLES cue[0/1/2].
+    # render_stage_html must convert object->tuple server-side (else Number(cue[0]) -> NaN).
+    timed = [
+        {"t_start": 0.0, "t_end": 1.2, "text": "Una persona abre la puerta"},
+        {"t_start": 1.2, "t_end": 2.4, "text": "del coche despacio"},
+    ]
+    out = viewer.render_stage_html(
+        "http://x/f.jpg",
+        "Una persona abre la puerta del coche despacio.",
+        live=False,
+        duration=2.4,
+        timed_captions=timed,
+    )
+    raw = out.split('data-sc-cues="', 1)[1].split('"', 1)[0]
+    cues = json.loads(html.unescape(raw))
+    assert cues[0] == [0.0, 1.2, "Una persona abre la puerta"]  # tuple-shaped, real aligner timing
+    assert cues[1][2] == "del coche despacio"
+    # first painted line seeded from the real cue, not the even-window derivation
+    assert '<span class="sc-sub-line">Una persona abre la puerta</span>' in out
+
+
+def test_stage_html_without_timed_captions_falls_back_to_derived_cues():
+    # Seed/v1 scenes carry no aligner cues → the even-window derivation is still used (unchanged).
+    timed_out = viewer.render_stage_html(
+        "http://x/f.jpg", "a b c d e f g h.", live=False, duration=4.0
+    )
+    raw = timed_out.split('data-sc-cues="', 1)[1].split('"', 1)[0]
+    cues = json.loads(html.unescape(raw))
+    assert cues[-1][1] == 4.0  # derived to cover the full known duration
+
+
+def test_cc_toggle_is_wired_off_by_default_and_persisted():
+    # CC defaults OFF (voice-first); the toggle flips a body-level class and persists it so the
+    # preference survives the per-scene re-render of the subtitle div.
+    assert "sc-cc-btn" in viewer.PLAYBACK_SYNC_JS  # delegated click target
+    assert "sc-cc-on" in viewer.PLAYBACK_SYNC_JS  # body class gating visibility
+    assert "sc-cc-on" in viewer.VIEWER_CSS  # CSS hides captions unless the body opts in
 
 
 def test_caption_painter_guards_writes_against_observer_loop():

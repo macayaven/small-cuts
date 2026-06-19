@@ -185,6 +185,12 @@ footer { display: none !important; }
   color: #f3efe4; border-radius: 9px; padding: 11px 16px; font-family: 'Spectral', serif;
   font-size: 1.04rem; line-height: 1.38; text-shadow: 0 1px 2px rgba(0,0,0,.85); }
 .sc-subtitle .sc-sub-line[hidden] { display: none; }
+/* CC captions default OFF (voice-first thesis); shown only when the viewer opts in. The gate lives
+   on <body> so the preference survives the per-scene re-render of #sc-subtitle. */
+body:not(.sc-cc-on) .sc-subtitle { display: none; }
+.sc-cc-btn.sc-icbtn { color: #1a1a1f !important; font-size: .72rem !important; font-weight: 700;
+  letter-spacing: .04em; -webkit-mask-image: none !important; mask-image: none !important; }
+body.sc-cc-on .sc-cc-btn.sc-icbtn { background-color: #D4AF37 !important; }
 
 .sc-rec { position: absolute; top: 12px; left: 12px; display: inline-flex; align-items: center;
   gap: 7px; background: rgba(16,16,20,.78); color: #D4AF37; padding: 4px 11px;
@@ -782,6 +788,7 @@ def format_stage(
             "live": False,
             "visibility": None,
             "source_icon": None,
+            "timed_captions": None,
         }
     base = engine_url.rstrip("/")
 
@@ -803,6 +810,7 @@ def format_stage(
         "live": is_fresh(scene.get("created_at"), now=now),
         "visibility": scene.get("visibility"),
         "source_icon": _source_icon(scene),
+        "timed_captions": scene.get("timed_captions"),
     }
 
 
@@ -867,11 +875,16 @@ def render_stage_html(
     clip_src: str | None = None,
     duration: float | None = None,
     source_icon: str | None = None,
+    timed_captions: list[dict[str, Any]] | None = None,
 ) -> str:
     """The 9:16 stage: the moment (video clip or still frame) + lower-third caption.
 
     `live` is retained for signature stability — the live/finished state now lives in the
     header ("Happening now" vs. the auto-title), not a REC chip on the stage.
+
+    `timed_captions` are the aligner's real word-timed cues (object-shaped {t_start,t_end,text}).
+    When present they are converted to the painter's tuple shape [start,end,text] and preferred
+    over the even-window `caption_cues` derivation (used as the fallback for seed/v1 scenes).
     """
     if clip_src:
         poster = f' poster="{html.escape(frame_src, quote=True)}"' if frame_src else ""
@@ -887,7 +900,11 @@ def render_stage_html(
         body = '<div class="sc-stage-empty">🎬</div>'
     if caption and caption.strip():
         chunks = [chunk for chunk in _subtitle_chunks(caption.strip()) if chunk.strip()]
-        cues = caption_cues(caption, duration)
+        if timed_captions:
+            # Real aligner cues → tuple shape [start, end, text] the JS painter (cue[0/1/2]) reads.
+            cues = [[c["t_start"], c["t_end"], c["text"]] for c in timed_captions]
+        else:
+            cues = caption_cues(caption, duration)
         first_caption = cues[0][2] if cues else (chunks[0] if chunks else caption.strip())
         dur_attr = f' data-duration="{float(duration):.1f}"' if duration else ""
         # Timed cues (when the scene's duration is known server-side) are preferred by the painter;
@@ -1113,6 +1130,7 @@ def poll_engine(
         clip_src=payload["clip_src"],
         duration=payload["duration"],
         source_icon=payload["source_icon"],
+        timed_captions=payload.get("timed_captions"),
     )
     feed = render_feed_html([feed_entry(scene) for scene in scenes[-FEED_LIMIT:]])
 
@@ -1237,6 +1255,7 @@ def _go_live_handler(
             clip_src=payload["clip_src"],
             duration=payload["duration"],
             source_icon=payload["source_icon"],
+            timed_captions=payload.get("timed_captions"),
         ),
         render_feed_html([feed_entry(s) for s in scenes[-FEED_LIMIT:]]),
         local_shelf_items(scenes),
@@ -1351,6 +1370,7 @@ def _engine_scene_control_outputs(
             clip_src=payload["clip_src"],
             duration=payload["duration"],
             source_icon=payload["source_icon"],
+            timed_captions=payload.get("timed_captions"),
         ),
         audio_update,
         _pack_engine_ui_state(
@@ -1417,6 +1437,7 @@ def _submit_modal_upload(
                 video_path,
                 style_key=style_key,
                 language=language,
+                context=scene_hint,
             )
         else:
             raw_scene = _modal_upload_client().submit_video(
@@ -1447,6 +1468,7 @@ def _submit_modal_upload(
             clip_src=payload["clip_src"],
             duration=payload["duration"],
             source_icon=payload["source_icon"],
+            timed_captions=payload.get("timed_captions"),
         ),
         render_feed_html([feed_entry(s) for s in scenes[-FEED_LIMIT:]]),
         _audio_html(payload["audio_src"]) if payload["audio_src"] else gr.skip(),
@@ -1971,6 +1993,19 @@ PLAYBACK_SYNC_JS = """
     togglePlayback(e);
   }, true);
 
+  // CC captions: a persisted, voice-first-OFF toggle. The button has no Gradio handler — flip a
+  // body-level class (which survives the per-scene re-render of #sc-subtitle) and remember the
+  // choice in localStorage. CSS hides .sc-subtitle unless body has .sc-cc-on.
+  const scReadCcPref = () => {
+    try { return window.localStorage.getItem('scCc') === '1'; } catch (e) { return false; }
+  };
+  if (scReadCcPref()) document.body.classList.add('sc-cc-on');
+  document.addEventListener('click', (e) => {
+    if (!(e.target.closest && e.target.closest('.sc-cc-btn'))) return;
+    const on = document.body.classList.toggle('sc-cc-on');
+    try { window.localStorage.setItem('scCc', on ? '1' : '0'); } catch (err) {}
+  }, true);
+
   // R4 + R5: between "Make the cut" and the buffered reveal the user sees ONLY the
   // clapperboard loader. We mount the loader over the stage when the Narrate button is tapped,
   // keep it (re-mounting it when Gradio swaps in the result stage) until the result <video> is
@@ -2155,6 +2190,7 @@ def build_viewer_app() -> gr.Blocks:
             clip_src=boot["clip_src"],
             duration=boot["duration"],
             source_icon=boot["source_icon"],
+            timed_captions=boot.get("timed_captions"),
         )
         boot_audio = _audio_html(boot["audio_src"])
 
@@ -2226,6 +2262,9 @@ def build_viewer_app() -> gr.Blocks:
                         padding=False,
                     )
                     forward_btn = gr.Button("", elem_classes=["sc-icbtn", "sc-ico-forward"])
+                    # CC: soft caption toggle. No Python handler — PLAYBACK_SYNC_JS flips a
+                    # persisted body class (delegated DOM click), like the play gesture.
+                    gr.Button("CC", elem_classes=["sc-icbtn", "sc-cc-btn"])
                     if client is None:
                         # like (honest no-count toggle) + flag now live in the pill, aligned
                         # with the controls (Review-3 #2 — no longer orphaned below).
@@ -2475,6 +2514,7 @@ def build_viewer_app() -> gr.Blocks:
                                     clip_src=payload["clip_src"],
                                     duration=payload["duration"],
                                     source_icon=payload["source_icon"],
+                                    timed_captions=payload.get("timed_captions"),
                                 ),
                                 render_feed_html(
                                     [feed_entry(scene) for scene in scenes[-FEED_LIMIT:]]
@@ -2764,6 +2804,7 @@ def build_viewer_app() -> gr.Blocks:
                         clip_src=payload["clip_src"],
                         duration=payload["duration"],
                         source_icon=payload["source_icon"],
+                        timed_captions=payload.get("timed_captions"),
                     ),
                     _audio_html(payload["audio_src"]),
                     payload["scene_id"],
@@ -2787,6 +2828,7 @@ def build_viewer_app() -> gr.Blocks:
                         clip_src=payload["clip_src"],
                         duration=payload["duration"],
                         source_icon=payload["source_icon"],
+                        timed_captions=payload.get("timed_captions"),
                     ),
                     _audio_html(payload["audio_src"]),
                     None,
@@ -2813,6 +2855,7 @@ def build_viewer_app() -> gr.Blocks:
                         clip_src=payload["clip_src"],
                         duration=payload["duration"],
                         source_icon=payload["source_icon"],
+                        timed_captions=payload.get("timed_captions"),
                     ),
                     _audio_html(payload["audio_src"]),
                     scene["scene_id"],
@@ -2873,6 +2916,7 @@ def build_viewer_app() -> gr.Blocks:
                             clip_src=payload["clip_src"],
                             duration=payload["duration"],
                             source_icon=payload["source_icon"],
+                            timed_captions=payload.get("timed_captions"),
                         ),
                         render_feed_html([feed_entry(s) for s in scenes[-FEED_LIMIT:]]),
                         local_shelf_items(scenes),

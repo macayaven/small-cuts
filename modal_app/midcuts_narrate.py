@@ -211,12 +211,15 @@ class Narrator:
         )[0].strip()
         return decoded, audio
 
-    def _narrate(self, frames: list, language: str, *, prime: bool) -> tuple[str, Any, int]:
+    def _narrate(
+        self, frames: list, language: str, *, prime: bool, context: str = ""
+    ) -> tuple[str, Any, int]:
         """Narration pass → (text, wav, sample_rate). ``prime`` prepends the warm-up carrier (later
-        trimmed by the aligner) to defeat the autoregressive cold-start accent ramp."""
+        trimmed by the aligner) to defeat the autoregressive cold-start accent ramp. ``context`` is
+        the optional free-text *manner* steer (how the moment is told)."""
         from small_cuts.narrate_v2 import build_narration_prompts
 
-        system_prompt, user_prompt = build_narration_prompts(language, prime=prime)
+        system_prompt, user_prompt = build_narration_prompts(language, prime=prime, context=context)
         narration, audio = self._omni_generate(
             frames, system_prompt, user_prompt, return_audio=True
         )
@@ -240,6 +243,7 @@ class Narrator:
         filename: str,
         style_key: str = "deadpan",
         language: str = "English",
+        context: str = "",
     ) -> dict[str, Any]:
         sys.path.insert(0, "/root/src")
         import json
@@ -267,15 +271,21 @@ class Narrator:
         if not frames:
             raise RuntimeError("no decodable video frames")
 
-        # 1) narration pass — carrier-primed when a warm-up carrier exists for the language.
+        # 1) narration pass — carrier-primed when a warm-up carrier exists for the language. The
+        # optional free-text `context` steers HOW the moment is told (manner, not facts).
         use_prime = has_carrier(language)
-        narration, wav, sample_rate = self._narrate(frames, language, prime=use_prime)
+        narration, wav, sample_rate = self._narrate(
+            frames, language, prime=use_prime, context=context
+        )
 
         # 2) warm-up cut (L4 aligner, separate container) — align the carrier+narration speech, find
         # where the carrier ends, and drop it; the remaining audio is already past the cold-start
         # ramp. Best-effort: a degenerate cut (empty real text) falls back to the untrimmed take.
         # Trade-off: this blocking .remote() keeps the H200 alive while the L4 cold-starts; accepted
         # because the two models can't share an image (qwen-asr pins an older transformers).
+        # timed_captions come from the SAME alignment (rebased past the carrier) — soft CC track,
+        # only on the trimmed take; None when there's no carrier or the cut fell back to untrimmed.
+        timed_captions = None
         if use_prime:
             cut = Aligner().cut_carrier.remote(
                 wav=wav,
@@ -290,6 +300,7 @@ class Narrator:
                     cut["trimmed_wav"],
                     cut["sample_rate"],
                 )
+                timed_captions = cut.get("timed_captions") or None
             else:
                 print(
                     "midcuts: carrier cut produced empty narration; publishing untrimmed",
@@ -340,6 +351,7 @@ class Narrator:
             scene_id=scene_id,
             duration=duration,
             keyframe_time=0.0,
+            timed_captions=timed_captions,
             engine={
                 "narrator_model": OMNI_MODEL,
                 "narrator_backend": "transformers",
@@ -420,7 +432,7 @@ class Aligner:
         sys.path.insert(0, "/root/src")
         import numpy as np
 
-        from small_cuts.narrate_v2 import carrier_cut_index, has_speech_content
+        from small_cuts.narrate_v2 import plan_carrier_cut
 
         data = np.asarray(wav, dtype="float32")
         results = self.aligner.align(audio=(data, sample_rate), text=full_text, language=language)
@@ -428,17 +440,16 @@ class Aligner:
             {"word": w.text, "t_start": float(w.start_time), "t_end": float(w.end_time)}
             for w in results[0]
         ]
-        t_cut, idx = carrier_cut_index(words, carrier)
-        real_text = " ".join(w["word"] for w in words[idx + 1 :]).strip()
-        # A punctuation-only tail (a lone aligner ".") isn't real narration → signal untrimmed.
-        if not has_speech_content(real_text):
-            real_text = ""
+        # Pure planner (unit-tested): drop the carrier, derive real_text, and build rebased caption
+        # cues. A punctuation-only tail yields real_text="" + no cues → publish the untrimmed take.
+        t_cut, real_text, timed_captions = plan_carrier_cut(words, carrier)
         trimmed = data[int(round(t_cut * sample_rate)) :]
         return {
             "real_text": real_text,
             "trimmed_wav": trimmed,
             "sample_rate": sample_rate,
             "t_cut": t_cut,
+            "timed_captions": timed_captions,
         }
 
 
@@ -461,6 +472,7 @@ async def narrate_endpoint(
     video: Annotated[UploadFile, File()],
     style_key: Annotated[str, Form()] = "deadpan",
     language: Annotated[str, Form()] = "English",
+    context: Annotated[str, Form()] = "",
     authorization: Annotated[str | None, Header()] = None,
 ) -> dict[str, str]:
     _require_bearer(authorization)
@@ -479,7 +491,7 @@ async def narrate_endpoint(
         raise HTTPException(
             status_code=422, detail=f"video is too long; upload up to {MAX_UPLOAD_SECONDS:.0f}s"
         )
-    call = await Narrator().process.spawn.aio(payload, safe_filename, style_key, language)
+    call = await Narrator().process.spawn.aio(payload, safe_filename, style_key, language, context)
     return {"job_id": call.object_id}
 
 
@@ -511,8 +523,17 @@ def smoke() -> dict[str, Any]:
     )
 
     # New-pipeline wiring smoke (CPU): prompts resolve + title cleaner works before any GPU spend.
-    primed_system, _ = build_narration_prompts("Spanish", prime=True)
+    primed_system, primed_user = build_narration_prompts("Spanish", prime=True)
     assert "«" in primed_system  # carrier instruction embedded
+    # Manner-steer wiring (Phase 5 step 1): empty context is a byte-identical no-op; a non-empty
+    # context is injected BEFORE the carrier instruction so the carrier still closes the prompt.
+    assert build_narration_prompts("Spanish", prime=True, context="") == (
+        primed_system,
+        primed_user,
+    )
+    carrier_tail = primed_system[primed_system.index("«") :]  # carrier instruction (must stay last)
+    steered, _ = build_narration_prompts("Spanish", prime=True, context="en tono nostálgico")
+    assert "en tono nostálgico" in steered and steered.endswith(carrier_tail)
     assert all(build_title_prompts(lang)[0] for lang in ("English", "Spanish", "French"))
     assert clean_model_title('"Probe"', fallback="x") == "Probe"
 
@@ -562,10 +583,13 @@ def smoke_main() -> None:
 
 
 @app.local_entrypoint()
-def e2e(clip: str = "rayuela", language: str = "English") -> None:
-    """GPU H200: narrate a real seed clip end-to-end and write the scene to the mid-cuts bucket."""
+def e2e(clip: str = "rayuela", language: str = "English", context: str = "") -> None:
+    """GPU H200: narrate a real seed clip end-to-end and write the scene to the mid-cuts bucket.
+
+    Pass ``--context`` to judge the free-text manner steer by ear (e.g. ``--context "wistful"``).
+    """
     video_bytes = Path(f"src/small_cuts/seed_media/{clip}.mp4").read_bytes()
-    out = Narrator().process.remote(video_bytes, f"{clip}.mp4", "deadpan", language)
+    out = Narrator().process.remote(video_bytes, f"{clip}.mp4", "deadpan", language, context)
     print(f"status={out['status']} scene_id={out['scene']['scene_id']}")
     print(f"narration: {out['scene']['narration']}")
     print(f"media: {out['scene']['media']}")

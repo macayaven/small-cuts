@@ -133,18 +133,20 @@ class ModalUploadClient:
         *,
         style_key: str = "deadpan",
         language: str = "English",
+        context: str = "",
     ) -> dict[str, Any]:
         """Upload a clip to the v2 ``/v2/narrate`` pipeline in the chosen narration language.
 
-        Mirrors :meth:`submit_video` but targets the v2 endpoint (``style_key`` + ``language`` form
-        fields, no ``scene_hint``) and polls ``/v2/narrate/{job_id}``. Kept as a separate method so
-        the v1 ``/v1/cuts`` path used by the live Space is untouched.
+        Mirrors :meth:`submit_video` but targets the v2 endpoint (``style_key`` + ``language`` +
+        ``context`` form fields) and polls ``/v2/narrate/{job_id}``. ``context`` is the optional
+        free-text *manner* steer (how the moment is told). Kept as a separate method so the v1
+        ``/v1/cuts`` path used by the live Space is untouched.
         """
         close = self.http_client is None
         client = self.http_client or httpx.Client(timeout=30.0, follow_redirects=True)
         try:
             try:
-                job_id = self._submit_v2(client, Path(video_path), style_key, language)
+                job_id = self._submit_v2(client, Path(video_path), style_key, language, context)
             except ModalUploadError:
                 raise
             except httpx.HTTPError as exc:
@@ -169,12 +171,13 @@ class ModalUploadClient:
         video_path: Path,
         style_key: str,
         language: str,
+        context: str = "",
     ) -> str:
         with video_path.open("rb") as handle:
             response = client.post(
                 f"{self.base_url.rstrip('/')}/v2/narrate",
                 headers={"Authorization": f"Bearer {self.token}"},
-                data={"style_key": style_key, "language": language},
+                data={"style_key": style_key, "language": language, "context": context},
                 files={"video": (video_path.name, handle, "video/mp4")},
             )
         _raise_for_modal_status(response, "request")

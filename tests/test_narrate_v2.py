@@ -185,6 +185,33 @@ def test_cues_from_words_rebases_and_drops_carrier():
     assert all(len(c["text"].split()) <= 5 for c in cues)  # grouped
 
 
+def test_plan_carrier_cut_returns_trim_and_rebased_captions():
+    carrier_words = [(w, i * 0.4, i * 0.4 + 0.4) for i, w in enumerate(_CARRIER.split())]
+    t_cut_expected = carrier_words[-1][2]
+    real_words = [
+        ("Una", t_cut_expected + 0.05, t_cut_expected + 0.4),
+        ("persona", t_cut_expected + 0.4, t_cut_expected + 0.9),
+        ("abre", t_cut_expected + 0.9, t_cut_expected + 1.2),
+    ]
+    words = _aligned(*carrier_words, *real_words)
+    t_cut, real_text, cues = narrate_v2.plan_carrier_cut(words, _CARRIER)
+    assert abs(t_cut - t_cut_expected) < 1e-6
+    assert real_text == "Una persona abre"  # carrier dropped, real narration kept
+    assert cues and cues[0]["t_start"] < 0.1  # rebased so the trimmed audio starts at ~0
+    joined = " ".join(c["text"] for c in cues)
+    assert "Preparando" not in joined and "persona" in joined
+
+
+def test_plan_carrier_cut_punctuation_only_tail_yields_no_text_and_no_captions():
+    # A lone aligner "." after the carrier is not real narration → signal untrimmed, NO captions
+    # (rebased cues on the untrimmed take would be misaligned).
+    carrier_words = [(w, i * 0.4, i * 0.4 + 0.4) for i, w in enumerate(_CARRIER.split())]
+    words = _aligned(*carrier_words, (".", 99.0, 99.1))
+    _t_cut, real_text, cues = narrate_v2.plan_carrier_cut(words, _CARRIER)
+    assert real_text == ""
+    assert cues == []
+
+
 def test_build_scene_includes_timed_captions_when_provided():
     cues = [{"t_start": 0.0, "t_end": 1.2, "text": "Una persona abre la puerta"}]
     scene = _scene(timed_captions=cues)
@@ -373,6 +400,61 @@ def test_build_narration_prompts_prime_is_noop_without_a_carrier():
     primed = narrate_v2.build_narration_prompts("German", prime=True)
     plain = narrate_v2.build_narration_prompts("German", prime=False)
     assert primed == plain
+
+
+# ── narration-quality: free-text context steer (Phase 5 step 1 — steers HOW it is told) ──
+
+
+@pytest.mark.parametrize("language", ["English", "Spanish", "French", "German"])
+@pytest.mark.parametrize("prime", [False, True])
+def test_build_narration_prompts_empty_context_is_byte_identical(language, prime):
+    # The deadpan default was ratified by ear; a blank context must not perturb a single byte.
+    base = narrate_v2.build_narration_prompts(language, prime=prime)
+    assert narrate_v2.build_narration_prompts(language, prime=prime, context="") == base
+    assert narrate_v2.build_narration_prompts(language, prime=prime, context="   ") == base
+
+
+def test_build_narration_prompts_injects_context_as_manner_steer():
+    base_system, base_user = narrate_v2.build_narration_prompts("Spanish", prime=False)
+    system, user = narrate_v2.build_narration_prompts(
+        "Spanish", prime=False, context="como una enfermera agotada del turno de noche"
+    )
+    assert system.startswith(base_system)  # native deadpan spec preserved, steer appended after
+    assert "como una enfermera agotada del turno de noche" in system
+    assert user == base_user  # the manner steer lives in the system prompt, not the task turn
+
+
+def test_build_narration_prompts_context_precedes_carrier_instruction():
+    # The carrier instruction must stay LAST so the Talker still opens with the carrier verbatim
+    # (the aligner trim depends on it); the context steer is injected before the prime block.
+    system, _ = narrate_v2.build_narration_prompts(
+        "Spanish", prime=True, context="en tono nostálgico"
+    )
+    carrier_tail = narrate_v2.PRIME_INSTRUCTION["Spanish"].format(
+        carrier=narrate_v2.PRIME_CARRIER["Spanish"]
+    )
+    assert system.endswith(carrier_tail)
+    assert system.index("en tono nostálgico") < system.index(carrier_tail)
+
+
+def test_build_narration_prompts_caps_context_length():
+    system, _ = narrate_v2.build_narration_prompts("English", prime=False, context="x" * 500)
+    assert "x" * narrate_v2.MAX_CONTEXT_CHARS in system
+    assert "x" * (narrate_v2.MAX_CONTEXT_CHARS + 1) not in system
+
+
+def test_build_narration_prompts_context_unknown_language_uses_english_template():
+    system, _ = narrate_v2.build_narration_prompts(
+        "German", prime=False, context="hushed and reverent"
+    )
+    assert "hushed and reverent" in system  # injected even for fallback languages
+
+
+def test_clean_context_collapses_whitespace_and_caps():
+    assert narrate_v2.clean_context("  hello   world  ") == "hello world"
+    assert narrate_v2.clean_context("") == ""
+    assert narrate_v2.clean_context("   ") == ""
+    assert len(narrate_v2.clean_context("y" * 1000)) == narrate_v2.MAX_CONTEXT_CHARS
 
 
 def test_has_carrier_true_for_selectable_false_for_other():

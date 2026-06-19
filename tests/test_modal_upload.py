@@ -79,6 +79,32 @@ def test_modal_client_v2_submits_to_v2_narrate_with_language(tmp_path):
     ]
 
 
+def test_modal_client_v2_forwards_context_steer(tmp_path):
+    # The "Whisper context to the narrator" manner steer rides as a `context` form field on
+    # /v2/narrate (Phase 5 step 1). v1's `scene_hint` was factual grounding; v2's `context` steers
+    # HOW the moment is told, so it gets a distinct field name.
+    video = tmp_path / "clip.mp4"
+    video.write_bytes(b"fake")
+    captured = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "POST":
+            captured["body"] = request.content.decode("latin1")
+            return httpx.Response(200, json={"job_id": "job-7"})
+        return httpx.Response(200, json={"status": "complete", "scene": {"scene_id": "v2s"}})
+
+    client = ModalUploadClient(
+        "https://modal.example",
+        "secret",
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+        poll_interval_s=0,
+    )
+
+    client.submit_video_v2(video, style_key="deadpan", language="English", context="like noir")
+    assert 'name="context"' in captured["body"]
+    assert "like noir" in captured["body"]
+
+
 def test_modal_client_rejects_missing_scene(tmp_path):
     video = tmp_path / "clip.mp4"
     video.write_bytes(b"fake")

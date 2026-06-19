@@ -25,6 +25,7 @@ from uuid import uuid4
 CONTRACT_VERSION = "1.2.0"
 TITLE_MAX = 80
 NARRATION_MAX = 2000
+MAX_CONTEXT_CHARS = 280
 RELAY_HOOK_TIMEOUT_S = 5.0
 
 # (local file, remote bucket-relative path) -> None. The Modal app binds this to a token-scoped
@@ -103,6 +104,36 @@ PRIME_INSTRUCTION: dict[str, str] = {
     "French": "Commence ta réponse exactement par la phrase «{carrier}» puis la narration.",
 }
 
+# Per-language template for the optional free-text *manner* steer (Phase 5 step 1). The upload
+# "Whisper context to the narrator" field steers HOW the moment is told — voice, mood, register —
+# NOT what facts to include; it is allowed to override the neutral deadpan default. Written in the
+# target language to keep the Talker in a native manifold; unknown languages reuse the English one.
+# Appended to the system prompt BEFORE the prime/carrier block so the carrier stays last.
+CONTEXT_INSTRUCTION: dict[str, str] = {
+    "English": (
+        " The person who lived this moment asks you to tell it a particular way: «{context}». "
+        "Let that set the voice, mood, and register of the narration — it overrides the neutral "
+        "monotone above where they conflict. Keep the other rules: one short sentence in "
+        "{language}, declarative, no stage directions, and invent nothing that is not in "
+        "the clip."
+    ),
+    "Spanish": (
+        " La persona que vivió este momento te pide que lo narres de una manera concreta: "
+        "«{context}». Deja que eso marque la voz, el tono y el registro de la narración; prevalece "
+        "sobre el tono neutro y monótono anterior cuando haya conflicto. Mantén las demás reglas: "
+        "una sola frase breve en español, en modo declarativo, sin acotaciones, y no inventes nada "
+        "que no esté en el clip."
+    ),
+    "French": (
+        " La personne qui a vécu ce moment te demande de le raconter d'une manière précise : "
+        "«{context}». Laisse cela définir la voix, l'ambiance et le registre de la "
+        "narration ; cela prime sur le ton neutre et monotone ci-dessus en cas de "
+        "conflit. Garde les autres règles : "
+        "une seule phrase courte en français, au mode déclaratif, sans didascalies, et n'invente "
+        "rien qui ne soit dans le plan."
+    ),
+}
+
 # Text-only (system, user) title prompts — a SEPARATE pass (return_audio=False) so the Talker never
 # speaks JSON braces (the §7 #2 constraint). Output is run through clean_model_title.
 _TITLE_SYS_EN = (
@@ -133,18 +164,35 @@ def has_carrier(language: str) -> bool:
     return language in PRIME_CARRIER and language in PRIME_INSTRUCTION
 
 
-def build_narration_prompts(language: str, *, prime: bool) -> tuple[str, str]:
+def clean_context(context: str) -> str:
+    """Strip and cap the free-text manner steer; collapse internal whitespace.
+
+    Empty/whitespace-only input returns "" so the steer is a true no-op (the deadpan default
+    prompt stays byte-identical). Capped to ``MAX_CONTEXT_CHARS`` to bound this public,
+    anonymous free-text before it reaches the model's instruction context (prompt-injection
+    surface)."""
+    return " ".join((context or "").split())[:MAX_CONTEXT_CHARS]
+
+
+def build_narration_prompts(language: str, *, prime: bool, context: str = "") -> tuple[str, str]:
     """Return the (system, user) narration prompt for ``language``.
 
     Native languages use their hand-tuned pair; anything else falls back to the English deadpan
-    base plus "Write the narration in {language}.". When ``prime`` and a carrier exists, the carrier
-    instruction is appended to the system prompt (a no-op for carrier-less languages).
+    base plus "Write the narration in {language}.". A non-empty ``context`` (the upload manner
+    steer) is appended to the system prompt as a HOW-it's-told directive; an empty ``context``
+    leaves the prompt byte-identical to the ear-ratified default. When ``prime`` and a carrier
+    exists, the carrier instruction is appended LAST (after any context) so the Talker still opens
+    with the carrier verbatim and the aligner trim is unaffected.
     """
     if language in NATIVE_PROMPTS:
         system, user = NATIVE_PROMPTS[language]
     else:
         system = f"{DEADPAN_SYS} Write the narration in {language}."
         user = USER_PROMPT
+    steer = clean_context(context)
+    if steer:
+        template = CONTEXT_INSTRUCTION.get(language, CONTEXT_INSTRUCTION["English"])
+        system = f"{system}{template.format(context=steer, language=language)}"
     if prime and has_carrier(language):
         system = f"{system} {PRIME_INSTRUCTION[language].format(carrier=PRIME_CARRIER[language])}"
     return system, user
@@ -287,6 +335,24 @@ def cues_from_words(
             }
         )
     return cues
+
+
+def plan_carrier_cut(
+    words: list[dict[str, Any]], carrier: str
+) -> tuple[float, str, list[dict[str, Any]]]:
+    """Pure planner for the warm-up trim, given an aligned word list.
+
+    Finds where the spoken ``carrier`` ends and returns ``(t_cut, real_text, timed_captions)``:
+    the cut time, the narration with the carrier dropped, and caption cues rebased so t=0 is the
+    trimmed audio. When the post-carrier tail has no speech (a lone aligner punctuation token),
+    returns ``("" , [])`` for text+captions — signalling the caller to publish the untrimmed take
+    with no captions (rebased cues would be misaligned against the untrimmed wav). GPU-free so the
+    Modal aligner's non-model logic is unit-testable."""
+    t_cut, idx = carrier_cut_index(words, carrier)
+    real_text = " ".join(w["word"] for w in words[idx + 1 :]).strip()
+    if not has_speech_content(real_text):
+        return t_cut, "", []
+    return t_cut, real_text, cues_from_words(words, start_index=idx + 1, t_offset=t_cut)
 
 
 def publish_scene(

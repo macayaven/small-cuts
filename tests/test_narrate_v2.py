@@ -133,3 +133,63 @@ def test_mock_backend_returns_text_and_audio():
     assert len(result.audio) > 0
     assert result.sample_rate > 0
     assert result.narrator_backend == "mock"
+
+
+# ── captions: carrier-cut boundary + speech-relative cues (the aligner output → timed_captions) ──
+
+_CARRIER = (
+    "Preparando la voz del narrador en español de España. "
+    "La descripción de la escena comienza ahora."
+)
+
+
+def _aligned(*pairs):
+    return [{"word": w, "t_start": s, "t_end": e} for (w, s, e) in pairs]
+
+
+def test_carrier_cut_index_finds_boundary():
+    # carrier words, then the real narration; the boundary is the last carrier word's end-time.
+    carrier_words = [(w, i * 0.4, i * 0.4 + 0.4) for i, w in enumerate(_CARRIER.split())]
+    real_words = [("Una", 6.7, 7.0), ("persona", 7.0, 7.6)]
+    words = _aligned(*carrier_words, *real_words)
+    t_cut, idx = narrate_v2.carrier_cut_index(words, _CARRIER)
+    assert idx == len(carrier_words) - 1
+    assert abs(t_cut - carrier_words[-1][2]) < 1e-6
+    assert words[idx + 1]["word"] == "Una"  # real narration starts right after
+
+
+def test_cues_from_words_rebases_and_drops_carrier():
+    carrier_words = [(w, i * 0.4, i * 0.4 + 0.4) for i, w in enumerate(_CARRIER.split())]
+    t_cut = carrier_words[-1][2]
+    real_words = [
+        ("Una", t_cut + 0.05, t_cut + 0.4),
+        ("persona", t_cut + 0.4, t_cut + 0.9),
+        ("abre", t_cut + 0.9, t_cut + 1.2),
+        ("la", t_cut + 1.2, t_cut + 1.3),
+        ("puerta", t_cut + 1.3, t_cut + 1.8),
+        ("del", t_cut + 1.8, t_cut + 1.95),
+        ("coche", t_cut + 1.95, t_cut + 2.4),
+    ]
+    words = _aligned(*carrier_words, *real_words)
+    cues = narrate_v2.cues_from_words(
+        words, start_index=len(carrier_words), t_offset=t_cut, max_words=5
+    )
+
+    assert cues, "expected cues"
+    assert all(c["t_start"] >= 0 and c["t_end"] >= c["t_start"] for c in cues)
+    assert cues[0]["t_start"] < 0.1  # first real word rebased to ~0.05s
+    joined = " ".join(c["text"] for c in cues)
+    assert "Preparando" not in joined and "narrador" not in joined  # carrier dropped
+    assert "persona" in joined
+    assert all(len(c["text"].split()) <= 5 for c in cues)  # grouped
+
+
+def test_build_scene_includes_timed_captions_when_provided():
+    cues = [{"t_start": 0.0, "t_end": 1.2, "text": "Una persona abre la puerta"}]
+    scene = _scene(timed_captions=cues)
+    jsonschema.validate(scene, SCHEMA)  # v1.2.0 schema
+    assert scene["timed_captions"] == cues
+
+
+def test_build_scene_omits_timed_captions_when_absent():
+    assert "timed_captions" not in _scene()  # additive/optional — absent by default

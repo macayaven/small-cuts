@@ -14,6 +14,7 @@ the caller's concern — it passes an ``uploader`` bound to ``HfApi(token=WRITE_
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -41,6 +42,7 @@ def build_narrated_scene(
     seq: int = 0,
     visibility: str = "public",
     engine: dict[str, Any] | None = None,
+    timed_captions: list[dict[str, Any]] | None = None,
     scene_id: str | None = None,
     moment_id: str | None = None,
 ) -> dict[str, Any]:
@@ -65,7 +67,54 @@ def build_narrated_scene(
     }
     if engine is not None:
         scene["engine"] = engine
+    if timed_captions is not None:
+        scene["timed_captions"] = timed_captions
     return scene
+
+
+def _norm(text: str) -> str:
+    return re.sub(r"[^0-9a-záéíóúñü]", "", text.lower())
+
+
+def carrier_cut_index(words: list[dict[str, Any]], carrier: str) -> tuple[float, int]:
+    """Find where the spoken warm-up carrier ends in the aligned word list.
+
+    Accumulates normalized characters of the aligned words until they cover the carrier's
+    normalized length; returns (carrier_end_time, last_carrier_word_index). Robust to the
+    aligner's word/punctuation segmentation and to minor paraphrase (do_sample varies duration).
+    """
+    target = _norm(carrier)
+    accumulated = ""
+    for index, word in enumerate(words):
+        accumulated += _norm(word["word"])
+        if len(accumulated) >= len(target):
+            return float(word["t_end"]), index
+    return (float(words[-1]["t_end"]), len(words) - 1) if words else (0.0, -1)
+
+
+def cues_from_words(
+    words: list[dict[str, Any]],
+    *,
+    start_index: int = 0,
+    t_offset: float = 0.0,
+    max_words: int = 5,
+) -> list[dict[str, Any]]:
+    """Group aligned words (from start_index on) into ~max_words caption cues, rebased so times are
+    relative to the trimmed audio (subtract t_offset, clamp >= 0). Drops the carrier words."""
+    real = words[start_index:]
+    cues: list[dict[str, Any]] = []
+    for start in range(0, len(real), max_words):
+        group = real[start : start + max_words]
+        if not group:
+            continue
+        cues.append(
+            {
+                "t_start": max(0.0, round(float(group[0]["t_start"]) - t_offset, 3)),
+                "t_end": max(0.0, round(float(group[-1]["t_end"]) - t_offset, 3)),
+                "text": " ".join(w["word"] for w in group).strip(),
+            }
+        )
+    return cues
 
 
 def publish_scene(

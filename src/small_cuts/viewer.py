@@ -2291,7 +2291,7 @@ def build_viewer_app() -> gr.Blocks:
                         # can validate by ear. Hidden (defaults English) on the v1 live Space so its
                         # UI/behaviour is unchanged; the v1 path ignores the value.
                         language = gr.Dropdown(
-                            choices=["English", "Spanish", "Catalan", "French"],
+                            choices=["English", "Spanish", "French"],
                             value="English",
                             label="Voice language",
                             container=False,

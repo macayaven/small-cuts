@@ -33,7 +33,7 @@ GOLDEN = {
         "prev_moment_id": None,
     },
     "narrated-scene.schema.json": {
-        "contract_version": "1.1.0",
+        "contract_version": "1.2.0",
         "seq": 412,
         "captured_at": "2026-06-12T09:30:00Z",
         "scene_id": "9f1c7e4a-2fa1-11d2-883f-0016d3cca427",
@@ -55,6 +55,10 @@ GOLDEN = {
             "tts_model": "hexgrad/Kokoro-82M",
             "latency_ms": {"queue": 40, "narration": 2400, "tts": 3500, "total": 6100},
         },
+        "timed_captions": [
+            {"t_start": 0.0, "t_end": 1.6, "text": "The bicycle is mustard yellow,"},
+            {"t_start": 1.6, "t_end": 3.4, "text": "which is also the color of the railing."},
+        ],
     },
     "scene-audio.schema.json": {
         "contract_version": "1.1.0",

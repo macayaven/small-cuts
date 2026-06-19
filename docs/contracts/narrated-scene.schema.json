@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/macayaven/small-cuts/docs/contracts/1.1.0/narrated-scene.schema.json",
+  "$id": "https://github.com/macayaven/small-cuts/docs/contracts/1.2.0/narrated-scene.schema.json",
   "title": "NarratedScene",
   "description": "One narrated scene, produced by the engine. The SAME object is the viewer's live SSE event (D7) and the library's stored entry (D6); media fields are engine-served URLs.",
   "type": "object",
@@ -143,6 +143,32 @@
         "null"
       ],
       "description": "Reserved: capability token for visibility=shared links. Enforcement spec lands with the library milestone."
+    },
+    "timed_captions": {
+      "type": "array",
+      "description": "Speech-relative caption cues (aligner-produced) for the viewer CC track + accessibility. Times are relative to the trimmed narration audio. Additive in v1.2.0; optional.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "t_start",
+          "t_end",
+          "text"
+        ],
+        "properties": {
+          "t_start": {
+            "type": "number",
+            "minimum": 0
+          },
+          "t_end": {
+            "type": "number",
+            "minimum": 0
+          },
+          "text": {
+            "type": "string"
+          }
+        }
+      }
     }
   }
 }

@@ -60,3 +60,27 @@ def test_invalidate_cache_forces_fresh_read(tmp_path):
     client.invalidate_cache()
     # After invalidation the next read re-globs the bucket and sees the freshly published scene.
     assert {s["scene_id"] for s in client.list_scenes()} == {"a", "b"}
+
+
+def test_uploaded_scenes_busts_fsspec_listing_cache_before_glob(tmp_path):
+    # HfFileSystem (fsspec) caches directory listings for the life of the fs object, so a newly
+    # published uploads/<id>/scene.json is never seen by a re-glob (the v2 manifest-less path).
+    # The relay must invalidate the fs listing cache before globbing — and before, not after.
+    events = []
+
+    class GlobFs:
+        def cat(self, path):
+            raise FileNotFoundError(path)  # no manifest.json -> manifest-less v2 path
+
+        def invalidate_cache(self, path=None):
+            events.append("invalidate")
+
+        def glob(self, pattern):
+            events.append("glob")
+            return []
+
+    client = _client(GlobFs(), tmp_path)
+    client.list_scenes()
+
+    assert "invalidate" in events, "fs listing cache was never invalidated before globbing"
+    assert events.index("invalidate") < events.index("glob"), "invalidate must precede the glob"

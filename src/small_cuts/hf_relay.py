@@ -216,6 +216,13 @@ class BucketSceneClient:
         glob = getattr(self.fs, "glob", None)
         if glob is None:
             return []
+        # fsspec caches directory listings for the life of the fs object, so a newly published
+        # uploads/<id>/scene.json would never be globbed (the v2 manifest-less path) until the fs is
+        # recreated. Bust the listing cache before globbing. The manifest (cat) path is unaffected,
+        # so the live Space's manifest-based relay is unchanged.
+        invalidate_listings = getattr(self.fs, "invalidate_cache", None)
+        if invalidate_listings is not None:
+            invalidate_listings()
         try:
             scene_paths = glob(f"{self.root}/uploads/*/scene.json")
         except FileNotFoundError:

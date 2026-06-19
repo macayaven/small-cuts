@@ -217,7 +217,10 @@ def process_cut(
         "tts_model": speech.model_id,
     }
     (scene_dir / "scene.json").write_text(json.dumps(scene, indent=2) + "\n")
-    HfApi().sync_bucket(
+    # Write with the explicit write-only, that-bucket-only token when provided (required for a
+    # private bucket); unset -> HfApi(token=None) is identical to the old anonymous HfApi().
+    write_token = os.environ.get("SMALL_CUTS_RELAY_WRITE_TOKEN") or None
+    HfApi(token=write_token).sync_bucket(
         source=str(scene_dir),
         dest=f"hf://buckets/{BUCKET_ID}/{RELAY_PREFIX}/{upload_prefix}",
     )

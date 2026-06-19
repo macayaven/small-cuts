@@ -1,4 +1,4 @@
-# CLAUDE.md — `docs/contracts/` (inter-team contracts, v1.1.0)
+# CLAUDE.md — `docs/contracts/` (inter-team contracts; NarratedScene v1.2.0, others v1.1.0)
 
 Module-local notes for the **contract schemas** — the *only* coupling between the space, mobile, and
 inference teams, and the **source of truth** for message shapes. Rationale + history are in the **KB**

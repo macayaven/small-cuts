@@ -238,6 +238,10 @@ class Narrator:
             "audio_url": f"uploads/{scene_id}/media/voice.wav",
         }
         now = datetime.now(timezone.utc).isoformat()
+        # duration = playback (narration-audio) length = the single-clock player's clock, NOT the
+        # source-clip length. keyframe_time = the poster frame's offset; the poster is the first
+        # decoded frame today (0.0) — representative-frame selection is a fast-follow.
+        duration = float(len(wav) / sample_rate) if sample_rate else None
         scene = build_narrated_scene(
             narration=narration,
             title=_derive_title(narration),
@@ -246,6 +250,8 @@ class Narrator:
             captured_at=now,
             created_at=now,
             scene_id=scene_id,
+            duration=duration,
+            keyframe_time=0.0,
             engine={
                 "narrator_model": OMNI_MODEL,
                 "narrator_backend": "transformers",

@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import Any, Protocol
 from uuid import uuid4
 
-CONTRACT_VERSION = "1.1.0"
+CONTRACT_VERSION = "1.2.0"
 TITLE_MAX = 80
 NARRATION_MAX = 2000
 
@@ -43,13 +43,16 @@ def build_narrated_scene(
     visibility: str = "public",
     engine: dict[str, Any] | None = None,
     timed_captions: list[dict[str, Any]] | None = None,
+    duration: float | None = None,
+    keyframe_time: float | None = None,
     scene_id: str | None = None,
     moment_id: str | None = None,
 ) -> dict[str, Any]:
     """Build a NarratedScene that validates against narrated-scene.schema.json by construction.
 
     Only schema keys are emitted (``additionalProperties: false``); provenance goes under
-    ``engine{}``. ``scene_id``/``moment_id`` default to real uuids.
+    ``engine{}``. ``scene_id``/``moment_id`` default to real uuids. ``duration`` is the playback
+    (narration-audio) length in seconds; ``keyframe_time`` is the poster frame's offset in the clip.
     """
     scene: dict[str, Any] = {
         "contract_version": CONTRACT_VERSION,
@@ -67,6 +70,10 @@ def build_narrated_scene(
     }
     if engine is not None:
         scene["engine"] = engine
+    if duration is not None:
+        scene["duration"] = duration
+    if keyframe_time is not None:
+        scene["keyframe_time"] = keyframe_time
     if timed_captions is not None:
         scene["timed_captions"] = timed_captions
     return scene

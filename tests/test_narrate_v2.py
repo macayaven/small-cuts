@@ -193,3 +193,35 @@ def test_build_scene_includes_timed_captions_when_provided():
 
 def test_build_scene_omits_timed_captions_when_absent():
     assert "timed_captions" not in _scene()  # additive/optional — absent by default
+
+
+# ── v1.2.0: duration + keyframe_time + version-truth ──
+
+
+def test_build_scene_stamps_contract_version_1_2_0():
+    # The v2 writer emits v1.2.0-only fields, so it must stamp 1.2.0 — not the legacy 1.1.0.
+    assert _scene()["contract_version"] == "1.2.0"
+
+
+def test_build_scene_emits_duration_and_keyframe_time_when_provided():
+    # duration = authoritative playback (narration-audio) length in s; keyframe_time = poster-frame
+    # offset in the clip. Both additive/optional in v1.2.0.
+    scene = _scene(duration=6.84, keyframe_time=3.2)
+    jsonschema.validate(scene, SCHEMA)
+    assert scene["duration"] == 6.84
+    assert scene["keyframe_time"] == 3.2
+
+
+def test_build_scene_omits_duration_and_keyframe_time_when_absent():
+    scene = _scene()
+    assert "duration" not in scene
+    assert "keyframe_time" not in scene
+
+
+def test_scene_carrying_a_v1_2_field_must_stamp_1_2_0():
+    # version-truth (panel #1 footgun): a 1.2.0-only field under a "1.1.0" stamp must be REJECTED,
+    # so a producer can never silently emit new fields while claiming the old version.
+    scene = _scene(timed_captions=[{"t_start": 0.0, "t_end": 1.0, "text": "x"}])
+    scene["contract_version"] = "1.1.0"
+    with pytest.raises(jsonschema.ValidationError):
+        jsonschema.validate(scene, SCHEMA)

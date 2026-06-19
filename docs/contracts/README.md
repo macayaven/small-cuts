@@ -3,8 +3,19 @@
 These schemas are the **only coupling** between the three teams
 ([architecture](../architecture.md)). Each team optimizes
 freely inside its boundary; the contracts keep the system aligned.
-Current contract set: **1.1.0** (post adversarial review — Codex + Gemini,
-2026-06-12).
+Current set: **NarratedScene 1.2.0**; the other three remain **1.1.0**. (NarratedScene 1.2.0 is an
+additive/minor bump, panel-reviewed GLM 5.2 + GPT-5.5 2026-06-19; the 1.1.0 baseline was
+adversarially reviewed Codex + Gemini 2026-06-12.)
+
+## Changelog
+
+- **NarratedScene 1.2.0** (2026-06-19, additive/minor) — adds optional `timed_captions`,
+  `duration` (authoritative playback / narration-audio length, seconds), and `keyframe_time`
+  (poster-frame offset in the clip). `contract_version` is now an `enum` of known versions, and a
+  `version-truth` conditional forces any scene carrying a 1.2.0-only field to stamp `1.2.0` — a
+  producer can no longer emit new fields while claiming the old version. Provenance lives under
+  `engine{}` (already present in 1.1.0). Legacy producers emitting only the 1.1.0 subset stay valid.
+- **All four schemas 1.1.0** (2026-06-12) — baseline after Codex + Gemini adversarial review.
 
 | Contract | Producer → Consumer | Schema |
 |---|---|---|

@@ -22,7 +22,7 @@
   "properties": {
     "contract_version": {
       "type": "string",
-      "pattern": "^1\\."
+      "enum": ["1.1.0", "1.2.0"]
     },
     "scene_id": {
       "type": "string",
@@ -144,6 +144,16 @@
       ],
       "description": "Reserved: capability token for visibility=shared links. Enforcement spec lands with the library milestone."
     },
+    "duration": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Authoritative playback duration in seconds — the narration/voice audio length, which is the single-clock player's clock (NOT the source-clip length). Additive in v1.2.0; optional."
+    },
+    "keyframe_time": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Offset in seconds from the start of the source clip of the producer-selected poster frame (the image itself is media.frame_url). Poster provenance, not a codec keyframe. Additive in v1.2.0; optional."
+    },
     "timed_captions": {
       "type": "array",
       "description": "Speech-relative caption cues (aligner-produced) for the viewer CC track + accessibility. Times are relative to the trimmed narration audio. Additive in v1.2.0; optional.",
@@ -170,5 +180,22 @@
         }
       }
     }
-  }
+  },
+  "allOf": [
+    {
+      "description": "Version-truth: any field introduced in v1.2.0 forces contract_version 1.2.0, so a producer can never emit new fields while stamping the old version.",
+      "if": {
+        "anyOf": [
+          { "required": ["duration"] },
+          { "required": ["keyframe_time"] },
+          { "required": ["timed_captions"] }
+        ]
+      },
+      "then": {
+        "properties": {
+          "contract_version": { "const": "1.2.0" }
+        }
+      }
+    }
+  ]
 }

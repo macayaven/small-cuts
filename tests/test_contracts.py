@@ -44,6 +44,8 @@ GOLDEN = {
         "title": "The Bicycle Is Mustard Yellow",
         "narration": "The bicycle is mustard yellow, which is also the color of the railing.",
         "visibility": "private",
+        "duration": 3.4,
+        "keyframe_time": 0.0,
         "media": {
             "frame_url": "/media/9f1c7e4a/frame.jpg",
             "card_url": "/media/9f1c7e4a/card.webp",
@@ -84,6 +86,27 @@ GOLDEN = {
 def test_golden_sample_validates(schema_name):
     schema = json.loads((CONTRACTS / schema_name).read_text())
     jsonschema.validate(GOLDEN[schema_name], schema)
+
+
+def test_narrated_scene_v1_2_field_requires_1_2_0_version():
+    # version-truth: the golden carries v1.2.0-only fields (duration/keyframe_time/timed_captions),
+    # so stamping it "1.1.0" must fail — the schema binds contract_version to its field set.
+    schema = json.loads((CONTRACTS / "narrated-scene.schema.json").read_text())
+    downgraded = {**GOLDEN["narrated-scene.schema.json"], "contract_version": "1.1.0"}
+    with pytest.raises(jsonschema.ValidationError):
+        jsonschema.validate(downgraded, schema)
+
+
+def test_narrated_scene_1_1_0_subset_still_validates():
+    # a legacy producer emitting ONLY the 1.1.0 subset (no new fields) stays valid under 1.1.0.
+    schema = json.loads((CONTRACTS / "narrated-scene.schema.json").read_text())
+    legacy = {
+        k: v
+        for k, v in GOLDEN["narrated-scene.schema.json"].items()
+        if k not in {"duration", "keyframe_time", "timed_captions"}
+    }
+    legacy["contract_version"] = "1.1.0"
+    jsonschema.validate(legacy, schema)
 
 
 @pytest.mark.parametrize("schema_name", sorted(GOLDEN))

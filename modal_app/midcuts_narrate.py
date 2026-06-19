@@ -38,6 +38,10 @@ MAX_UPLOAD_BYTES = 30 * 1024 * 1024
 MAX_UPLOAD_SECONDS = 30.0
 BEARER_ENV = "SMALL_CUTS_MODAL_API_TOKEN"
 WRITE_TOKEN_ENV = "SMALL_CUTS_RELAY_WRITE_TOKEN"
+# Push-not-poll: the Space's relay hook URL + the Bearer it shares with this producer. Both live in
+# the `mid-cuts` Modal secret; when absent the publish still succeeds and the poll endpoint is used.
+HOOK_URL_ENV = "SMALL_CUTS_RELAY_HOOK_URL"
+HOOK_TOKEN_ENV = "SMALL_CUTS_RELAY_HOOK_TOKEN"
 
 DEADPAN_SYS = (
     "You are a film narrator. Watch the clip and write ONE short, flat, factual sentence "
@@ -200,7 +204,7 @@ class Narrator:
         import soundfile as sf
         from huggingface_hub import HfApi
 
-        from small_cuts.narrate_v2 import build_narrated_scene, publish_scene
+        from small_cuts.narrate_v2 import build_narrated_scene, notify_relay_hook, publish_scene
 
         work = Path(tempfile.mkdtemp(prefix="midcuts-"))
         input_path = work / Path(filename).name
@@ -281,6 +285,14 @@ class Narrator:
             scene=scene,
             media_files={"frame.jpg": frame_path, "clip.mp4": clip_path, "voice.wav": voice_path},
             work_dir=work,
+        )
+        # Push-not-poll: tell the read-only Space a new cut landed so open browsers refresh once.
+        # Best-effort — the scene is already durably in the bucket; a hook outage never fails this.
+        notify_relay_hook(
+            os.environ.get(HOOK_URL_ENV),
+            os.environ.get(HOOK_TOKEN_ENV),
+            scene_id=scene["scene_id"],
+            seq=scene["seq"],
         )
         return {"status": "complete", "scene": scene}
 

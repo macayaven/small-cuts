@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -24,6 +25,7 @@ from uuid import uuid4
 CONTRACT_VERSION = "1.2.0"
 TITLE_MAX = 80
 NARRATION_MAX = 2000
+RELAY_HOOK_TIMEOUT_S = 5.0
 
 # (local file, remote bucket-relative path) -> None. The Modal app binds this to a token-scoped
 # bucket writer; tests bind it to a recorder.
@@ -146,6 +148,46 @@ def publish_scene(
     scene_path.write_text(json.dumps(scene, indent=2) + "\n")
     uploader(scene_path, f"{base}/scene.json")
     return {"scene_id": scene_id, "remote_prefix": base}
+
+
+def notify_relay_hook(
+    hook_url: str | None,
+    hook_token: str | None,
+    *,
+    scene_id: str,
+    seq: int,
+    post: Callable[..., Any] | None = None,
+) -> bool:
+    """Best-effort one-shot push to the Space relay hook after a scene is published (push-not-poll).
+
+    POSTs the pointer ``{scene_id, seq}`` with the shared Bearer; the Space re-reads the bucket and
+    emits the scene on its SSE stream so open browsers refresh once. Returns ``True`` only when the
+    hook accepts the push (HTTP 2xx). NEVER raises: the scene is already durably in the bucket, so a
+    hook outage (Space paused/503, network) must not fail the publish — it is logged and swallowed.
+    A no-op returning ``False`` when unconfigured (missing url or token): the bucket stays the
+    source of truth and the headless poll endpoint remains the fallback. ``post`` is injectable
+    (defaults to ``httpx.post``), mirroring this module's ``Uploader`` seam for unit tests.
+    """
+    url = (hook_url or "").strip()
+    token = (hook_token or "").strip()
+    if not (url and token):
+        return False
+    try:
+        if post is None:
+            import httpx  # inside the try so even a missing-httpx env degrades to a no-op
+
+            post = httpx.post
+        response = post(
+            url,
+            headers={"Authorization": f"Bearer {token}"},
+            json={"scene_id": scene_id, "seq": seq},
+            timeout=RELAY_HOOK_TIMEOUT_S,
+        )
+        response.raise_for_status()
+        return True
+    except Exception as exc:  # best-effort: the scene is already published; never fail on the hook
+        print(f"narrate_v2: relay hook notify failed: {exc!r}", file=sys.stderr, flush=True)
+        return False
 
 
 @dataclass(frozen=True)

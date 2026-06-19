@@ -179,6 +179,15 @@ class BucketSceneClient:
                     f"could not read relay bucket {self.bucket_id}: {exc}"
                 ) from exc
 
+    def invalidate_cache(self) -> None:
+        """Drop the cached scene list so the next ``list_scenes`` re-reads the bucket.
+
+        The relay-scene push path calls this so a freshly published cut is visible immediately, even
+        within ``MANIFEST_CACHE_TTL_S`` of a prior read; non-push reads keep using the cache.
+        """
+        with self._manifest_lock:
+            self._manifest_cache = None
+
     def _manifest_scenes(self, raw: bytes) -> list[dict[str, Any]]:
         manifest = json.loads(raw.decode("utf-8"))
         scenes = manifest.get("scenes", [])

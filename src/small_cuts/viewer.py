@@ -2534,7 +2534,7 @@ def build_viewer_app() -> gr.Blocks:
                     js=FINISH_OR_CANCEL_GENERATION_JS,
                 )
 
-            def _tick(state):
+            def _paint(state):
                 state = _engine_ui_state(state)
                 previous_scenes = state["scenes"]
                 (
@@ -2585,6 +2585,15 @@ def build_viewer_app() -> gr.Blocks:
                     visibility_update,
                 )
 
+            def _tick(state):
+                # Push-not-poll cache-bust: a relay-scene SSE event means a fresh cut just landed in
+                # the bucket; drop the BucketSceneClient manifest cache so this repaint re-reads it
+                # now (within MANIFEST_CACHE_TTL_S it would otherwise serve the stale cached list).
+                # Named `_tick` because the relay_scene custom event exposes it as the "_tick" api.
+                if isinstance(engine, BucketSceneClient):
+                    engine.invalidate_cache()
+                return _paint(state)
+
             poll_outputs = [
                 header,
                 stage,
@@ -2606,11 +2615,12 @@ def build_viewer_app() -> gr.Blocks:
                 # (seed=[]) and otherwise only repaint on a pushed relay-scene SSE event — so a
                 # fresh page load (a judge opening the Space, or a tab after a silent manifest
                 # promote that fired no hook) would show nothing until the next push. Run the SAME
-                # proven _tick once on load so the current bucket library always renders. This is a
-                # one-shot initial render, NOT a timer/poll loop (the no-Space-polling rule targets
-                # timers, not page-load reads).
+                # proven repaint once on load so the current bucket library always renders. This is
+                # a one-shot initial render, NOT a timer/poll loop. It uses _paint (no cache-bust)
+                # so concurrent page loads still share the manifest cache; only a push (_tick)
+                # forces a fresh re-read.
                 demo.load(
-                    _tick,
+                    _paint,
                     inputs=[scenes_state],
                     outputs=poll_outputs,
                     queue=False,

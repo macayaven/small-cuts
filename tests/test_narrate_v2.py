@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -225,3 +226,94 @@ def test_scene_carrying_a_v1_2_field_must_stamp_1_2_0():
     scene["contract_version"] = "1.1.0"
     with pytest.raises(jsonschema.ValidationError):
         jsonschema.validate(scene, SCHEMA)
+
+
+def test_production_shaped_scene_is_contract_valid_and_clean():
+    # fold-in #1 for the REAL producer shape: mirror exactly what midcuts_narrate.py publishes
+    # (engine{} provenance + duration + keyframe_time + all three media keys). A full validate
+    # catches nested pollution in media{}/engine{} (both additionalProperties:false); the subset
+    # checks guard top-level + nested keys against the schema.
+    scene = _scene(
+        media={
+            "frame_url": "uploads/x/media/frame.jpg",
+            "clip_url": "uploads/x/media/clip.mp4",
+            "audio_url": "uploads/x/media/voice.wav",
+        },
+        duration=6.84,
+        keyframe_time=0.0,
+        engine={
+            "narrator_model": "Qwen/Qwen3-Omni-30B-A3B-Instruct",
+            "narrator_backend": "transformers",
+            "tts_model": "Qwen/Qwen3-Omni-30B-A3B-Instruct",
+        },
+    )
+    jsonschema.validate(scene, SCHEMA)
+    assert set(scene) <= set(SCHEMA["properties"])
+    assert set(scene["media"]) <= set(SCHEMA["properties"]["media"]["properties"])
+    assert set(scene["engine"]) <= set(SCHEMA["properties"]["engine"]["properties"])
+
+
+# ── push-not-poll: best-effort one-shot completion webhook to the Space relay hook ──
+
+
+class _OkResponse:
+    def raise_for_status(self) -> None:
+        return None
+
+
+def test_notify_relay_hook_skips_when_unconfigured():
+    # No url and/or no token => no POST at all (push simply not configured); returns False so the
+    # caller can tell it was a no-op. The bucket is the source of truth; the poll endpoint remains.
+    calls: list[Any] = []
+
+    def fake_post(*args: Any, **kwargs: Any) -> _OkResponse:
+        calls.append((args, kwargs))
+        return _OkResponse()
+
+    assert narrate_v2.notify_relay_hook("", "", scene_id="s", seq=1, post=fake_post) is False
+    assert (
+        narrate_v2.notify_relay_hook("https://x/hook", "", scene_id="s", seq=1, post=fake_post)
+        is False
+    )
+    assert narrate_v2.notify_relay_hook("", "tok", scene_id="s", seq=1, post=fake_post) is False
+    assert calls == []
+
+
+def test_notify_relay_hook_posts_pointer_with_bearer():
+    calls: list[Any] = []
+
+    def fake_post(url, *, headers, json, timeout) -> _OkResponse:
+        calls.append((url, headers, json, timeout))
+        return _OkResponse()
+
+    ok = narrate_v2.notify_relay_hook(
+        "https://space.example/small-cuts/hooks/relay-scene",
+        "secret",
+        scene_id="9f1c7e4a",
+        seq=412,
+        post=fake_post,
+    )
+
+    assert ok is True
+    assert calls == [
+        (
+            "https://space.example/small-cuts/hooks/relay-scene",
+            {"Authorization": "Bearer secret"},
+            {"scene_id": "9f1c7e4a", "seq": 412},
+            5.0,
+        )
+    ]
+
+
+def test_notify_relay_hook_failure_is_non_fatal(capsys):
+    # The scene is already durably published before the hook fires; a hook outage (Space paused/503,
+    # network) must NEVER raise — it is logged and swallowed, returning False.
+    def fake_post(*args: Any, **kwargs: Any):
+        raise RuntimeError("space is paused (503)")
+
+    ok = narrate_v2.notify_relay_hook(
+        "https://x/hook", "secret", scene_id="s", seq=1, post=fake_post
+    )
+
+    assert ok is False
+    assert "relay hook notify failed" in capsys.readouterr().err

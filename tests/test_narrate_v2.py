@@ -317,3 +317,169 @@ def test_notify_relay_hook_failure_is_non_fatal(capsys):
 
     assert ok is False
     assert "relay hook notify failed" in capsys.readouterr().err
+
+
+# ── narration-quality: language config (native prompts + warm-up carrier) ──
+#
+# The selectable languages (en/es/fr — the by-ear-validated set) must each carry a native-language
+# narration prompt, a warm-up carrier, a prime instruction, and a title prompt. Anything else must
+# degrade gracefully to an English-base prompt with no carrier (so the aligner step is skipped).
+
+_SELECTABLE = ("English", "Spanish", "French")
+
+
+@pytest.mark.parametrize("language", _SELECTABLE)
+def test_selectable_languages_are_fully_configured(language):
+    assert language in narrate_v2.NATIVE_PROMPTS
+    assert language in narrate_v2.PRIME_CARRIER
+    assert language in narrate_v2.PRIME_INSTRUCTION
+    assert language in narrate_v2.TITLE_PROMPTS
+    # native prompt + title prompt are (system, user) pairs of non-empty strings
+    for pair in (narrate_v2.NATIVE_PROMPTS[language], narrate_v2.TITLE_PROMPTS[language]):
+        system, user = pair
+        assert system.strip() and user.strip()
+
+
+def test_every_carrier_has_a_prime_instruction_template():
+    # prime needs BOTH a carrier and an instruction; a carrier with no template would crash .format
+    assert set(narrate_v2.PRIME_CARRIER) <= set(narrate_v2.PRIME_INSTRUCTION)
+    for template in narrate_v2.PRIME_INSTRUCTION.values():
+        assert "{carrier}" in template  # the instruction interpolates the carrier text
+
+
+def test_build_narration_prompts_uses_native_pair_for_native_language():
+    system, user = narrate_v2.build_narration_prompts("Spanish", prime=False)
+    assert (system, user) == narrate_v2.NATIVE_PROMPTS["Spanish"]
+    assert "español" in system.lower()
+    assert "write the narration in" not in system.lower()  # not the anglophone fallback
+
+
+def test_build_narration_prompts_falls_back_to_english_base_for_unknown_language():
+    system, user = narrate_v2.build_narration_prompts("German", prime=False)
+    assert system.startswith(narrate_v2.DEADPAN_SYS)
+    assert "Write the narration in German." in system
+    assert user == narrate_v2.USER_PROMPT
+
+
+def test_build_narration_prompts_prime_appends_carrier_and_instruction():
+    base_system, _ = narrate_v2.build_narration_prompts("Spanish", prime=False)
+    primed_system, _ = narrate_v2.build_narration_prompts("Spanish", prime=True)
+    assert primed_system.startswith(base_system)  # native prompt preserved, instruction appended
+    assert narrate_v2.PRIME_CARRIER["Spanish"] in primed_system  # carrier text embedded
+
+
+def test_build_narration_prompts_prime_is_noop_without_a_carrier():
+    # German has no carrier → prime must NOT alter the prompt (and must not raise on a missing tmpl)
+    primed = narrate_v2.build_narration_prompts("German", prime=True)
+    plain = narrate_v2.build_narration_prompts("German", prime=False)
+    assert primed == plain
+
+
+def test_has_carrier_true_for_selectable_false_for_other():
+    assert narrate_v2.has_carrier("French") is True
+    assert narrate_v2.has_carrier("German") is False
+
+
+def test_build_title_prompts_uses_native_language():
+    system, user = narrate_v2.build_title_prompts("French")
+    assert system.strip() and user.strip()
+    assert "français" in system.lower()
+
+
+def test_build_title_prompts_falls_back_for_unknown_language():
+    system, user = narrate_v2.build_title_prompts("German")
+    assert "German" in system  # fallback asks for the title in the requested language
+    assert user.strip()
+
+
+# ── narration-quality: model-title cleaner (regression #2 — titles must be model titles) ──
+
+
+def test_clean_model_title_passes_through_a_clean_title():
+    assert narrate_v2.clean_model_title("The White Car", fallback="x") == "The White Car"
+
+
+def test_clean_model_title_strips_surrounding_quotes():
+    assert narrate_v2.clean_model_title('"The White Car"', fallback="x") == "The White Car"
+
+
+def test_clean_model_title_strips_markdown_bold():
+    assert narrate_v2.clean_model_title("**The White Car**", fallback="x") == "The White Car"
+
+
+def test_clean_model_title_strips_leading_label():
+    assert narrate_v2.clean_model_title("Title: The White Car", fallback="x") == "The White Car"
+    es = narrate_v2.clean_model_title("Título: El coche blanco", fallback="x")
+    assert es == "El coche blanco"
+
+
+def test_clean_model_title_strips_trailing_punctuation():
+    assert narrate_v2.clean_model_title("The White Car.", fallback="x") == "The White Car"
+
+
+def test_clean_model_title_takes_first_real_title_line():
+    # models sometimes add a trailing parenthetical gloss; the title is the first real line
+    raw = "The White Car\n\n(a short, evocative two-word title)"
+    assert narrate_v2.clean_model_title(raw, fallback="x") == "The White Car"
+
+
+def test_clean_model_title_skips_a_label_only_first_line():
+    # "Title:\nThe White Car" — the label line cleans to empty, so fall through to the next line
+    assert narrate_v2.clean_model_title("Title:\nThe White Car", fallback="x") == "The White Car"
+
+
+def test_clean_model_title_strips_guillemets():
+    fr = narrate_v2.clean_model_title("«La voiture blanche»", fallback="x")
+    assert fr == "La voiture blanche"
+
+
+def test_clean_model_title_empty_or_blank_uses_fallback():
+    assert narrate_v2.clean_model_title("", fallback="Fallback Title") == "Fallback Title"
+    assert narrate_v2.clean_model_title("   \n  ", fallback="Fallback Title") == "Fallback Title"
+
+
+def test_clean_model_title_caps_length_to_title_max():
+    long_title = "word " * 40  # 200 chars
+    cleaned = narrate_v2.clean_model_title(long_title, fallback="x")
+    assert len(cleaned) <= narrate_v2.TITLE_MAX
+
+
+def test_clean_model_title_fallback_is_also_capped():
+    cleaned = narrate_v2.clean_model_title("", fallback="z" * 200)
+    assert len(cleaned) == narrate_v2.TITLE_MAX
+
+
+def test_clean_model_title_never_returns_empty_even_when_fallback_is_empty():
+    # review #3/#6: schema has no minLength, but an empty slate title is bad UX; guarantee non-empty
+    # when BOTH the model title and the derive_title fallback clean to empty (empty narration case).
+    assert narrate_v2.clean_model_title("", fallback="") == "Untitled"
+    assert narrate_v2.clean_model_title("   ", fallback="  ") == "Untitled"
+
+
+# ── narration-quality: carrier-cut safety net (review #4/#5) ──
+
+
+def test_has_speech_content_true_for_words_false_for_punctuation():
+    # review #5: a lone aligner punctuation token (".") must NOT count as real narration, or the
+    # carrier-cut gate would publish a near-empty trimmed take instead of falling back to untrimmed.
+    assert narrate_v2.has_speech_content("Una persona abre la puerta") is True
+    assert narrate_v2.has_speech_content(".") is False
+    assert narrate_v2.has_speech_content("  ,  …  ") is False
+    assert narrate_v2.has_speech_content("") is False
+
+
+def test_carrier_cut_index_returns_last_word_when_carrier_never_fully_matched():
+    # review #4: if the aligned words are shorter than the carrier, cut at the last word — the
+    # caller then sees real_text == "" (words[idx+1:] empty) and falls back to the untrimmed take.
+    words = _aligned(("Preparando", 0.0, 0.4), ("la", 0.4, 0.6))
+    t_cut, idx = narrate_v2.carrier_cut_index(words, _CARRIER)  # carrier is far longer
+    assert idx == len(words) - 1
+    assert t_cut == words[-1]["t_end"]
+    assert " ".join(w["word"] for w in words[idx + 1 :]).strip() == ""  # untrimmed fallback
+
+
+def test_carrier_cut_index_empty_words_returns_sentinel():
+    # review #4: no aligned words at all → (0.0, -1); words[idx+1:] over [] is empty → fallback.
+    t_cut, idx = narrate_v2.carrier_cut_index([], _CARRIER)
+    assert (t_cut, idx) == (0.0, -1)
+    assert " ".join(w["word"] for w in [][idx + 1 :]).strip() == ""

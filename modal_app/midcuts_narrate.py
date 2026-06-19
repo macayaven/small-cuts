@@ -32,7 +32,9 @@ from fastapi.responses import JSONResponse
 BUCKET_ID = "macayaven/mid-cuts"
 RELAY_PREFIX = "relay"
 OMNI_MODEL = "Qwen/Qwen3-Omni-30B-A3B-Instruct"
+ALIGNER_MODEL = "Qwen/Qwen3-ForcedAligner-0.6B"
 OMNI_GPU = "H200"
+ALIGNER_GPU = "L4"  # 0.6B aligner: a cheap modern bf16 GPU is plenty.
 SPEAKER = "Aiden"
 MAX_UPLOAD_BYTES = 30 * 1024 * 1024
 MAX_UPLOAD_SECONDS = 30.0
@@ -43,12 +45,8 @@ WRITE_TOKEN_ENV = "SMALL_CUTS_RELAY_WRITE_TOKEN"
 HOOK_URL_ENV = "SMALL_CUTS_RELAY_HOOK_URL"
 HOOK_TOKEN_ENV = "SMALL_CUTS_RELAY_HOOK_TOKEN"
 
-DEADPAN_SYS = (
-    "You are a film narrator. Watch the clip and write ONE short, flat, factual sentence "
-    "describing the moment. Declarative only. No exclamations, no emphasis, no emotion words, "
-    "no asterisks, brackets, parentheses, or stage directions. Neutral, monotone, deadpan."
-)
-USER_PROMPT = "Narrate this moment."
+# Narration prompts/carriers + the title cleaner live in the importable, unit-tested
+# small_cuts.narrate_v2 (imported inside the GPU methods, where /root/src is on sys.path).
 
 hf_cache = modal.Volume.from_name("midcuts-hf-cache", create_if_missing=True)
 
@@ -73,6 +71,25 @@ image = (
     .add_local_dir("src", remote_path="/root/src")
     .add_local_dir("docs/contracts", remote_path="/root/docs/contracts")
     .add_local_dir("src/small_cuts/seed_media", remote_path="/root/seed_media")
+)
+
+# Separate image for the ForcedAligner: qwen-asr hard-pins transformers==4.57.6, which conflicts
+# with Omni's git-main, so the carrier-cut step must run in its own container (DESIGN/Phase-0).
+# Don't pin huggingface-hub here (>=1.19 sends the resolver into anyio backtracking).
+aligner_image = (
+    modal.Image.debian_slim(python_version="3.12")
+    .pip_install(
+        "qwen-asr",
+        "torch>=2.4",
+        "accelerate>=1.0",
+        "numpy>=1.26",
+        # small_cuts/__init__ registers the HEIF opener at import time, so importing
+        # small_cuts.narrate_v2 (for carrier_cut_index) needs pillow + pillow-heif here too.
+        "pillow>=10.0",
+        "pillow-heif>=0.18",
+    )
+    .env({"HF_HOME": "/cache/hf"})
+    .add_local_dir("src", remote_path="/root/src")  # for small_cuts.narrate_v2.carrier_cut_index
 )
 
 app = modal.App("midcuts-narrate")
@@ -143,23 +160,21 @@ class Narrator:
         )
         self.processor = Qwen3OmniMoeProcessor.from_pretrained(OMNI_MODEL)
 
-    def _narrate(self, clip_path: Path, language: str) -> tuple[str, Any, int]:
+    def _omni_generate(
+        self, frames: list, system_prompt: str, user_prompt: str, *, return_audio: bool
+    ) -> tuple[str, Any]:
+        """Run ONE Omni pass over the decoded frames. Returns (text, audio); ``audio`` is None when
+        ``return_audio`` is False (the text-only title pass — no Talker, no spoken JSON braces)."""
         from qwen_omni_utils import process_mm_info
 
-        frames = _sample_video_frames(clip_path)
-        use_audio = False  # frame list carries no audio
+        use_audio = False  # the frame list carries no audio
         conversation = [
-            {
-                "role": "system",
-                "content": [
-                    {"type": "text", "text": f"{DEADPAN_SYS} Write the narration in {language}."}
-                ],
-            },
+            {"role": "system", "content": [{"type": "text", "text": system_prompt}]},
             {
                 "role": "user",
                 "content": [
                     {"type": "video", "video": frames},
-                    {"type": "text", "text": USER_PROMPT},
+                    {"type": "text", "text": user_prompt},
                 ],
             },
         ]
@@ -177,16 +192,46 @@ class Narrator:
             use_audio_in_video=use_audio,
         )
         inputs = inputs.to(self.model.device).to(self.model.dtype)
-        text_ids, audio = self.model.generate(
-            **inputs, speaker=SPEAKER, use_audio_in_video=use_audio, return_audio=True
-        )
-        narration = self.processor.batch_decode(
+        generate_kwargs: dict[str, Any] = {
+            "use_audio_in_video": use_audio,
+            "return_audio": return_audio,
+        }
+        if return_audio:
+            generate_kwargs["speaker"] = SPEAKER
+        generated = self.model.generate(**inputs, **generate_kwargs)
+        if return_audio:
+            text_ids, audio = generated
+        else:
+            text_ids = generated[0] if isinstance(generated, tuple | list) else generated
+            audio = None
+        decoded = self.processor.batch_decode(
             text_ids[:, inputs["input_ids"].shape[1] :],
             skip_special_tokens=True,
             clean_up_tokenization_spaces=False,
         )[0].strip()
+        return decoded, audio
+
+    def _narrate(self, frames: list, language: str, *, prime: bool) -> tuple[str, Any, int]:
+        """Narration pass → (text, wav, sample_rate). ``prime`` prepends the warm-up carrier (later
+        trimmed by the aligner) to defeat the autoregressive cold-start accent ramp."""
+        from small_cuts.narrate_v2 import build_narration_prompts
+
+        system_prompt, user_prompt = build_narration_prompts(language, prime=prime)
+        narration, audio = self._omni_generate(
+            frames, system_prompt, user_prompt, return_audio=True
+        )
         wav = audio.reshape(-1).detach().cpu().numpy()
         return narration, wav, 24_000
+
+    def _title(self, frames: list, language: str) -> str:
+        """Title pass → a short evocative title (raw model text, cleaned by clean_model_title). A
+        SEPARATE text-only pass: the spoken narration pass can't emit JSON (the Talker would speak
+        the braces), so the model title comes from its own return_audio=False generation."""
+        from small_cuts.narrate_v2 import build_title_prompts
+
+        system_prompt, user_prompt = build_title_prompts(language)
+        title, _ = self._omni_generate(frames, system_prompt, user_prompt, return_audio=False)
+        return title
 
     @modal.method()
     def process(
@@ -199,20 +244,62 @@ class Narrator:
         sys.path.insert(0, "/root/src")
         import json
         import shutil
+        from uuid import uuid4
 
         import jsonschema
         import soundfile as sf
         from huggingface_hub import HfApi
 
-        from small_cuts.narrate_v2 import build_narrated_scene, notify_relay_hook, publish_scene
+        from small_cuts.narrate_v2 import (
+            PRIME_CARRIER,
+            build_narrated_scene,
+            clean_model_title,
+            has_carrier,
+            notify_relay_hook,
+            publish_scene,
+        )
 
         work = Path(tempfile.mkdtemp(prefix="midcuts-"))
         input_path = work / Path(filename).name
         input_path.write_bytes(video_bytes)
 
-        narration, wav, sample_rate = self._narrate(input_path, language)
+        frames = _sample_video_frames(input_path)
+        if not frames:
+            raise RuntimeError("no decodable video frames")
 
-        from uuid import uuid4
+        # 1) narration pass — carrier-primed when a warm-up carrier exists for the language.
+        use_prime = has_carrier(language)
+        narration, wav, sample_rate = self._narrate(frames, language, prime=use_prime)
+
+        # 2) warm-up cut (L4 aligner, separate container) — align the carrier+narration speech, find
+        # where the carrier ends, and drop it; the remaining audio is already past the cold-start
+        # ramp. Best-effort: a degenerate cut (empty real text) falls back to the untrimmed take.
+        # Trade-off: this blocking .remote() keeps the H200 alive while the L4 cold-starts; accepted
+        # because the two models can't share an image (qwen-asr pins an older transformers).
+        if use_prime:
+            cut = Aligner().cut_carrier.remote(
+                wav=wav,
+                sample_rate=sample_rate,
+                full_text=narration,
+                carrier=PRIME_CARRIER[language],
+                language=language,
+            )
+            if cut.get("real_text"):
+                narration, wav, sample_rate = (
+                    cut["real_text"],
+                    cut["trimmed_wav"],
+                    cut["sample_rate"],
+                )
+            else:
+                print(
+                    "midcuts: carrier cut produced empty narration; publishing untrimmed",
+                    file=sys.stderr,
+                    flush=True,
+                )
+
+        # 3) title pass — a SEPARATE text-only Omni pass (the spoken pass can't emit JSON). Falls
+        # back to derive_title(narration) only when the model title is malformed/empty (contract).
+        title = clean_model_title(self._title(frames, language), fallback=_derive_title(narration))
 
         scene_id = str(uuid4())
         media_dir = work / "media"
@@ -220,10 +307,7 @@ class Narrator:
         frame_path = media_dir / "frame.jpg"
         clip_path = media_dir / "clip.mp4"
         voice_path = media_dir / "voice.wav"
-        first_frames = _sample_video_frames(input_path, max_frames=1)
-        if not first_frames:
-            raise RuntimeError("no decodable video frames")
-        first_frames[0].convert("RGB").save(frame_path, "JPEG", quality=90)
+        frames[0].convert("RGB").save(frame_path, "JPEG", quality=90)
         if input_path.suffix.lower() in {".mp4", ".mov", ".m4v"}:
             shutil.copyfile(input_path, clip_path)
         else:
@@ -248,7 +332,7 @@ class Narrator:
         duration = float(len(wav) / sample_rate) if sample_rate else None
         scene = build_narrated_scene(
             narration=narration,
-            title=_derive_title(narration),
+            title=title,
             style_key=style_key,
             media=media,
             captured_at=now,
@@ -295,6 +379,67 @@ class Narrator:
             seq=scene["seq"],
         )
         return {"status": "complete", "scene": scene}
+
+
+@app.cls(
+    image=aligner_image,
+    gpu=ALIGNER_GPU,
+    timeout=900,
+    volumes={"/cache": hf_cache},
+    min_containers=0,
+    buffer_containers=0,
+    scaledown_window=60,
+    max_containers=2,
+)
+class Aligner:
+    """ForcedAligner in its own image (transformers==4.57.6) — used only to trim the warm-up
+    carrier off the front of the narration audio. No bucket secret: it never publishes."""
+
+    @modal.enter()
+    def load(self) -> None:
+        import torch
+        from qwen_asr import Qwen3ForcedAligner
+
+        self.aligner = Qwen3ForcedAligner.from_pretrained(
+            ALIGNER_MODEL, dtype=torch.bfloat16, device_map="cuda:0"
+        )
+
+    @modal.method()
+    def cut_carrier(
+        self,
+        *,
+        wav: Any,
+        sample_rate: int,
+        full_text: str,
+        carrier: str,
+        language: str,
+    ) -> dict[str, Any]:
+        """Align the carrier+narration speech to ``full_text``, find where the carrier ends, and
+        return the real narration text + the wav with the warm-up sliced off the front. An empty
+        ``real_text`` (degenerate alignment) signals the caller to publish the untrimmed take."""
+        sys.path.insert(0, "/root/src")
+        import numpy as np
+
+        from small_cuts.narrate_v2 import carrier_cut_index, has_speech_content
+
+        data = np.asarray(wav, dtype="float32")
+        results = self.aligner.align(audio=(data, sample_rate), text=full_text, language=language)
+        words = [
+            {"word": w.text, "t_start": float(w.start_time), "t_end": float(w.end_time)}
+            for w in results[0]
+        ]
+        t_cut, idx = carrier_cut_index(words, carrier)
+        real_text = " ".join(w["word"] for w in words[idx + 1 :]).strip()
+        # A punctuation-only tail (a lone aligner ".") isn't real narration → signal untrimmed.
+        if not has_speech_content(real_text):
+            real_text = ""
+        trimmed = data[int(round(t_cut * sample_rate)) :]
+        return {
+            "real_text": real_text,
+            "trimmed_wav": trimmed,
+            "sample_rate": sample_rate,
+            "t_cut": t_cut,
+        }
 
 
 @app.function(
@@ -357,7 +502,19 @@ def smoke() -> dict[str, Any]:
 
     import jsonschema
 
-    from small_cuts.narrate_v2 import MockNarrationBackend, build_narrated_scene
+    from small_cuts.narrate_v2 import (
+        MockNarrationBackend,
+        build_narrated_scene,
+        build_narration_prompts,
+        build_title_prompts,
+        clean_model_title,
+    )
+
+    # New-pipeline wiring smoke (CPU): prompts resolve + title cleaner works before any GPU spend.
+    primed_system, _ = build_narration_prompts("Spanish", prime=True)
+    assert "«" in primed_system  # carrier instruction embedded
+    assert all(build_title_prompts(lang)[0] for lang in ("English", "Spanish", "French"))
+    assert clean_model_title('"Probe"', fallback="x") == "Probe"
 
     result = MockNarrationBackend().narrate(
         Path("/root/seed_media/rayuela.mp4"), language="Spanish"
@@ -382,9 +539,26 @@ def smoke() -> dict[str, Any]:
     return {"ok": True, "scene_id": scene["scene_id"], "narration": result.text}
 
 
+@app.function(image=aligner_image, timeout=300)
+def smoke_aligner() -> dict[str, Any]:
+    """CPU-only: prove the aligner image imports qwen-asr AND can import the shared cut helper from
+    the small_cuts package (which registers the HEIF opener at import) — catches a missing
+    pillow-heif/pillow in the L4 image before any GPU spend. No model load."""
+    sys.path.insert(0, "/root/src")
+    import transformers
+    from qwen_asr import Qwen3ForcedAligner  # noqa: F401
+
+    from small_cuts.narrate_v2 import carrier_cut_index, has_speech_content
+
+    assert carrier_cut_index([], "carrier") == (0.0, -1)
+    assert has_speech_content("hola") and not has_speech_content(".")
+    return {"ok": True, "transformers": transformers.__version__}
+
+
 @app.local_entrypoint()
 def smoke_main() -> None:
     print(smoke.remote())
+    print(smoke_aligner.remote())
 
 
 @app.local_entrypoint()

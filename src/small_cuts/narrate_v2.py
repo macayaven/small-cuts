@@ -32,6 +32,160 @@ RELAY_HOOK_TIMEOUT_S = 5.0
 Uploader = Callable[[Path, str], None]
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Narration language config (the by-ear quality lever — CARLOS tunes these strings).
+#
+# Two knobs feed the Talker's accent (Phase 0.5 finding): (1) the *text* the Thinker writes — a
+# native-language prompt yields cleaner, less-anglophone text than an English "write in {language}"
+# prompt; (2) the autoregressive cold-start ramp — the first ~1s of speech drifts toward the
+# dominant (EN+ZH) manifold before settling, so the Talker speaks a throwaway warm-up *carrier*
+# first and we trim it off (the aligner finds where it ends). Only the by-ear-validated languages
+# (en/es/fr) are configured; any other language degrades to an English-base prompt with NO carrier,
+# so the aligner step is skipped. English is configured too; English-on-Aiden has a mild ramp, so
+# drop "English" from PRIME_CARRIER if the warm-up isn't worth the extra step there.
+# ─────────────────────────────────────────────────────────────────────────────
+
+DEADPAN_SYS = (
+    "You are a film narrator. Watch the clip and write ONE short, flat, factual sentence "
+    "describing the moment. Declarative only. No exclamations, no emphasis, no emotion words, "
+    "no asterisks, brackets, parentheses, or stage directions. Neutral, monotone, deadpan."
+)
+USER_PROMPT = "Narrate this moment."
+
+# Native-language (system, user) narration prompts. English is the canonical deadpan spec; es/fr
+# are faithful ports (peninsular Spanish; standard French).
+NATIVE_PROMPTS: dict[str, tuple[str, str]] = {
+    "English": (DEADPAN_SYS, USER_PROMPT),
+    "Spanish": (
+        "Eres un narrador de cine español. Observa el clip y escribe UNA sola frase corta, plana "
+        "y objetiva que describa el momento. Solo en modo declarativo. Sin exclamaciones, sin "
+        "énfasis, sin palabras emotivas, sin asteriscos, corchetes, paréntesis ni acotaciones "
+        "escénicas. Neutral, monótono e inexpresivo. Escribe la narración en español de España "
+        "(castellano peninsular).",
+        "Narra este momento.",
+    ),
+    "French": (
+        "Tu es un narrateur de cinéma français. Regarde le plan et écris UNE seule phrase courte, "
+        "neutre et factuelle qui décrit le moment. Uniquement au mode déclaratif. Sans "
+        "exclamations, sans emphase, sans mots émotifs, sans astérisques, crochets, parenthèses ni "
+        "didascalies. Neutre, monotone, impassible. Rédige la narration en français.",
+        "Raconte ce moment.",
+    ),
+}
+
+# ~7-8s deadpan warm-up the Talker speaks FIRST, then trimmed off. Two self-contained sentences
+# ending in a full stop (so it can't bleed into the real narration) and content-neutral (so it
+# can't bias what the model describes). ~16-18 words ≈ 7s spoken — the Phase-0 workflow found <5s
+# under-warms the cold-start ramp.
+PRIME_CARRIER: dict[str, str] = {
+    "English": (
+        "Preparing the narrator's voice for this recording in English. "
+        "The description of the scene begins right now."
+    ),
+    "Spanish": (
+        "Preparando la voz del narrador en español de España. "
+        "La descripción de la escena comienza ahora."
+    ),
+    "French": (
+        "Préparation de la voix du narrateur en français pour cet enregistrement. "
+        "La description de la scène commence maintenant."
+    ),
+}
+
+# Per-language instruction (appended to the system prompt) telling the Thinker to open with the
+# carrier verbatim. Written in the target language to keep the model in a native context.
+PRIME_INSTRUCTION: dict[str, str] = {
+    "English": "Begin your answer exactly with the sentence «{carrier}» and then the narration.",
+    "Spanish": (
+        "Comienza tu respuesta exactamente con la frase «{carrier}» y, a continuación, la "
+        "narración."
+    ),
+    "French": "Commence ta réponse exactement par la phrase «{carrier}» puis la narration.",
+}
+
+# Text-only (system, user) title prompts — a SEPARATE pass (return_audio=False) so the Talker never
+# speaks JSON braces (the §7 #2 constraint). Output is run through clean_model_title.
+_TITLE_SYS_EN = (
+    "You are a film editor. Watch the clip and give a short, evocative title for this moment, "
+    "between two and five words. Output ONLY the title — no quotation marks, no surrounding "
+    "punctuation, and no explanation."
+)
+TITLE_PROMPTS: dict[str, tuple[str, str]] = {
+    "English": (_TITLE_SYS_EN, "Title this moment."),
+    "Spanish": (
+        "Eres montador de cine. Observa el clip y propón un título breve y evocador para este "
+        "momento, de dos a cinco palabras. Devuelve SOLO el título, sin comillas, sin signos de "
+        "puntuación alrededor y sin explicaciones. Escribe el título en español.",
+        "Titula este momento.",
+    ),
+    "French": (
+        "Tu es monteur de cinéma. Regarde le plan et propose un titre court et évocateur pour ce "
+        "moment, de deux à cinq mots. Renvoie UNIQUEMENT le titre, sans guillemets, sans "
+        "ponctuation autour et sans explication. Rédige le titre en français.",
+        "Donne un titre à ce moment.",
+    ),
+}
+
+
+def has_carrier(language: str) -> bool:
+    """True when a warm-up carrier AND its instruction exist → enable the carrier+cut path;
+    otherwise the narration is published untrimmed (no aligner hop)."""
+    return language in PRIME_CARRIER and language in PRIME_INSTRUCTION
+
+
+def build_narration_prompts(language: str, *, prime: bool) -> tuple[str, str]:
+    """Return the (system, user) narration prompt for ``language``.
+
+    Native languages use their hand-tuned pair; anything else falls back to the English deadpan
+    base plus "Write the narration in {language}.". When ``prime`` and a carrier exists, the carrier
+    instruction is appended to the system prompt (a no-op for carrier-less languages).
+    """
+    if language in NATIVE_PROMPTS:
+        system, user = NATIVE_PROMPTS[language]
+    else:
+        system = f"{DEADPAN_SYS} Write the narration in {language}."
+        user = USER_PROMPT
+    if prime and has_carrier(language):
+        system = f"{system} {PRIME_INSTRUCTION[language].format(carrier=PRIME_CARRIER[language])}"
+    return system, user
+
+
+def build_title_prompts(language: str) -> tuple[str, str]:
+    """Return the (system, user) prompt for the text-only title pass.
+
+    Native languages use their hand-tuned pair; anything else falls back to the English title system
+    plus "Write the title in {language}.".
+    """
+    if language in TITLE_PROMPTS:
+        return TITLE_PROMPTS[language]
+    return f"{_TITLE_SYS_EN} Write the title in {language}.", "Title this moment."
+
+
+_TITLE_LABEL_RE = re.compile(r"^(title|titre|t[íi]tulo)\s*[:：\-–—]\s*", re.IGNORECASE)
+_TITLE_WRAPPERS = " \t*_`\"'«»“”‘’#"
+
+
+def clean_model_title(raw: str, *, fallback: str) -> str:
+    """Normalize the text-only title pass into a bare title; fall back on malformed/empty output.
+
+    The model is asked to emit only the title, but we tolerate quotes, markdown bold/headers, a
+    leading "Title:"/"Titre:"/"Título:" label, a trailing parenthetical gloss on a second line, and
+    trailing punctuation. Returns the first line that yields a non-empty title after cleaning; if
+    none does, returns ``fallback`` (the derive_title-of-narration the contract allows). Always
+    capped to TITLE_MAX.
+    """
+    for line in (raw or "").splitlines() or [""]:
+        candidate = line.strip(_TITLE_WRAPPERS)
+        candidate = _TITLE_LABEL_RE.sub("", candidate).strip(_TITLE_WRAPPERS)
+        candidate = " ".join(candidate.split())
+        candidate = candidate.rstrip(".,;:!?·。").strip(_TITLE_WRAPPERS).strip()
+        if candidate:
+            return candidate[:TITLE_MAX]
+    # The contract allows an empty title, but a blank slate reads badly; guarantee non-empty even
+    # when the derive_title fallback is also empty (the empty-narration degenerate case).
+    return (fallback or "").strip()[:TITLE_MAX] or "Untitled"
+
+
 def build_narrated_scene(
     *,
     narration: str,
@@ -99,6 +253,15 @@ def carrier_cut_index(words: list[dict[str, Any]], carrier: str) -> tuple[float,
         if len(accumulated) >= len(target):
             return float(word["t_end"]), index
     return (float(words[-1]["t_end"]), len(words) - 1) if words else (0.0, -1)
+
+
+def has_speech_content(text: str) -> bool:
+    """True when ``text`` has at least one alphanumeric (speech) character.
+
+    Used to reject a punctuation-only carrier-cut tail — if the aligner segments a lone "." as the
+    only word after the carrier, the trim must fall back to the untrimmed take rather than publish a
+    near-empty narration."""
+    return bool(_norm(text or ""))
 
 
 def cues_from_words(

@@ -66,6 +66,7 @@ ENGINE_URL_ENV = "SMALL_CUTS_ENGINE_URL"
 DISABLE_ENGINE_AUTODETECT_ENV = "SMALL_CUTS_DISABLE_ENGINE_AUTODETECT"
 MODAL_API_URL_ENV = "SMALL_CUTS_MODAL_API_URL"
 MODAL_API_TOKEN_ENV = "SMALL_CUTS_MODAL_API_TOKEN"
+MODAL_API_VERSION_ENV = "SMALL_CUTS_MODAL_API_VERSION"
 UPLOAD_SANDBOX_ENV = "SMALL_CUTS_ENABLE_UPLOAD_SANDBOX"
 UPLOAD_MAX_SECONDS_ENV = "SMALL_CUTS_UPLOAD_MAX_SECONDS"
 UPLOAD_MAX_BYTES = 80 * 1024 * 1024
@@ -711,6 +712,14 @@ def _modal_upload_client() -> ModalUploadClient:
     if not base_url or not token:
         raise ModalUploadError("Modal upload is not configured.")
     return ModalUploadClient(base_url, token)
+
+
+def _modal_api_is_v2() -> bool:
+    """True when the upload front door targets the v2 ``/v2/narrate`` pipeline (mid-cuts).
+
+    Env-gated (default ``v1``) so the live Space's v1 ``/v1/cuts`` upload path stays unchanged.
+    """
+    return os.environ.get(MODAL_API_VERSION_ENV, "v1").strip().lower() == "v2"
 
 
 def _style_label(style_key: str) -> str:
@@ -1377,6 +1386,8 @@ def _submit_modal_upload(
     scene_hint: str,
     state: Any,
     media_client: EngineClient | BucketSceneClient,
+    *,
+    language: str = "English",
 ) -> tuple[Any, ...]:
     if not video_path:
         return _modal_upload_warning_response("Upload a video clip first.", state)
@@ -1401,11 +1412,18 @@ def _submit_modal_upload(
         )
 
     try:
-        raw_scene = _modal_upload_client().submit_video(
-            video_path,
-            style_key=style_key,
-            scene_hint=scene_hint,
-        )
+        if _modal_api_is_v2():
+            raw_scene = _modal_upload_client().submit_video_v2(
+                video_path,
+                style_key=style_key,
+                language=language,
+            )
+        else:
+            raw_scene = _modal_upload_client().submit_video(
+                video_path,
+                style_key=style_key,
+                scene_hint=scene_hint,
+            )
     except (ModalUploadError, httpx.HTTPError) as exc:
         capture_exception(exc)
         return _modal_upload_warning_response(f"Modal upload failed: {exc}", state)
@@ -2269,6 +2287,17 @@ def build_viewer_app() -> gr.Blocks:
                             max_lines=2,
                             elem_classes="sc-upload-hint",
                         )
+                        # Voice language for the v2 /v2/narrate pipeline — only the languages Carlos
+                        # can validate by ear. Hidden (defaults English) on the v1 live Space so its
+                        # UI/behaviour is unchanged; the v1 path ignores the value.
+                        language = gr.Dropdown(
+                            choices=["English", "Spanish", "Catalan", "French"],
+                            value="English",
+                            label="Voice language",
+                            container=False,
+                            visible=_modal_api_is_v2(),
+                            elem_classes="sc-upload-language",
+                        )
                         upload_status = gr.HTML(
                             render_upload_status_html(),
                             elem_classes="sc-plain",
@@ -2379,6 +2408,7 @@ def build_viewer_app() -> gr.Blocks:
                     video_path,
                     style_key,
                     scene_hint,
+                    language,
                     state,
                     upload_status_html,
                 ):
@@ -2415,6 +2445,7 @@ def build_viewer_app() -> gr.Blocks:
                             scene_hint,
                             state,
                             engine,
+                            language=language,
                         )
                     finally:
                         if upload_budget is not None:
@@ -2505,6 +2536,7 @@ def build_viewer_app() -> gr.Blocks:
                         drop_video,
                         style,
                         hint,
+                        language,
                         scenes_state,
                         upload_status,
                     ],

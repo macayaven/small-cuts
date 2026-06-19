@@ -267,6 +267,55 @@ def test_submit_modal_upload_pins_returned_scene(monkeypatch):
     assert visibility["value"] == "public"
 
 
+def test_submit_modal_upload_routes_to_v2_with_language(monkeypatch):
+    # With the v2 env flag set, the upload routes to submit_video_v2 carrying the chosen language
+    # (NOT the v1 submit_video/scene_hint path). Guards the env-gated branch + language threading.
+    monkeypatch.setenv(viewer.MODAL_API_VERSION_ENV, "v2")
+    scene = {
+        "scene_id": "v2-1",
+        "title": "A v2 Scene",
+        "narration": "deadpan voice.",
+        "style_key": "deadpan",
+        "created_at": "2026-06-19T12:00:00+00:00",
+        "visibility": "public",
+        "media": {
+            "frame_url": "uploads/v2-1/media/frame.jpg",
+            "clip_url": "uploads/v2-1/media/clip.mp4",
+            "audio_url": "uploads/v2-1/media/voice.wav",
+        },
+        "duration": 6.0,
+    }
+    calls = []
+
+    class FakeV2Client:
+        def submit_video_v2(self, video_path, *, style_key, language):
+            calls.append(("v2", video_path, style_key, language))
+            return scene
+
+        def submit_video(self, *args, **kwargs):
+            raise AssertionError("v1 submit_video must not be called in v2 mode")
+
+    class FakeMediaClient:
+        base_url = ""
+
+        def media_url(self, path):
+            return f"/gradio_api/file=/tmp/{Path(path).name}" if path else None
+
+    monkeypatch.setattr(viewer, "_video_duration_s", lambda _path: 6.0)
+    monkeypatch.setattr(viewer, "_modal_upload_client", lambda: FakeV2Client())
+
+    viewer._submit_modal_upload(
+        "clip.mp4",
+        "deadpan",
+        "ignored hint",
+        viewer._pack_engine_ui_state([], None, None, None),
+        FakeMediaClient(),
+        language="Catalan",
+    )
+
+    assert calls == [("v2", "clip.mp4", "deadpan", "Catalan")]
+
+
 def test_submit_modal_upload_modal_failure_warns_instead_of_raising(monkeypatch):
     warnings = []
     captured = []
@@ -359,6 +408,7 @@ def test_modal_upload_soft_failure_renders_inline_status(monkeypatch, tmp_path):
         "clip.mp4",
         "deadpan",
         "",
+        "English",
         state,
         viewer.render_upload_status_html("running"),
     )
@@ -388,6 +438,7 @@ def test_modal_upload_missing_preflight_state_clears_running_status(monkeypatch,
         "clip.mp4",
         "deadpan",
         "",
+        "English",
         viewer._pack_engine_ui_state([], None, None, None),
         viewer.render_upload_status_html("running"),
     )

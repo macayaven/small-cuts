@@ -300,12 +300,12 @@ def persona_choices() -> list[tuple[str, str]]:
 
 
 def _persona_incode_steer(key: str, language: str) -> str:
-    """The committed in-code steer for (key, language); English-fallback for an
-    unknown language. Returns "" for the default/unknown persona."""
+    """The committed in-code steer for (key, language); unknown language resolves to "".
+    Returns "" for the default/unknown persona."""
     by_lang = PERSONA_STEERS.get(key)
     if by_lang is None:
         return ""
-    return by_lang.get(language) or by_lang["English"]
+    return by_lang.get(language, "")
 
 
 def resolve_persona_steer(key: str, language: str) -> str:

@@ -589,6 +589,11 @@ def test_unknown_persona_resolves_to_empty():
     assert resolve_persona_steer("does-not-exist", "English") == ""
 
 
+def test_known_persona_unknown_language_resolves_to_empty():
+    # Only en/es/fr are exposed; any other language resolves to "" (spec: unknown -> empty).
+    assert resolve_persona_steer("storybook", "German") == ""
+
+
 def test_known_persona_resolves_to_native_string():
     for key in PERSONA_STEERS:
         for lang in PERSONA_LANGS:

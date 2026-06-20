@@ -35,6 +35,7 @@ def main() -> None:
             )
             created += 1
             print(f"seeded {name}")
+    client.flush()
     print(f"done: {created} prompts")
 
 

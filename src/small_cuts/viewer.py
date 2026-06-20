@@ -2341,17 +2341,6 @@ def build_viewer_app() -> gr.Blocks:
                             elem_classes="sc-upload-hint",
                             visible=not _modal_api_is_v2(),
                         )
-                        # Voice language for the v2 /v2/narrate pipeline — only the languages Carlos
-                        # can validate by ear. Hidden (defaults English) on the v1 live Space so its
-                        # UI/behaviour is unchanged; the v1 path ignores the value.
-                        language = gr.Dropdown(
-                            choices=["English", "Spanish", "French"],
-                            value="English",
-                            label="Voice language",
-                            container=False,
-                            visible=_modal_api_is_v2(),
-                            elem_classes="sc-upload-language",
-                        )
                         # v2 narrator persona: a closed set of curated manner steers
                         # (replaces the free-text hint on the v2 path). Hidden on v1,
                         # where the free-text hint is the scene-content cue instead.
@@ -2362,6 +2351,17 @@ def build_viewer_app() -> gr.Blocks:
                             container=False,
                             visible=_modal_api_is_v2(),
                             elem_classes="sc-upload-persona",
+                        )
+                        # Voice language for the v2 /v2/narrate pipeline — only the languages Carlos
+                        # can validate by ear. Hidden (defaults English) on the v1 live Space so its
+                        # UI/behaviour is unchanged; the v1 path ignores the value.
+                        language = gr.Dropdown(
+                            choices=["English", "Spanish", "French"],
+                            value="English",
+                            label="Voice language",
+                            container=False,
+                            visible=_modal_api_is_v2(),
+                            elem_classes="sc-upload-language",
                         )
                         upload_status = gr.HTML(
                             render_upload_status_html(),

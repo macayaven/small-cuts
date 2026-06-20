@@ -665,6 +665,52 @@ def test_upload_sandbox_renders_plain_upload_icon_without_login(monkeypatch):
     assert "disabled" not in upload_buttons[0]["props"].get("elem_classes", [])
 
 
+def _find_upload_component(app, elem_class: str):
+    """Return the first config component whose elem_classes contains elem_class."""
+    return next(
+        (c for c in app.config["components"] if elem_class in c["props"].get("elem_classes", [])),
+        None,
+    )
+
+
+def test_v2_build_persona_visible_hint_hidden(monkeypatch, tmp_path):
+    """Guard: v2 build → persona dropdown visible, free-text hint hidden."""
+    monkeypatch.setenv(viewer.ENGINE_URL_ENV, "http://127.0.0.1:9")
+    monkeypatch.setenv(viewer.UPLOAD_SANDBOX_ENV, "1")
+    monkeypatch.setenv(viewer.MODAL_API_URL_ENV, "https://example.modal.run")
+    monkeypatch.setenv("SMALL_CUTS_UPLOAD_BUDGET_DB", str(tmp_path / "budget.sqlite3"))
+    monkeypatch.setenv(viewer.MODAL_API_VERSION_ENV, "v2")
+
+    app = viewer.build_viewer_app()
+
+    persona_comp = _find_upload_component(app, "sc-upload-persona")
+    hint_comp = _find_upload_component(app, "sc-upload-hint")
+
+    assert persona_comp is not None, "sc-upload-persona component not found"
+    assert hint_comp is not None, "sc-upload-hint component not found"
+    assert persona_comp["props"]["visible"] is True, "persona should be visible on v2"
+    assert hint_comp["props"]["visible"] is False, "hint should be hidden on v2"
+
+
+def test_v1_build_persona_hidden_hint_visible(monkeypatch, tmp_path):
+    """Guard: v1 build → persona dropdown hidden, free-text hint visible."""
+    monkeypatch.setenv(viewer.ENGINE_URL_ENV, "http://127.0.0.1:9")
+    monkeypatch.setenv(viewer.UPLOAD_SANDBOX_ENV, "1")
+    monkeypatch.setenv(viewer.MODAL_API_URL_ENV, "https://example.modal.run")
+    monkeypatch.setenv("SMALL_CUTS_UPLOAD_BUDGET_DB", str(tmp_path / "budget.sqlite3"))
+    monkeypatch.delenv(viewer.MODAL_API_VERSION_ENV, raising=False)
+
+    app = viewer.build_viewer_app()
+
+    persona_comp = _find_upload_component(app, "sc-upload-persona")
+    hint_comp = _find_upload_component(app, "sc-upload-hint")
+
+    assert persona_comp is not None, "sc-upload-persona component not found"
+    assert hint_comp is not None, "sc-upload-hint component not found"
+    assert persona_comp["props"]["visible"] is False, "persona should be hidden on v1"
+    assert hint_comp["props"]["visible"] is True, "hint should be visible on v1"
+
+
 def test_upload_status_html_has_pending_clapperboard():
     # R5: one loader — the clapperboard — replaces the old border-spinner in the running state.
     html = viewer.render_upload_status_html("running")

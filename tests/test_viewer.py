@@ -1557,3 +1557,10 @@ def test_header_renders_lang_and_full_label():
 def test_header_no_label_when_absent():
     out = viewer.render_header_html("Night alley", "", live=False, language=None)
     assert "·" not in out.split("sc-header-channel")[0]  # no label span in the title area
+
+
+def test_cc_button_styled_into_pill():
+    css = viewer.VIEWER_CSS
+    # CC adopts the icon-button footprint and reserves gold for the active state.
+    assert ".sc-cc-btn.sc-icbtn" in css
+    assert "body.sc-cc-on .sc-cc-btn.sc-icbtn" in css

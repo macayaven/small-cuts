@@ -189,9 +189,11 @@ footer { display: none !important; }
 /* CC captions default OFF (voice-first thesis); shown only when the viewer opts in. The gate lives
    on <body> so the preference survives the per-scene re-render of #sc-subtitle. */
 body:not(.sc-cc-on) .sc-subtitle { display: none; }
-.sc-cc-btn.sc-icbtn { color: #1a1a1f !important; font-size: .72rem !important; font-weight: 700;
-  letter-spacing: .04em; -webkit-mask-image: none !important; mask-image: none !important; }
-body.sc-cc-on .sc-cc-btn.sc-icbtn { background-color: #D4AF37 !important; }
+.sc-cc-btn.sc-icbtn { color: #1a1a1f !important; font-size: .66rem !important; font-weight: 700;
+  letter-spacing: .06em; display: flex !important; align-items: center; justify-content: center;
+  -webkit-mask-image: none !important; mask-image: none !important; }
+body.sc-cc-on .sc-cc-btn.sc-icbtn { background-color: #D4AF37 !important;
+  color: #1a1a1f !important; }
 
 .sc-rec { position: absolute; top: 12px; left: 12px; display: inline-flex; align-items: center;
   gap: 7px; background: rgba(16,16,20,.78); color: #D4AF37; padding: 4px 11px;

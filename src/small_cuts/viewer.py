@@ -53,7 +53,7 @@ from .hf_relay import (
     BucketSceneClient as _BucketSceneClient,
 )
 from .modal_upload import ModalUploadClient, ModalUploadError
-from .narrate_v2 import PERSONA_DEFAULT_KEY, persona_choices, resolve_persona_steer
+from .narrate_v2 import PERSONA_DEFAULT_KEY, PERSONA_LABELS, persona_choices, resolve_persona_steer
 from .observability import capture_exception
 from .styles import DEFAULT_STYLE_KEY, STYLES
 from .title_card import derive_title
@@ -790,6 +790,7 @@ def format_stage(
             "visibility": None,
             "source_icon": None,
             "timed_captions": None,
+            "language": None,
         }
     base = engine_url.rstrip("/")
 
@@ -802,7 +803,10 @@ def format_stage(
     return {
         "scene_id": scene.get("scene_id"),
         "title": scene.get("title") or "Untitled Scene",
-        "style_label": _style_label(scene.get("style_key", "")),
+        "style_label": (
+            persona_display(scene.get("persona"))[1] or _style_label(scene.get("style_key", ""))
+        ),
+        "language": scene.get("language"),
         "caption": scene.get("narration", ""),
         "frame_src": scene.get("frame_src") or _absolute(media.get("frame_url")),
         "clip_src": scene.get("clip_src") or _absolute(media.get("clip_url")),
@@ -937,6 +941,7 @@ def render_header_html(
     style_label: str,
     live: bool,
     notice: str | None = None,
+    language: str | None = None,
 ) -> str:
     # One unnamed signature voice — the channel is Small Cuts, not a per-cut director.
     # style_label is retained in the call signature for future per-owner channels.
@@ -949,10 +954,15 @@ def render_header_html(
         )
     else:
         headline = '<span class="sc-live-dot"></span>Happening now' if live else html.escape(title)
+    abbr = lang_abbr(language)
+    if abbr and style_label and not live:
+        right = f"{abbr} · {html.escape(style_label)}"
+    else:
+        right = "Small Cuts"
     return (
         f'<div class="sc-header sc-{state}">'
         f'<span class="sc-header-title">{headline}</span>'
-        '<span class="sc-header-channel">Small Cuts</span>'
+        f'<span class="sc-header-channel">{right}</span>'
         "</div>"
     )
 
@@ -1048,10 +1058,31 @@ def _gallery_media_src(src: str) -> str:
     return src
 
 
+_LANG_ABBR = {"English": "EN", "Spanish": "ES", "French": "FR"}
+
+
+def lang_abbr(language: str | None) -> str:
+    """Two-letter abbreviation for a known language; "" otherwise."""
+    return _LANG_ABBR.get(language or "", "")
+
+
+def persona_display(persona: str | None) -> tuple[str, str]:
+    """(archetype, full label) for a persona key; ("", "") if unknown."""
+    label = PERSONA_LABELS.get(persona or "")
+    if not label:
+        return ("", "")
+    return (label.split(" · ", 1)[0], label)
+
+
 def _shelf_caption(scene: dict[str, Any]) -> str:
     title = scene.get("title", "")
     source_icon = _source_icon(scene)
-    return f"{_SOURCE_SHELF_PREFIXES.get(source_icon, '')}{title}"
+    caption = f"{_SOURCE_SHELF_PREFIXES.get(source_icon, '')}{title}"
+    abbr = lang_abbr(scene.get("language"))
+    archetype, _ = persona_display(scene.get("persona"))
+    if abbr and archetype:
+        caption = f"{caption} · {abbr} · {archetype}"
+    return caption
 
 
 def _scene_with_media_urls(
@@ -1122,7 +1153,11 @@ def poll_engine(
     notice = "New cut available" if channel_live and not on_air else None
 
     header = render_header_html(
-        payload["title"], payload["style_label"], live=channel_live, notice=notice
+        payload["title"],
+        payload["style_label"],
+        live=channel_live,
+        notice=notice,
+        language=payload.get("language"),
     )
     stage = render_stage_html(
         payload["frame_src"],

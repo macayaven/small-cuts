@@ -793,7 +793,9 @@ def test_format_stage_fresh_scene_is_live():
     assert payload["audio_src"] == f"{ENGINE_URL}/media/9f1c7e4a/voice.wav"
     assert payload["caption"] == GOLDEN_SCENE["narration"]
     assert payload["title"] == "The Bicycle Is Mustard Yellow"
-    assert payload["style_label"] == "Wes Anderson Symmetrist"
+    # persona wins over v1 style_label when present
+    assert payload["style_label"] == "Nature Documentary · Attenborough-style"
+    assert payload["language"] == "English"
     assert payload["visibility"] == "private"
     assert payload["scene_id"] == GOLDEN_SCENE["scene_id"]
 
@@ -863,8 +865,15 @@ def test_shelf_items_marks_source_tiles():
 
     items = viewer.shelf_items([glasses_scene, upload_scene], FakeMediaClient())
 
-    assert items[0] == ("/media/frame.jpg", f"{viewer.GLASSES_SHELF_PREFIX}A Glasses Scene")
-    assert items[1] == ("/media/upload.jpg", f"{viewer.UPLOAD_SHELF_PREFIX}An Upload Scene")
+    # GOLDEN_SCENE carries persona=nature_doc + language=English → suffix appended
+    assert items[0] == (
+        "/media/frame.jpg",
+        f"{viewer.GLASSES_SHELF_PREFIX}A Glasses Scene · EN · Nature Documentary",
+    )
+    assert items[1] == (
+        "/media/upload.jpg",
+        f"{viewer.UPLOAD_SHELF_PREFIX}An Upload Scene · EN · Nature Documentary",
+    )
 
 
 def test_write_voice_evicts_old_generated_audio(tmp_path, monkeypatch):
@@ -891,7 +900,8 @@ def test_shelf_items_unwraps_gradio_file_routes_for_gallery(tmp_path):
         FakeMediaClient(),
     )
 
-    assert item == (str(cached), GOLDEN_SCENE["title"])
+    # GOLDEN_SCENE carries persona=nature_doc + language=English → suffix appended
+    assert item == (str(cached), f"{GOLDEN_SCENE['title']} · EN · Nature Documentary")
 
 
 def test_playback_js_uses_trusted_dom_click_for_audio():
@@ -970,7 +980,13 @@ def test_poll_engine_renders_the_whole_page():
     # audio is now the hidden narration <audio> element carrying the served voice URL
     assert "<audio" in audio and 'id="sc-voice"' in audio
     assert f"{ENGINE_URL}/media/9f1c7e4a/voice.wav" in audio
-    assert shelf == [(f"{ENGINE_URL}/media/9f1c7e4a/frame.jpg", "The Bicycle Is Mustard Yellow")]
+    # GOLDEN_SCENE carries persona=nature_doc + language=English → suffix appended
+    assert shelf == [
+        (
+            f"{ENGINE_URL}/media/9f1c7e4a/frame.jpg",
+            "The Bicycle Is Mustard Yellow · EN · Nature Documentary",
+        )
+    ]
     assert scenes == [GOLDEN_SCENE]
     assert current == GOLDEN_SCENE["scene_id"]
     assert playing == GOLDEN_SCENE["scene_id"]
@@ -1502,3 +1518,42 @@ def test_effective_style_key_v2_uses_persona():
 
 def test_effective_style_key_v1_keeps_style():
     assert viewer._effective_style_key("nature_doc", "noir", is_v2=False) == "noir"
+
+
+def test_persona_display_splits_archetype_and_full():
+    arche, full = viewer.persona_display("nature_doc")
+    assert arche == "Nature Documentary"
+    assert full == "Nature Documentary · Attenborough-style"
+
+
+def test_persona_display_unknown_is_empty():
+    assert viewer.persona_display("nope") == ("", "")
+
+
+def test_lang_abbr():
+    assert viewer.lang_abbr("English") == "EN"
+    assert viewer.lang_abbr("Spanish") == "ES"
+    assert viewer.lang_abbr("French") == "FR"
+    assert viewer.lang_abbr("Klingon") == ""
+    assert viewer.lang_abbr(None) == ""
+
+
+def test_shelf_caption_appends_label_when_present():
+    scene = {"title": "Night alley", "persona": "nature_doc", "language": "English"}
+    assert viewer._shelf_caption(scene) == "Night alley · EN · Nature Documentary"
+
+
+def test_shelf_caption_unchanged_when_absent():
+    assert viewer._shelf_caption({"title": "Night alley"}) == "Night alley"
+
+
+def test_header_renders_lang_and_full_label():
+    out = viewer.render_header_html(
+        "Night alley", "Nature Documentary · Attenborough-style", live=False, language="English"
+    )
+    assert "EN · Nature Documentary · Attenborough-style" in out
+
+
+def test_header_no_label_when_absent():
+    out = viewer.render_header_html("Night alley", "", live=False, language=None)
+    assert "·" not in out.split("sc-header-channel")[0]  # no label span in the title area

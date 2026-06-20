@@ -1283,7 +1283,9 @@ def _go_live_handler(
     return (
         # An upload is a finished, processed cut — show its auto-title, not "Happening now"
         # (that headline is reserved for live engine-mode capture).
-        render_header_html(payload["title"], payload["style_label"], live=False),
+        render_header_html(
+            payload["title"], payload["style_label"], live=False, language=payload.get("language")
+        ),
         render_stage_html(
             payload["frame_src"],
             payload["caption"],
@@ -1398,7 +1400,12 @@ def _engine_scene_control_outputs(
     else:
         audio_update = gr.skip()
     return (
-        render_header_html(payload["title"], payload["style_label"], payload["live"]),
+        render_header_html(
+            payload["title"],
+            payload["style_label"],
+            payload["live"],
+            language=payload.get("language"),
+        ),
         render_stage_html(
             payload["frame_src"],
             payload["caption"],
@@ -1513,7 +1520,9 @@ def _submit_modal_upload(
     payload = format_stage(scene)
     scene_id = payload["scene_id"]
     return (
-        render_header_html(payload["title"], payload["style_label"], live=False),
+        render_header_html(
+            payload["title"], payload["style_label"], live=False, language=payload.get("language")
+        ),
         render_stage_html(
             payload["frame_src"],
             payload["caption"],
@@ -2235,7 +2244,9 @@ def build_viewer_app() -> gr.Blocks:
         boot_audio = _audio_html(None)
     else:
         boot = format_stage(seed[-1] if seed else None)
-        boot_header = render_header_html(boot["title"], boot["style_label"], live=False)
+        boot_header = render_header_html(
+            boot["title"], boot["style_label"], live=False, language=boot.get("language")
+        )
         boot_stage = render_stage_html(
             boot["frame_src"],
             boot["caption"],
@@ -2575,7 +2586,10 @@ def build_viewer_app() -> gr.Blocks:
                             payload = format_stage(saved_scene)
                             result = (
                                 render_header_html(
-                                    payload["title"], payload["style_label"], live=False
+                                    payload["title"],
+                                    payload["style_label"],
+                                    live=False,
+                                    language=payload.get("language"),
                                 ),
                                 render_stage_html(
                                     payload["frame_src"],
@@ -2867,7 +2881,12 @@ def build_viewer_app() -> gr.Blocks:
                     payload["scene_id"], liked_ids, reported_ids
                 )
                 return (
-                    render_header_html(payload["title"], payload["style_label"], payload["live"]),
+                    render_header_html(
+                        payload["title"],
+                        payload["style_label"],
+                        payload["live"],
+                        language=payload.get("language"),
+                    ),
                     render_stage_html(
                         payload["frame_src"],
                         payload["caption"],
@@ -2891,7 +2910,12 @@ def build_viewer_app() -> gr.Blocks:
                     payload["scene_id"], liked_ids, reported_ids
                 )
                 return (
-                    render_header_html(payload["title"], payload["style_label"], payload["live"]),
+                    render_header_html(
+                        payload["title"],
+                        payload["style_label"],
+                        payload["live"],
+                        language=payload.get("language"),
+                    ),
                     render_stage_html(
                         payload["frame_src"],
                         payload["caption"],
@@ -2918,7 +2942,12 @@ def build_viewer_app() -> gr.Blocks:
                     payload["scene_id"], liked_ids, reported_ids
                 )
                 return (
-                    render_header_html(payload["title"], payload["style_label"], payload["live"]),
+                    render_header_html(
+                        payload["title"],
+                        payload["style_label"],
+                        payload["live"],
+                        language=payload.get("language"),
+                    ),
                     render_stage_html(
                         payload["frame_src"],
                         payload["caption"],
@@ -2979,7 +3008,12 @@ def build_viewer_app() -> gr.Blocks:
                     scenes = _merge_scene_lists(seed, upload_library.list_scenes(limit=SHELF_LIMIT))
                     payload = format_stage(scene)
                     outputs = (
-                        render_header_html(payload["title"], payload["style_label"], live=False),
+                        render_header_html(
+                            payload["title"],
+                            payload["style_label"],
+                            live=False,
+                            language=payload.get("language"),
+                        ),
                         render_stage_html(
                             payload["frame_src"],
                             payload["caption"],

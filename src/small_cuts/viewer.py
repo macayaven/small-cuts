@@ -53,6 +53,7 @@ from .hf_relay import (
     BucketSceneClient as _BucketSceneClient,
 )
 from .modal_upload import ModalUploadClient, ModalUploadError
+from .narrate_v2 import PERSONA_DEFAULT_KEY, persona_choices, resolve_persona_steer
 from .observability import capture_exception
 from .styles import DEFAULT_STYLE_KEY, STYLES
 from .title_card import derive_title
@@ -1400,6 +1401,18 @@ def _modal_upload_warning_response(message: str, state: Any) -> tuple[Any, ...]:
     )
 
 
+def _effective_upload_context(
+    persona_key: str, scene_hint: str, language: str, *, is_v2: bool
+) -> str:
+    """The value sent as `context`/`scene_hint` to Modal.
+
+    v2: resolve the chosen persona to its curated manner steer (default → "").
+    v1: pass the free-text scene hint through unchanged (byte-identical legacy)."""
+    if is_v2:
+        return resolve_persona_steer(persona_key, language)
+    return scene_hint
+
+
 def _submit_modal_upload(
     video_path: str | None,
     style_key: str,
@@ -2319,12 +2332,14 @@ def build_viewer_app() -> gr.Blocks:
                             elem_classes="sc-upload-video",
                         )
                         # R2/R3: the optional scene-hint sits below the zone; cleared on success.
+                        # Hidden on v2 where the persona dropdown replaces free-text steering.
                         hint = gr.Textbox(
                             show_label=False,
                             placeholder="Whisper context to the narrator (optional)",
                             lines=1,
                             max_lines=2,
                             elem_classes="sc-upload-hint",
+                            visible=not _modal_api_is_v2(),
                         )
                         # Voice language for the v2 /v2/narrate pipeline — only the languages Carlos
                         # can validate by ear. Hidden (defaults English) on the v1 live Space so its
@@ -2336,6 +2351,17 @@ def build_viewer_app() -> gr.Blocks:
                             container=False,
                             visible=_modal_api_is_v2(),
                             elem_classes="sc-upload-language",
+                        )
+                        # v2 narrator persona: a closed set of curated manner steers
+                        # (replaces the free-text hint on the v2 path). Hidden on v1,
+                        # where the free-text hint is the scene-content cue instead.
+                        persona = gr.Dropdown(
+                            choices=persona_choices(),
+                            value=PERSONA_DEFAULT_KEY,
+                            label="Narrator",
+                            container=False,
+                            visible=_modal_api_is_v2(),
+                            elem_classes="sc-upload-persona",
                         )
                         upload_status = gr.HTML(
                             render_upload_status_html(),
@@ -2448,6 +2474,7 @@ def build_viewer_app() -> gr.Blocks:
                     style_key,
                     scene_hint,
                     language,
+                    persona_key,
                     state,
                     upload_status_html,
                 ):
@@ -2477,11 +2504,14 @@ def build_viewer_app() -> gr.Blocks:
                     # branch (and the R3 reset) is decided here, in the click wrapper, so the
                     # data-flow function is untouched.
                     started_at = time.monotonic()
+                    effective_hint = _effective_upload_context(
+                        persona_key, scene_hint, language, is_v2=_modal_api_is_v2()
+                    )
                     try:
                         result = _submit_modal_upload(
                             video_path,
                             style_key,
-                            scene_hint,
+                            effective_hint,
                             state,
                             engine,
                             language=language,
@@ -2577,6 +2607,7 @@ def build_viewer_app() -> gr.Blocks:
                         style,
                         hint,
                         language,
+                        persona,
                         scenes_state,
                         upload_status,
                     ],

@@ -19,6 +19,7 @@ import pytest
 from PIL import Image
 
 from small_cuts import viewer
+from small_cuts.narrate_v2 import PERSONA_DEFAULT_KEY, PERSONA_STEERS
 from test_contracts import GOLDEN
 
 GOLDEN_SCENE = GOLDEN["narrated-scene.schema.json"]
@@ -409,6 +410,7 @@ def test_modal_upload_soft_failure_renders_inline_status(monkeypatch, tmp_path):
         "deadpan",
         "",
         "English",
+        PERSONA_DEFAULT_KEY,
         state,
         viewer.render_upload_status_html("running"),
     )
@@ -439,6 +441,7 @@ def test_modal_upload_missing_preflight_state_clears_running_status(monkeypatch,
         "deadpan",
         "",
         "English",
+        PERSONA_DEFAULT_KEY,
         viewer._pack_engine_ui_state([], None, None, None),
         viewer.render_upload_status_html("running"),
     )
@@ -1430,3 +1433,18 @@ def test_build_viewer_app_has_preconnect_head(monkeypatch):
     app = viewer.build_viewer_app()
     head_content = getattr(app, "head", None) or getattr(app, "_deprecated_head", None)
     assert '<link rel="preconnect" href="https://huggingface.co" crossorigin>' in head_content
+
+
+def test_effective_upload_context_v2_resolves_persona():
+    out = viewer._effective_upload_context("nature_doc", "ignored free text", "Spanish", is_v2=True)
+    assert out == PERSONA_STEERS["nature_doc"]["Spanish"]
+
+
+def test_effective_upload_context_v2_default_is_empty():
+    out = viewer._effective_upload_context(PERSONA_DEFAULT_KEY, "ignored", "English", is_v2=True)
+    assert out == ""
+
+
+def test_effective_upload_context_v1_passes_free_text_through():
+    out = viewer._effective_upload_context("nature_doc", "a calm morning", "English", is_v2=False)
+    assert out == "a calm morning"

@@ -624,3 +624,58 @@ def test_persona_choices_lists_seven_with_default_first():
     assert len(choices) == 7  # deadpan + 6 personas
     assert all(isinstance(label, str) and isinstance(key, str) for label, key in choices)
     assert {key for _, key in choices} == {PERSONA_DEFAULT_KEY, *PERSONA_STEERS}
+
+
+# ── persona presets: Langfuse overlay (Task 2) ──
+
+
+def test_persona_prompt_name_uses_lang_code():
+    assert narrate_v2._persona_prompt_name("nature_doc", "Spanish") == (
+        "midcuts-persona/nature_doc/es"
+    )
+
+
+def test_resolve_falls_back_to_incode_when_langfuse_absent(monkeypatch):
+    # No client (unconfigured / import failure) → in-code string, never raises.
+    monkeypatch.setattr(narrate_v2, "_langfuse_client", lambda: None)
+    steer = resolve_persona_steer("nihilist", "English")
+    assert steer == PERSONA_STEERS["nihilist"]["English"]
+
+
+def test_resolve_uses_langfuse_value_when_available(monkeypatch):
+    class _FakePrompt:
+        def compile(self):
+            return "OVERRIDDEN STEER FROM LANGFUSE"
+
+    class _FakeClient:
+        def __init__(self):
+            self.calls = []
+
+        def get_prompt(self, name, fallback):
+            self.calls.append((name, fallback))
+            return _FakePrompt()
+
+    fake = _FakeClient()
+    monkeypatch.setattr(narrate_v2, "_langfuse_client", lambda: fake)
+    steer = resolve_persona_steer("nature_doc", "French")
+    assert steer == "OVERRIDDEN STEER FROM LANGFUSE"
+    # Called with the right name and the in-code fallback.
+    assert fake.calls == [("midcuts-persona/nature_doc/fr", PERSONA_STEERS["nature_doc"]["French"])]
+
+
+def test_resolve_falls_back_when_langfuse_raises(monkeypatch):
+    class _BoomClient:
+        def get_prompt(self, name, fallback):
+            raise RuntimeError("network down")
+
+    monkeypatch.setattr(narrate_v2, "_langfuse_client", lambda: _BoomClient())
+    steer = resolve_persona_steer("storybook", "Spanish")
+    assert steer == PERSONA_STEERS["storybook"]["Spanish"]
+
+
+def test_default_persona_never_calls_langfuse(monkeypatch):
+    def _boom():
+        raise AssertionError("Langfuse must not be consulted for the default persona")
+
+    monkeypatch.setattr(narrate_v2, "_langfuse_client", _boom)
+    assert resolve_persona_steer(PERSONA_DEFAULT_KEY, "English") == ""

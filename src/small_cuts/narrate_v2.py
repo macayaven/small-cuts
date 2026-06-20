@@ -14,6 +14,7 @@ the caller's concern — it passes an ``uploader`` bound to ``HfApi(token=WRITE_
 from __future__ import annotations
 
 import json
+import os
 import re
 import sys
 from collections.abc import Callable
@@ -308,14 +309,57 @@ def _persona_incode_steer(key: str, language: str) -> str:
     return by_lang.get(language, "")
 
 
+def _persona_prompt_name(key: str, language: str) -> str:
+    """Langfuse prompt name for (persona, language), e.g. midcuts-persona/fatalist/en."""
+    lang = PERSONA_LANG_CODES.get(language, "en")
+    return f"midcuts-persona/{key}/{lang}"
+
+
+def _langfuse_client():
+    """Return a Langfuse client, or None if unconfigured or the SDK is absent.
+
+    Env-gated + import-guarded, mirroring observability.init_sentry: a missing
+    key, a missing package, or a construction error all yield None so callers
+    fall back to the in-code steer. Space-side only — never wired into Modal."""
+    public = os.environ.get("LANGFUSE_PUBLIC_KEY", "").strip()
+    secret = os.environ.get("LANGFUSE_SECRET_KEY", "").strip()
+    if not public or not secret:
+        return None
+    host = (
+        os.environ.get("LANGFUSE_BASE_URL")
+        or os.environ.get("LANGFUSE_HOST")
+        or "https://cloud.langfuse.com"
+    ).strip()
+    try:
+        from langfuse import Langfuse
+    except ImportError:
+        return None
+    try:
+        return Langfuse(public_key=public, secret_key=secret, host=host)
+    except Exception:
+        return None
+
+
 def resolve_persona_steer(key: str, language: str) -> str:
     """Resolve a persona key + UI language to a manner-steer string for `context`.
 
-    Default/unknown persona → "" (the proven no-op). (Langfuse overlay added in
-    Task 2; for now this returns the in-code string.)"""
+    Default/unknown persona → "" (the proven no-op). Otherwise return the
+    Langfuse-managed steer (production label) with the in-code string as the
+    `fallback=` — so a missing/down/unconfigured Langfuse is byte-identical to a
+    pure in-code build. Fail-open: any error returns the in-code string."""
     if key == PERSONA_DEFAULT_KEY:
         return ""
-    return _persona_incode_steer(key, language)
+    incode = _persona_incode_steer(key, language)
+    if not incode:
+        return ""
+    client = _langfuse_client()
+    if client is None:
+        return incode
+    try:
+        prompt = client.get_prompt(_persona_prompt_name(key, language), fallback=incode)
+        return prompt.compile()
+    except Exception:
+        return incode
 
 
 def has_carrier(language: str) -> bool:

@@ -223,7 +223,7 @@ def test_plan_carrier_cut_punctuation_only_tail_yields_no_text_and_no_captions()
 def test_build_scene_includes_timed_captions_when_provided():
     cues = [{"t_start": 0.0, "t_end": 1.2, "text": "Una persona abre la puerta"}]
     scene = _scene(timed_captions=cues)
-    jsonschema.validate(scene, SCHEMA)  # v1.2.0 schema
+    jsonschema.validate(scene, SCHEMA)  # v1.3.0 schema
     assert scene["timed_captions"] == cues
 
 
@@ -234,9 +234,9 @@ def test_build_scene_omits_timed_captions_when_absent():
 # ── v1.2.0: duration + keyframe_time + version-truth ──
 
 
-def test_build_scene_stamps_contract_version_1_2_0():
-    # The v2 writer emits v1.2.0-only fields, so it must stamp 1.2.0 — not the legacy 1.1.0.
-    assert _scene()["contract_version"] == "1.2.0"
+def test_build_scene_stamps_contract_version_1_3_0():
+    # The v2 writer now stamps 1.3.0 (bumped from 1.2.0 with persona/language additive fields).
+    assert _scene()["contract_version"] == "1.3.0"
 
 
 def test_build_scene_emits_duration_and_keyframe_time_when_provided():
@@ -261,6 +261,42 @@ def test_scene_carrying_a_v1_2_field_must_stamp_1_2_0():
     scene["contract_version"] = "1.1.0"
     with pytest.raises(jsonschema.ValidationError):
         jsonschema.validate(scene, SCHEMA)
+
+
+# ── v1.3.0: persona + language ──
+
+
+def test_build_narrated_scene_emits_persona_and_language():
+    from small_cuts import narrate_v2
+
+    scene = narrate_v2.build_narrated_scene(
+        narration="x",
+        title="t",
+        style_key="nature_doc",
+        media={"clip_url": "c", "audio_url": "a", "frame_url": "f"},
+        captured_at="2026-06-20T00:00:00Z",
+        created_at="2026-06-20T00:00:00Z",
+        persona="nature_doc",
+        language="English",
+    )
+    assert scene["persona"] == "nature_doc"
+    assert scene["language"] == "English"
+    assert scene["contract_version"] == "1.3.0"
+
+
+def test_build_narrated_scene_omits_persona_language_when_absent():
+    from small_cuts import narrate_v2
+
+    scene = narrate_v2.build_narrated_scene(
+        narration="x",
+        title="t",
+        style_key="deadpan",
+        media={"clip_url": "c", "audio_url": "a", "frame_url": "f"},
+        captured_at="2026-06-20T00:00:00Z",
+        created_at="2026-06-20T00:00:00Z",
+    )
+    assert "persona" not in scene and "language" not in scene
+    assert scene["contract_version"] == "1.3.0"
 
 
 def test_production_shaped_scene_is_contract_valid_and_clean():

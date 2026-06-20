@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import Any, Protocol
 from uuid import uuid4
 
-CONTRACT_VERSION = "1.2.0"
+CONTRACT_VERSION = "1.3.0"
 TITLE_MAX = 80
 NARRATION_MAX = 2000
 MAX_CONTEXT_CHARS = 280
@@ -457,6 +457,8 @@ def build_narrated_scene(
     keyframe_time: float | None = None,
     scene_id: str | None = None,
     moment_id: str | None = None,
+    persona: str | None = None,
+    language: str | None = None,
 ) -> dict[str, Any]:
     """Build a NarratedScene that validates against narrated-scene.schema.json by construction.
 
@@ -486,6 +488,10 @@ def build_narrated_scene(
         scene["keyframe_time"] = keyframe_time
     if timed_captions is not None:
         scene["timed_captions"] = timed_captions
+    if persona is not None:
+        scene["persona"] = persona
+    if language is not None:
+        scene["language"] = language
     return scene
 
 

@@ -633,6 +633,9 @@ def test_persona_prompt_name_uses_lang_code():
     assert narrate_v2._persona_prompt_name("nature_doc", "Spanish") == (
         "midcuts-persona/nature_doc/es"
     )
+    assert narrate_v2._persona_prompt_name("nature_doc", "Klingon") == (
+        "midcuts-persona/nature_doc/en"
+    )
 
 
 def test_resolve_falls_back_to_incode_when_langfuse_absent(monkeypatch):

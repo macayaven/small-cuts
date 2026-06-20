@@ -13,6 +13,7 @@ the caller's concern — it passes an ``uploader`` bound to ``HfApi(token=WRITE_
 
 from __future__ import annotations
 
+import functools
 import json
 import os
 import re
@@ -315,6 +316,7 @@ def _persona_prompt_name(key: str, language: str) -> str:
     return f"midcuts-persona/{key}/{lang}"
 
 
+@functools.cache
 def _langfuse_client():
     """Return a Langfuse client, or None if unconfigured or the SDK is absent.
 

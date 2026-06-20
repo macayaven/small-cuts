@@ -18,6 +18,14 @@ from typing import Any
 import pytest
 
 from small_cuts import narrate_v2
+from small_cuts.narrate_v2 import (
+    MAX_CONTEXT_CHARS,
+    PERSONA_DEFAULT_KEY,
+    PERSONA_LABELS,
+    PERSONA_STEERS,
+    persona_choices,
+    resolve_persona_steer,
+)
 
 jsonschema = pytest.importorskip("jsonschema")
 
@@ -565,3 +573,49 @@ def test_carrier_cut_index_empty_words_returns_sentinel():
     t_cut, idx = narrate_v2.carrier_cut_index([], _CARRIER)
     assert (t_cut, idx) == (0.0, -1)
     assert " ".join(w["word"] for w in [][idx + 1 :]).strip() == ""
+
+
+# ── persona presets: in-code resolution (Task 1) ──
+
+PERSONA_LANGS = ("English", "Spanish", "French")
+
+
+def test_default_persona_resolves_to_empty_for_every_language():
+    for lang in PERSONA_LANGS:
+        assert resolve_persona_steer(PERSONA_DEFAULT_KEY, lang) == ""
+
+
+def test_unknown_persona_resolves_to_empty():
+    assert resolve_persona_steer("does-not-exist", "English") == ""
+
+
+def test_known_persona_resolves_to_native_string():
+    for key in PERSONA_STEERS:
+        for lang in PERSONA_LANGS:
+            steer = resolve_persona_steer(key, lang)
+            assert steer == PERSONA_STEERS[key][lang]
+            assert steer.strip() != ""
+
+
+def test_all_persona_steers_present_and_within_cap():
+    # 6 non-default personas, each in all three languages, each within the wire cap.
+    assert set(PERSONA_STEERS) == {
+        "storybook",
+        "magical_realism",
+        "nature_doc",
+        "fatalist",
+        "nihilist",
+        "reverie",
+    }
+    for key, by_lang in PERSONA_STEERS.items():
+        assert set(by_lang) == set(PERSONA_LANGS), key
+        for lang, steer in by_lang.items():
+            assert 0 < len(steer) <= MAX_CONTEXT_CHARS, (key, lang, len(steer))
+
+
+def test_persona_choices_lists_seven_with_default_first():
+    choices = persona_choices()
+    assert choices[0] == (PERSONA_LABELS[PERSONA_DEFAULT_KEY], PERSONA_DEFAULT_KEY)
+    assert len(choices) == 7  # deadpan + 6 personas
+    assert all(isinstance(label, str) and isinstance(key, str) for label, key in choices)
+    assert {key for _, key in choices} == {PERSONA_DEFAULT_KEY, *PERSONA_STEERS}

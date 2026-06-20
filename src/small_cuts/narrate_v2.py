@@ -158,6 +158,166 @@ TITLE_PROMPTS: dict[str, tuple[str, str]] = {
 }
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Narrator-persona presets (Phase-5 successor to the free-text manner steer).
+# A persona KEY chosen in the v2 upload UI resolves to a curated manner-steer
+# string passed as the ordinary `context` field — same wire value the free-text
+# box produced. The default `deadpan` resolves to "" (the byte-identical no-op).
+# Strings are native per language (en/es/fr); labels are "<archetype> · <wink>".
+# These in-code strings are BOTH the committed fallback and the Langfuse seed.
+# ─────────────────────────────────────────────────────────────────────────────
+
+PERSONA_DEFAULT_KEY = "deadpan"
+
+PERSONA_LABELS: dict[str, str] = {
+    "deadpan": "Deadpan Omniscient · The Invention of Lying",
+    "storybook": "Symmetrical Storybook · à la Wes Anderson",
+    "magical_realism": "Magical Realism · à la Cortázar",
+    "nature_doc": "Nature Documentary · Attenborough-style",
+    "fatalist": "Fatalist Narrator · Stranger than Fiction",
+    "nihilist": "Nihilist Provocateur · Fight Club",
+    "reverie": "Whimsical Reverie · Amélie",
+}
+
+# Map the UI language label to the short code used in Langfuse prompt names.
+PERSONA_LANG_CODES: dict[str, str] = {
+    "English": "en",
+    "Spanish": "es",
+    "French": "fr",
+}
+
+# Curated manner steers. Interpolated into CONTEXT_INSTRUCTION after
+# "…asks you to tell it a particular way: «{context}»", so each reads as a
+# directive. The instruction re-imposes the hard rules (one short sentence,
+# declarative, target language, invent nothing); these set only voice/mood.
+PERSONA_STEERS: dict[str, dict[str, str]] = {
+    "storybook": {
+        "English": (
+            "a precise, whimsical storybook — note colours, symmetry, and small "
+            "formal details, in a flat, affectionate, faintly melancholy deadpan"
+        ),
+        "Spanish": (
+            "un cuento ilustrado preciso y caprichoso: fíjate en los colores, la "
+            "simetría y los pequeños detalles formales, con un tono plano, afectuoso "
+            "y levemente melancólico"
+        ),
+        "French": (
+            "un livre d'images précis et fantasque : remarque les couleurs, la "
+            "symétrie et les petits détails formels, sur un ton plat, affectueux et "
+            "légèrement mélancolique"
+        ),
+    },
+    "magical_realism": {
+        "English": (
+            "magical realism — state one quietly dreamlike or impossible thing as "
+            "plain, settled fact, woven calmly into the ordinary and never explained"
+        ),
+        "Spanish": (
+            "realismo mágico: enuncia una sola cosa onírica o imposible como un hecho "
+            "llano y asentado, integrada con calma en lo cotidiano y nunca explicada"
+        ),
+        "French": (
+            "le réalisme magique : énonce une seule chose onirique ou impossible comme "
+            "un fait simple et établi, intégrée calmement au quotidien et jamais "
+            "expliquée"
+        ),
+    },
+    "nature_doc": {
+        "English": (
+            "a hushed wildlife documentary — reverent and curious, observing the "
+            "subject as a fascinating specimen performing a small ritual in its "
+            "natural habitat"
+        ),
+        "Spanish": (
+            "un documental de naturaleza en voz baja: reverente y curioso, observando "
+            "al sujeto como un espécimen fascinante que realiza un pequeño ritual en "
+            "su hábitat natural"
+        ),
+        "French": (
+            "un documentaire animalier à voix feutrée : révérencieux et curieux, "
+            "observant le sujet comme un spécimen fascinant accomplissant un petit "
+            "rituel dans son habitat naturel"
+        ),
+    },
+    "fatalist": {
+        "English": (
+            "a literary omniscient narrator who sees the quiet significance and faint "
+            "irony the person cannot — measured and lightly fatalistic, treating one "
+            "small visible detail as if it secretly mattered, ultimately tender"
+        ),
+        "Spanish": (
+            "un narrador omnisciente y literario que ve el significado callado y la "
+            "leve ironía que la persona no percibe: comedido y algo fatalista, "
+            "tratando un pequeño detalle visible como si importara en secreto, y al "
+            "final tierno"
+        ),
+        "French": (
+            "un narrateur omniscient et littéraire qui perçoit la signification "
+            "discrète et la légère ironie que la personne ne voit pas : mesuré et un "
+            "peu fataliste, traitant un petit détail visible comme s'il importait en "
+            "secret, et finalement tendre"
+        ),
+    },
+    "nihilist": {
+        "English": (
+            "a clipped, aphoristic, anti-consumerist narrator — terse, dry, faintly "
+            "dangerous second-guessing of the ordinary, no exclamations"
+        ),
+        "Spanish": (
+            "un narrador lacónico, aforístico y anticonsumista: parco, seco y "
+            "levemente peligroso al cuestionar lo cotidiano, sin exclamaciones"
+        ),
+        "French": (
+            "un narrateur laconique, aphoristique et anticonsumériste : sobre, sec et "
+            "légèrement dangereux lorsqu'il remet en question le quotidien, sans "
+            "exclamations"
+        ),
+    },
+    "reverie": {
+        "English": (
+            "a warm, playful storyteller who delights in one vivid concrete particular "
+            "— a sight, a smell, a small pleasure — noticing the charm in the ordinary "
+            "with gleeful, affectionate curiosity"
+        ),
+        "Spanish": (
+            "un narrador cálido y juguetón que disfruta de un único detalle concreto y "
+            "vívido —una imagen, un olor, un pequeño placer— advirtiendo el encanto de "
+            "lo cotidiano con curiosidad alegre y afectuosa"
+        ),
+        "French": (
+            "un narrateur chaleureux et espiègle qui savoure un seul détail concret et "
+            "vif — une image, une odeur, un petit plaisir — relevant le charme de "
+            "l'ordinaire avec une curiosité joyeuse et affectueuse"
+        ),
+    },
+}
+
+
+def persona_choices() -> list[tuple[str, str]]:
+    """(label, key) pairs for the v2 upload dropdown; default persona first."""
+    ordered = [PERSONA_DEFAULT_KEY, *PERSONA_STEERS]
+    return [(PERSONA_LABELS[key], key) for key in ordered]
+
+
+def _persona_incode_steer(key: str, language: str) -> str:
+    """The committed in-code steer for (key, language); English-fallback for an
+    unknown language. Returns "" for the default/unknown persona."""
+    by_lang = PERSONA_STEERS.get(key)
+    if by_lang is None:
+        return ""
+    return by_lang.get(language) or by_lang["English"]
+
+
+def resolve_persona_steer(key: str, language: str) -> str:
+    """Resolve a persona key + UI language to a manner-steer string for `context`.
+
+    Default/unknown persona → "" (the proven no-op). (Langfuse overlay added in
+    Task 2; for now this returns the in-code string.)"""
+    if key == PERSONA_DEFAULT_KEY:
+        return ""
+    return _persona_incode_steer(key, language)
+
+
 def has_carrier(language: str) -> bool:
     """True when a warm-up carrier AND its instruction exist → enable the carrier+cut path;
     otherwise the narration is published untrimmed (no aligner hop)."""

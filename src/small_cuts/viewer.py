@@ -1413,6 +1413,11 @@ def _effective_upload_context(
     return scene_hint
 
 
+def _effective_style_key(persona_key: str, style_key: str, *, is_v2: bool) -> str:
+    """v2 carries the persona key in style_key (for display); v1 keeps its director style."""
+    return persona_key if is_v2 else style_key
+
+
 def _submit_modal_upload(
     video_path: str | None,
     style_key: str,
@@ -2510,7 +2515,7 @@ def build_viewer_app() -> gr.Blocks:
                     try:
                         result = _submit_modal_upload(
                             video_path,
-                            style_key,
+                            _effective_style_key(persona_key, style_key, is_v2=_modal_api_is_v2()),
                             effective_hint,
                             state,
                             engine,

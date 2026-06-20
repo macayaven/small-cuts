@@ -1494,3 +1494,11 @@ def test_effective_upload_context_v2_default_is_empty():
 def test_effective_upload_context_v1_passes_free_text_through():
     out = viewer._effective_upload_context("nature_doc", "a calm morning", "English", is_v2=False)
     assert out == "a calm morning"
+
+
+def test_effective_style_key_v2_uses_persona():
+    assert viewer._effective_style_key("nature_doc", "deadpan", is_v2=True) == "nature_doc"
+
+
+def test_effective_style_key_v1_keeps_style():
+    assert viewer._effective_style_key("nature_doc", "noir", is_v2=False) == "noir"

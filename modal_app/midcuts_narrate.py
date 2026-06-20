@@ -357,6 +357,8 @@ class Narrator:
                 "narrator_backend": "transformers",
                 "tts_model": OMNI_MODEL,
             },
+            persona=style_key,
+            language=language,
         )
 
         # Runtime conformance guard (DESIGN §6): never publish a scene that fails the contract.

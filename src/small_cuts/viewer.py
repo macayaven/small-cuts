@@ -186,23 +186,20 @@ footer { display: none !important; }
   color: #f3efe4; border-radius: 9px; padding: 11px 16px; font-family: 'Spectral', serif;
   font-size: 1.04rem; line-height: 1.38; text-shadow: 0 1px 2px rgba(0,0,0,.85); }
 .sc-subtitle .sc-sub-line[hidden] { display: none; }
-/* CC captions default OFF (voice-first thesis); shown only when the viewer opts in. The gate
-   lives on .sc-theater (NOT <body>) so Gradio's CSS prefixer (.gradio-container… .contain) can't
-   break it: <body> is an ancestor of .contain, so a body-rooted selector never matches after
-   prefixing. .sc-theater is inside .contain, persists across stage re-renders, and is an ancestor
-   of both #sc-subtitle and .sc-cc-btn. */
+/* CC captions default ON; shown unless the viewer opts out. The gate lives on .sc-theater (NOT
+   <body>) so Gradio's CSS prefixer (.gradio-container… .contain) can't break it. */
 .sc-theater:not(.sc-cc-on) .sc-subtitle { display: none; }
-/* CC matches the other pill controls: gold glyph on the transparent dark pill (OFF), gold fill
-   when ON. The CC button is TEXT (not a masked icon), so it needs a visible toggle body — a
-   faint gold-tinted pill with a subtle gold border — or it reads as bare floating text next to
-   the solid masked-icon buttons. */
-.sc-cc-btn.sc-icbtn { color: #D4AF37 !important; background-color: rgba(212,175,55,.12) !important;
-  border: 1px solid rgba(212,175,55,.3) !important; border-radius: 999px !important;
-  font-size: .72rem !important; font-weight: 700; letter-spacing: .06em;
-  display: flex !important; align-items: center; justify-content: center;
-  -webkit-mask-image: none !important; mask-image: none !important; }
-.sc-cc-btn.sc-icbtn:hover { background-color: #fff5d5 !important; color: #1a1a1f !important;
-  border-color: #fff5d5 !important; }
+/* CC is TEXT (not a masked icon), so it shrinks to a compact pill that just hugs the letters —
+   not the 42px square footprint of the masked-icon buttons. OFF = gold text, no fill. ON = gold
+   fill with dark text. Either way the pill stays small so it never dominates the control row. */
+.sc-cc-btn.sc-icbtn { color: #D4AF37 !important; background-color: transparent !important;
+  border: 1px solid transparent !important; border-radius: 999px !important;
+  width: auto !important; min-width: 0 !important; height: 28px !important;
+  padding: 0 9px !important; font-size: .68rem !important; font-weight: 700;
+  letter-spacing: .06em; display: flex !important; align-items: center;
+  justify-content: center; -webkit-mask-image: none !important; mask-image: none !important; }
+.sc-cc-btn.sc-icbtn:hover { background-color: rgba(212,175,55,.15) !important;
+  border-color: rgba(212,175,55,.4) !important; }
 /* kill the electric-blue focus ring on the CC pill — nothing else in the row has one */
 .sc-cc-btn.sc-icbtn:focus, .sc-cc-btn.sc-icbtn:focus-visible { outline: none !important;
   box-shadow: none !important; }
@@ -2124,13 +2121,12 @@ PLAYBACK_SYNC_JS = """
     togglePlayback(e);
   }, true);
 
-  // CC captions: a persisted, voice-first-OFF toggle. The button has no Gradio handler — flip a
-  // class on .sc-theater (inside .contain, survives per-scene re-render of #sc-subtitle) and
-  // remember the choice in localStorage. CSS hides .sc-subtitle unless .sc-theater has .sc-cc-on.
+  // CC captions default ON; the viewer opts out by tapping (persisted in localStorage).
+  // CSS hides .sc-subtitle unless .sc-theater has .sc-cc-on.
   // (.sc-theater, not <body>: Gradio's CSS prefixer prepends .contain… to every rule, so a
   // body-rooted selector never matches — <body> is an ancestor of .contain, not a descendant.)
   const scReadCcPref = () => {
-    try { return window.localStorage.getItem('scCc') === '1'; } catch (e) { return false; }
+    try { return window.localStorage.getItem('scCc') !== '0'; } catch (e) { return true; }
   };
   const scCcTarget = () => document.querySelector('.sc-theater') || document.body;
   if (scReadCcPref()) scCcTarget().classList.add('sc-cc-on');
@@ -2390,6 +2386,7 @@ def build_viewer_app() -> gr.Blocks:
                     # tap is the one user gesture that starts audio+video+captions as a unit.
                     rewind_btn = gr.Button("", elem_classes=["sc-icbtn", "sc-ico-rewind"])
                     gr.Button("", elem_classes=["sc-icbtn", "sc-ico-play", "sc-play-btn"])
+                    forward_btn = gr.Button("", elem_classes=["sc-icbtn", "sc-ico-forward"])
                     gr.HTML(
                         '<span class="sc-vol-ctl">'
                         '<input type="range" class="sc-vol" min="0" max="1" step="0.05" '
@@ -2397,9 +2394,8 @@ def build_viewer_app() -> gr.Blocks:
                         elem_classes="sc-plain",
                         padding=False,
                     )
-                    forward_btn = gr.Button("", elem_classes=["sc-icbtn", "sc-ico-forward"])
                     # CC: soft caption toggle. No Python handler — PLAYBACK_SYNC_JS flips a
-                    # persisted body class (delegated DOM click), like the play gesture.
+                    # persisted class (delegated DOM click), like the play gesture.
                     gr.Button("CC", elem_classes=["sc-icbtn", "sc-cc-btn"])
                     if client is None:
                         # like (honest no-count toggle) + flag now live in the pill, aligned

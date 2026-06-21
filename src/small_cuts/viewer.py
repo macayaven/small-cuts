@@ -193,14 +193,24 @@ footer { display: none !important; }
    of both #sc-subtitle and .sc-cc-btn. */
 .sc-theater:not(.sc-cc-on) .sc-subtitle { display: none; }
 /* CC matches the other pill controls: gold glyph on the transparent dark pill (OFF), gold fill
-   when ON. Was dark-text-on-a-cream-box, which read as a foreign element in the control row. */
-.sc-cc-btn.sc-icbtn { color: #D4AF37 !important; background-color: transparent !important;
+   when ON. The CC button is TEXT (not a masked icon), so it needs a visible toggle body — a
+   faint gold-tinted pill with a subtle gold border — or it reads as bare floating text next to
+   the solid masked-icon buttons. */
+.sc-cc-btn.sc-icbtn { color: #D4AF37 !important; background-color: rgba(212,175,55,.12) !important;
+  border: 1px solid rgba(212,175,55,.3) !important; border-radius: 999px !important;
   font-size: .72rem !important; font-weight: 700; letter-spacing: .06em;
   display: flex !important; align-items: center; justify-content: center;
   -webkit-mask-image: none !important; mask-image: none !important; }
-.sc-cc-btn.sc-icbtn:hover { background-color: #fff5d5 !important; color: #1a1a1f !important; }
+.sc-cc-btn.sc-icbtn:hover { background-color: #fff5d5 !important; color: #1a1a1f !important;
+  border-color: #fff5d5 !important; }
+/* kill the electric-blue focus ring on the CC pill — nothing else in the row has one */
+.sc-cc-btn.sc-icbtn:focus, .sc-cc-btn.sc-icbtn:focus-visible { outline: none !important;
+  box-shadow: none !important; }
 .sc-theater.sc-cc-on .sc-cc-btn.sc-icbtn { background-color: #D4AF37 !important;
-  color: #1a1a1f !important; }
+  color: #1a1a1f !important; border-color: #D4AF37 !important; }
+
+/* like + flag retired from the control bar (kept wired but hidden) */
+.sc-like-btn, .sc-report-btn { display: none !important; }
 
 .sc-rec { position: absolute; top: 12px; left: 12px; display: inline-flex; align-items: center;
   gap: 7px; background: rgba(16,16,20,.78); color: #D4AF37; padding: 4px 11px;
@@ -235,11 +245,16 @@ footer { display: none !important; }
 .sc-shelf { background: transparent !important; border: none !important; }
 /* Three structured lines per thumbnail: title / language / narrator style. The caption
    string carries real newlines (see _shelf_caption); `white-space: pre-line` renders them
-   as breaks, and the 3-line clamp fits the fixed-height rail cards. */
-.sc-shelf .caption-label { white-space: pre-line !important; text-overflow: clip !important;
-  display: -webkit-box !important; -webkit-line-clamp: 3 !important;
-  -webkit-box-orient: vertical !important; overflow: hidden !important;
-  line-height: 1.2 !important; font-size: 11px !important; }
+   as breaks. Force the caption to fill the FULL thumbnail width (Gradio's gallery caption
+   container adds its own padding/margins that shrink the text area ~35px and cause bleed);
+   10px font + zero padding so all 3 lines fit cleanly inside the card. */
+.sc-shelf .caption-label, .sc-shelf .thumbnail-item > .caption-label,
+.sc-shelf .gallery-item .caption-label { white-space: pre-line !important;
+  text-overflow: clip !important; display: -webkit-box !important;
+  -webkit-line-clamp: 3 !important; -webkit-box-orient: vertical !important;
+  overflow: hidden !important; line-height: 1.15 !important; font-size: 10px !important;
+  padding: 1px 2px !important; margin: 0 !important; width: 100% !important;
+  max-width: 100% !important; box-sizing: border-box !important; }
 .sc-shelf .thumbnail-item { position: relative; }
 .sc-shelf .thumbnail-item:has(img[alt^="\\002062"])::before,
 .sc-shelf .thumbnail-item:has(img[alt^="\\002063"])::before {

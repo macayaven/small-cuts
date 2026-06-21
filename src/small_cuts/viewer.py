@@ -189,9 +189,13 @@ footer { display: none !important; }
 /* CC captions default OFF (voice-first thesis); shown only when the viewer opts in. The gate lives
    on <body> so the preference survives the per-scene re-render of #sc-subtitle. */
 body:not(.sc-cc-on) .sc-subtitle { display: none; }
-.sc-cc-btn.sc-icbtn { color: #1a1a1f !important; font-size: .66rem !important; font-weight: 700;
-  letter-spacing: .06em; display: flex !important; align-items: center; justify-content: center;
+/* CC matches the other pill controls: gold glyph on the transparent dark pill (OFF), gold fill
+   when ON. Was dark-text-on-a-cream-box, which read as a foreign element in the control row. */
+.sc-cc-btn.sc-icbtn { color: #D4AF37 !important; background-color: transparent !important;
+  font-size: .72rem !important; font-weight: 700; letter-spacing: .06em;
+  display: flex !important; align-items: center; justify-content: center;
   -webkit-mask-image: none !important; mask-image: none !important; }
+.sc-cc-btn.sc-icbtn:hover { background-color: #fff5d5 !important; color: #1a1a1f !important; }
 body.sc-cc-on .sc-cc-btn.sc-icbtn { background-color: #D4AF37 !important;
   color: #1a1a1f !important; }
 
@@ -226,6 +230,12 @@ body.sc-cc-on .sc-cc-btn.sc-icbtn { background-color: #D4AF37 !important;
 .sc-dropzone-label { font-family: 'IBM Plex Mono', monospace; font-size: .72rem;
   letter-spacing: .14em; color: #8a8894; text-transform: uppercase; }
 .sc-shelf { background: transparent !important; border: none !important; }
+/* Let the thumbnail caption wrap to two lines so the appended "· LANG · Style" stays visible
+   instead of being clipped by Gradio's default single-line ellipsis (.caption-label). */
+.sc-shelf .caption-label { white-space: normal !important; text-overflow: clip !important;
+  display: -webkit-box !important; -webkit-line-clamp: 2 !important;
+  -webkit-box-orient: vertical !important; overflow: hidden !important;
+  line-height: 1.2 !important; font-size: 11px !important; }
 .sc-shelf .thumbnail-item { position: relative; }
 .sc-shelf .thumbnail-item:has(img[alt^="\\002062"])::before,
 .sc-shelf .thumbnail-item:has(img[alt^="\\002063"])::before {

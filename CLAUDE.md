@@ -81,8 +81,10 @@ gh pr merge --auto --squash
 - **Gradio 6**: `theme=` is a `launch()` kwarg, **not** `gr.Blocks()`.
 - **ruff isort gotcha**: not-yet-existing first-party modules classify as third-party (I001) in
   pre-implementation test files — write imports in post-implementation order, ignore the early fail.
-- **Contracts** (`docs/contracts/`, v1.1.0) are the source of truth: bump schema + golden samples +
-  all consumers in **one** PR (lockstep minor); label `contract-change` ⇒ orchestrator review.
+- **Semantic versioning is enforced** (`docs/contracts/`, the Modal API path, releases): MAJOR =
+  breaking, MINOR = additive, PATCH = fix. The greenfield narration endpoint is `/v2/narrate`.
+- **Contracts** (`docs/contracts/`) are the source of truth: bump schema + golden samples + all
+  consumers in **one** PR (lockstep; additive ⇒ MINOR); label `contract-change` ⇒ orchestrator review.
 - **No secrets, ever.** 1Password Connect (local dev) + HF Space secrets (deploy); gitleaks in CI.
   Client-facing endpoints use **Tailnet MagicDNS HTTPS** (e.g. `https://mac-studio.tail48bab7.ts.net/…`),
   never raw IPs.
@@ -93,6 +95,10 @@ gh pr merge --auto --squash
 - **Process:** pose a brief → fan it out across independent models for diverse takes (a lead model
   orchestrates; a *different* model family implements, kept distinct from the orchestrator to avoid
   shared blind spots; others review and adversarially verify) → Carlos ratifies the design-of-record.
+- **Standing validation panel** (independent peer review, read-only): **GLM 5.2**
+  (`opencode run --agent plan`), **GPT-5.5 xhigh** (`codex exec`), **Gemini 3.5-flash-high or 3.1-pro**
+  (`gemini -p --approval-mode plan --skip-trust`; pipe the brief via stdin if path-ignore blocks a read).
+  Fan briefs out to these for diverse takes; Claude orchestrates + synthesizes; Carlos ratifies.
 - **Surfaces:** GitHub Project board **#8**; labels `team-*` + `contract-change`.
 
 ## Pointers
@@ -100,4 +106,30 @@ gh pr merge --auto --squash
   `architecture/` (canonical + interactive `index.html`), `space/`, `mobile/`, `inference/`,
   `contracts/`, `product/`, `coordination/`. Predecessor: `10-projects/directors-cut/`.
 - **Live device test:** `ios/SmallCuts/RUNBOOK.md`.
-- **Models:** `Qwen/Qwen3-VL-8B-Instruct` (narrator) + Kokoro (voice).
+- **Models:** `Qwen/Qwen3-VL-8B-Instruct` (narrator) + Kokoro (voice). *(v2 greenfield direction:
+  Qwen3-Omni for unified video→text+speech, behind a modular narration backend — design-of-record in
+  the KB; not yet as-built.)*
+
+---
+
+## Engineering guidelines (coding discipline)
+Bias toward caution over speed; for trivial tasks, use judgment. (Merged from Carlos's request.)
+
+1. **Think before coding.** Don't assume, don't hide confusion, surface tradeoffs. State assumptions
+   explicitly; if uncertain, ask. If multiple interpretations exist, present them — don't pick
+   silently. If a simpler approach exists, say so and push back when warranted. If something is
+   unclear, stop and name it.
+2. **Simplicity first.** Minimum code that solves the problem, nothing speculative. No features beyond
+   what was asked; no abstractions for single-use code; no unrequested "flexibility"; no error handling
+   for impossible scenarios. If 200 lines could be 50, rewrite. Ask: "would a senior engineer call this
+   overcomplicated?"
+3. **Surgical changes.** Touch only what you must; clean up only your own mess. Don't "improve"
+   adjacent code/comments/formatting, don't refactor what isn't broken, match existing style. Remove
+   imports/vars/functions *your* change orphaned; mention (don't delete) pre-existing dead code. Every
+   changed line should trace to the request.
+4. **Goal-driven execution.** Turn tasks into verifiable goals ("add validation" → "write tests for
+   invalid inputs, then make them pass"). For multi-step work, state a brief plan with a `verify:` check
+   per step, then loop until verified.
+
+Working if: fewer unnecessary diff lines, fewer rewrites from overcomplication, clarifying questions
+*before* implementation rather than after mistakes.

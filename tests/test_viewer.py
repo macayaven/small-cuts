@@ -19,6 +19,7 @@ import pytest
 from PIL import Image
 
 from small_cuts import viewer
+from small_cuts.narrate_v2 import PERSONA_DEFAULT_KEY, PERSONA_STEERS
 from test_contracts import GOLDEN
 
 GOLDEN_SCENE = GOLDEN["narrated-scene.schema.json"]
@@ -97,10 +98,10 @@ def test_upload_error_message_is_preserved_in_engine_state():
     assert state["upload_error_message"] == "Modal upload failed: unavailable"
 
 
-def test_upload_video_cap_defaults_to_sixty_seconds(monkeypatch):
+def test_upload_video_cap_defaults_to_one_hundred_twenty_seconds(monkeypatch):
     monkeypatch.delenv("SMALL_CUTS_UPLOAD_MAX_SECONDS", raising=False)
 
-    assert viewer.upload_max_seconds() == 60.0
+    assert viewer.upload_max_seconds() == 120.0
 
 
 def test_modal_scene_can_drive_uploaded_stage():
@@ -172,7 +173,7 @@ def test_submit_modal_upload_rejects_oversized_file(monkeypatch, tmp_path):
         fake_client(lambda _request: httpx.Response(200, json={"scenes": []})),
     )
 
-    assert warnings == ["Please upload a clip up to 80 MB."]
+    assert warnings == ["Please upload a clip up to 160 MB."]
     assert outputs[5]["scenes"] == []
 
 
@@ -260,11 +261,65 @@ def test_submit_modal_upload_pins_returned_scene(monkeypatch):
     assert "sc-ico-upload" in stage
     assert "real voice" in feed
     assert "voice.wav" in audio
-    assert shelf == [("/tmp/frame.jpg", f"{viewer.UPLOAD_SHELF_PREFIX}A Modal Scene")]
+    assert shelf == [
+        (
+            "/tmp/frame.jpg",
+            f"{viewer.UPLOAD_SHELF_PREFIX}A Modal Scene\n\u2014\nDeadpan Omniscient (the classic)",
+        )
+    ]
     assert state["upload_scene"]["scene_id"] == "modal-1"
     assert state["current_id"] == "modal-1"
     assert state["playing_id"] == "modal-1"
     assert visibility["value"] == "public"
+
+
+def test_submit_modal_upload_routes_to_v2_with_language(monkeypatch):
+    # With the v2 env flag set, the upload routes to submit_video_v2 carrying the chosen language
+    # AND the free-text manner steer as `context` (Phase 5 step 1 — no longer dropped on v2).
+    monkeypatch.setenv(viewer.MODAL_API_VERSION_ENV, "v2")
+    scene = {
+        "scene_id": "v2-1",
+        "title": "A v2 Scene",
+        "narration": "deadpan voice.",
+        "style_key": "deadpan",
+        "created_at": "2026-06-19T12:00:00+00:00",
+        "visibility": "public",
+        "media": {
+            "frame_url": "uploads/v2-1/media/frame.jpg",
+            "clip_url": "uploads/v2-1/media/clip.mp4",
+            "audio_url": "uploads/v2-1/media/voice.wav",
+        },
+        "duration": 6.0,
+    }
+    calls = []
+
+    class FakeV2Client:
+        def submit_video_v2(self, video_path, *, style_key, language, context):
+            calls.append(("v2", video_path, style_key, language, context))
+            return scene
+
+        def submit_video(self, *args, **kwargs):
+            raise AssertionError("v1 submit_video must not be called in v2 mode")
+
+    class FakeMediaClient:
+        base_url = ""
+
+        def media_url(self, path):
+            return f"/gradio_api/file=/tmp/{Path(path).name}" if path else None
+
+    monkeypatch.setattr(viewer, "_video_duration_s", lambda _path: 6.0)
+    monkeypatch.setattr(viewer, "_modal_upload_client", lambda: FakeV2Client())
+
+    viewer._submit_modal_upload(
+        "clip.mp4",
+        "deadpan",
+        "like a noir detective",
+        viewer._pack_engine_ui_state([], None, None, None),
+        FakeMediaClient(),
+        language="Catalan",
+    )
+
+    assert calls == [("v2", "clip.mp4", "deadpan", "Catalan", "like a noir detective")]
 
 
 def test_submit_modal_upload_modal_failure_warns_instead_of_raising(monkeypatch):
@@ -359,6 +414,8 @@ def test_modal_upload_soft_failure_renders_inline_status(monkeypatch, tmp_path):
         "clip.mp4",
         "deadpan",
         "",
+        "English",
+        PERSONA_DEFAULT_KEY,
         state,
         viewer.render_upload_status_html("running"),
     )
@@ -388,6 +445,8 @@ def test_modal_upload_missing_preflight_state_clears_running_status(monkeypatch,
         "clip.mp4",
         "deadpan",
         "",
+        "English",
+        PERSONA_DEFAULT_KEY,
         viewer._pack_engine_ui_state([], None, None, None),
         viewer.render_upload_status_html("running"),
     )
@@ -505,6 +564,54 @@ def test_upload_preflight_has_no_owner_passcode_bypass(monkeypatch, tmp_path):
     assert len(preflight_dep["inputs"]) == 1
 
 
+def test_v2_upload_chains_after_budget_preflight(monkeypatch, tmp_path):
+    # Phase 5 step 2: the v2 (/v2/narrate) upload inherits the SAME budget gate as v1 because the
+    # reservation runs in the shared preflight, UPSTREAM of the v1/v2 split in _submit_modal_upload.
+    # Lock it: even in v2 mode the backend upload triggers only AFTER _upload_preflight_ui.
+    monkeypatch.setenv(viewer.ENGINE_URL_ENV, "http://127.0.0.1:9")
+    monkeypatch.setenv(viewer.UPLOAD_SANDBOX_ENV, "1")
+    monkeypatch.setenv(viewer.MODAL_API_URL_ENV, "https://example.modal.run")
+    monkeypatch.setenv(viewer.MODAL_API_VERSION_ENV, "v2")
+    monkeypatch.setenv("SMALL_CUTS_UPLOAD_BUDGET_DB", str(tmp_path / "budget.sqlite3"))
+
+    app = viewer.build_viewer_app()
+    preflight_dep = next(
+        dep
+        for dep in app.config["dependencies"]
+        if dep.get("backend_fn") and dep.get("api_name") == "_upload_preflight_ui"
+    )
+    upload_dep = next(
+        dep
+        for dep in app.config["dependencies"]
+        if dep.get("backend_fn") and dep.get("api_name") == "_go_modal_upload_ui"
+    )
+    assert upload_dep["trigger_after"] == preflight_dep["id"]
+
+
+def test_v2_upload_preflight_denies_when_daily_budget_exhausted(monkeypatch, tmp_path):
+    # The gate is real, not a pass-through: with the daily GPU budget at 0, the v2 preflight blocks
+    # the upload (no reservation, no Modal spawn) — so misuse can't drain Modal credit.
+    monkeypatch.setenv(viewer.ENGINE_URL_ENV, "http://127.0.0.1:9")
+    monkeypatch.setenv(viewer.UPLOAD_SANDBOX_ENV, "1")
+    monkeypatch.setenv(viewer.MODAL_API_URL_ENV, "https://example.modal.run")
+    monkeypatch.setenv(viewer.MODAL_API_VERSION_ENV, "v2")
+    monkeypatch.setenv("SMALL_CUTS_UPLOAD_BUDGET_DB", str(tmp_path / "budget.sqlite3"))
+    monkeypatch.setenv("SMALL_CUTS_DAILY_GPU_BUDGET_SECONDS", "0")
+
+    app = viewer.build_viewer_app()
+    preflight_dep = next(
+        dep
+        for dep in app.config["dependencies"]
+        if dep.get("backend_fn") and dep.get("api_name") == "_upload_preflight_ui"
+    )
+    preflight_fn = app.fns[preflight_dep["id"]].fn
+
+    allowed, token, status, *_ = preflight_fn("clip.mp4")
+    assert allowed is False  # budget exhausted → upload blocked before any Modal call
+    assert token is None
+    assert "budget" in status.lower()
+
+
 def test_upload_sandbox_uses_topbar_popover_not_stage_accordion(monkeypatch):
     monkeypatch.setenv(viewer.ENGINE_URL_ENV, "http://127.0.0.1:9")
     monkeypatch.setenv(viewer.UPLOAD_SANDBOX_ENV, "1")
@@ -530,8 +637,8 @@ def test_upload_sandbox_uses_topbar_popover_not_stage_accordion(monkeypatch):
         if component["type"] == "html"
     )
     assert "Drop or browse your video" in helper
-    assert "Up to 60 seconds" in helper
-    assert "80 MB" in helper
+    assert "Up to 120 seconds" in helper
+    assert "160 MB" in helper
     assert "MP4, MOV, WebM, M4V" in helper
 
 
@@ -561,6 +668,52 @@ def test_upload_sandbox_renders_plain_upload_icon_without_login(monkeypatch):
     assert upload_buttons[0]["props"]["visible"] is not False
     assert upload_buttons[0]["props"]["value"] == "Upload a clip"
     assert "disabled" not in upload_buttons[0]["props"].get("elem_classes", [])
+
+
+def _find_upload_component(app, elem_class: str):
+    """Return the first config component whose elem_classes contains elem_class."""
+    return next(
+        (c for c in app.config["components"] if elem_class in c["props"].get("elem_classes", [])),
+        None,
+    )
+
+
+def test_v2_build_persona_visible_hint_hidden(monkeypatch, tmp_path):
+    """Guard: v2 build → persona dropdown visible, free-text hint hidden."""
+    monkeypatch.setenv(viewer.ENGINE_URL_ENV, "http://127.0.0.1:9")
+    monkeypatch.setenv(viewer.UPLOAD_SANDBOX_ENV, "1")
+    monkeypatch.setenv(viewer.MODAL_API_URL_ENV, "https://example.modal.run")
+    monkeypatch.setenv("SMALL_CUTS_UPLOAD_BUDGET_DB", str(tmp_path / "budget.sqlite3"))
+    monkeypatch.setenv(viewer.MODAL_API_VERSION_ENV, "v2")
+
+    app = viewer.build_viewer_app()
+
+    persona_comp = _find_upload_component(app, "sc-upload-persona")
+    hint_comp = _find_upload_component(app, "sc-upload-hint")
+
+    assert persona_comp is not None, "sc-upload-persona component not found"
+    assert hint_comp is not None, "sc-upload-hint component not found"
+    assert persona_comp["props"]["visible"] is True, "persona should be visible on v2"
+    assert hint_comp["props"]["visible"] is False, "hint should be hidden on v2"
+
+
+def test_v1_build_persona_hidden_hint_visible(monkeypatch, tmp_path):
+    """Guard: v1 build → persona dropdown hidden, free-text hint visible."""
+    monkeypatch.setenv(viewer.ENGINE_URL_ENV, "http://127.0.0.1:9")
+    monkeypatch.setenv(viewer.UPLOAD_SANDBOX_ENV, "1")
+    monkeypatch.setenv(viewer.MODAL_API_URL_ENV, "https://example.modal.run")
+    monkeypatch.setenv("SMALL_CUTS_UPLOAD_BUDGET_DB", str(tmp_path / "budget.sqlite3"))
+    monkeypatch.delenv(viewer.MODAL_API_VERSION_ENV, raising=False)
+
+    app = viewer.build_viewer_app()
+
+    persona_comp = _find_upload_component(app, "sc-upload-persona")
+    hint_comp = _find_upload_component(app, "sc-upload-hint")
+
+    assert persona_comp is not None, "sc-upload-persona component not found"
+    assert hint_comp is not None, "sc-upload-hint component not found"
+    assert persona_comp["props"]["visible"] is False, "persona should be hidden on v1"
+    assert hint_comp["props"]["visible"] is True, "hint should be visible on v1"
 
 
 def test_upload_status_html_has_pending_clapperboard():
@@ -645,7 +798,9 @@ def test_format_stage_fresh_scene_is_live():
     assert payload["audio_src"] == f"{ENGINE_URL}/media/9f1c7e4a/voice.wav"
     assert payload["caption"] == GOLDEN_SCENE["narration"]
     assert payload["title"] == "The Bicycle Is Mustard Yellow"
-    assert payload["style_label"] == "Wes Anderson Symmetrist"
+    # persona wins over v1 style_label when present
+    assert payload["style_label"] == "Nature Documentary · Attenborough-style"
+    assert payload["language"] == "English"
     assert payload["visibility"] == "private"
     assert payload["scene_id"] == GOLDEN_SCENE["scene_id"]
 
@@ -715,8 +870,15 @@ def test_shelf_items_marks_source_tiles():
 
     items = viewer.shelf_items([glasses_scene, upload_scene], FakeMediaClient())
 
-    assert items[0] == ("/media/frame.jpg", f"{viewer.GLASSES_SHELF_PREFIX}A Glasses Scene")
-    assert items[1] == ("/media/upload.jpg", f"{viewer.UPLOAD_SHELF_PREFIX}An Upload Scene")
+    # GOLDEN_SCENE carries persona=nature_doc + language=English → 3-line caption
+    expected_g = (
+        f"{viewer.GLASSES_SHELF_PREFIX}A Glasses Scene\nEN\nNature Documentary · Attenborough-style"
+    )
+    assert items[0] == ("/media/frame.jpg", expected_g)
+    expected_u = (
+        f"{viewer.UPLOAD_SHELF_PREFIX}An Upload Scene\nEN\nNature Documentary · Attenborough-style"
+    )
+    assert items[1] == ("/media/upload.jpg", expected_u)
 
 
 def test_write_voice_evicts_old_generated_audio(tmp_path, monkeypatch):
@@ -743,7 +905,11 @@ def test_shelf_items_unwraps_gradio_file_routes_for_gallery(tmp_path):
         FakeMediaClient(),
     )
 
-    assert item == (str(cached), GOLDEN_SCENE["title"])
+    # GOLDEN_SCENE carries persona=nature_doc + language=English → 3-line caption
+    assert item == (
+        str(cached),
+        f"{GOLDEN_SCENE['title']}\nEN\nNature Documentary · Attenborough-style",
+    )
 
 
 def test_playback_js_uses_trusted_dom_click_for_audio():
@@ -822,7 +988,13 @@ def test_poll_engine_renders_the_whole_page():
     # audio is now the hidden narration <audio> element carrying the served voice URL
     assert "<audio" in audio and 'id="sc-voice"' in audio
     assert f"{ENGINE_URL}/media/9f1c7e4a/voice.wav" in audio
-    assert shelf == [(f"{ENGINE_URL}/media/9f1c7e4a/frame.jpg", "The Bicycle Is Mustard Yellow")]
+    # GOLDEN_SCENE carries persona=nature_doc + language=English → 3-line caption
+    assert shelf == [
+        (
+            f"{ENGINE_URL}/media/9f1c7e4a/frame.jpg",
+            "The Bicycle Is Mustard Yellow\nEN\nNature Documentary · Attenborough-style",
+        )
+    ]
     assert scenes == [GOLDEN_SCENE]
     assert current == GOLDEN_SCENE["scene_id"]
     assert playing == GOLDEN_SCENE["scene_id"]
@@ -1010,7 +1182,12 @@ def test_go_live_handler_stages_a_scene(monkeypatch):
     assert scene["frame_src"] in stage
     assert scene["title"] in header  # an upload is a finished cut -> title, not "Happening now"
     assert "Narrator" in feed
-    assert shelf == [(scene["card_thumb"], f"{viewer.UPLOAD_SHELF_PREFIX}{scene['title']}")]
+    assert shelf == [
+        (
+            scene["card_thumb"],
+            f"{viewer.UPLOAD_SHELF_PREFIX}{scene['title']}\n\u2014\nNoir Detective",
+        )
+    ]
     assert pinned is None
 
 
@@ -1223,6 +1400,63 @@ def test_stage_html_without_duration_still_embeds_caption_chunks():
     assert "scCaptionChunks" in viewer.PLAYBACK_SYNC_JS
 
 
+def test_format_stage_surfaces_timed_captions():
+    scene = {
+        "scene_id": "s1",
+        "title": "t",
+        "narration": "hola",
+        "style_key": "deadpan",
+        "created_at": "2026-06-19T12:00:00+00:00",
+        "media": {"frame_url": "/f.jpg"},
+        "timed_captions": [{"t_start": 0.0, "t_end": 1.0, "text": "hola"}],
+    }
+    assert viewer.format_stage(scene)["timed_captions"] == scene["timed_captions"]
+
+
+def test_format_stage_no_scene_has_null_timed_captions():
+    assert viewer.format_stage(None)["timed_captions"] is None
+
+
+def test_stage_html_prefers_aligner_timed_captions_as_tuples():
+    # The aligner emits OBJECT cues {t_start,t_end,text}; the JS painter reads TUPLES cue[0/1/2].
+    # render_stage_html must convert object->tuple server-side (else Number(cue[0]) -> NaN).
+    timed = [
+        {"t_start": 0.0, "t_end": 1.2, "text": "Una persona abre la puerta"},
+        {"t_start": 1.2, "t_end": 2.4, "text": "del coche despacio"},
+    ]
+    out = viewer.render_stage_html(
+        "http://x/f.jpg",
+        "Una persona abre la puerta del coche despacio.",
+        live=False,
+        duration=2.4,
+        timed_captions=timed,
+    )
+    raw = out.split('data-sc-cues="', 1)[1].split('"', 1)[0]
+    cues = json.loads(html.unescape(raw))
+    assert cues[0] == [0.0, 1.2, "Una persona abre la puerta"]  # tuple-shaped, real aligner timing
+    assert cues[1][2] == "del coche despacio"
+    # first painted line seeded from the real cue, not the even-window derivation
+    assert '<span class="sc-sub-line">Una persona abre la puerta</span>' in out
+
+
+def test_stage_html_without_timed_captions_falls_back_to_derived_cues():
+    # Seed/v1 scenes carry no aligner cues → the even-window derivation is still used (unchanged).
+    timed_out = viewer.render_stage_html(
+        "http://x/f.jpg", "a b c d e f g h.", live=False, duration=4.0
+    )
+    raw = timed_out.split('data-sc-cues="', 1)[1].split('"', 1)[0]
+    cues = json.loads(html.unescape(raw))
+    assert cues[-1][1] == 4.0  # derived to cover the full known duration
+
+
+def test_cc_toggle_is_wired_off_by_default_and_persisted():
+    # CC defaults OFF (voice-first); the toggle flips a body-level class and persists it so the
+    # preference survives the per-scene re-render of the subtitle div.
+    assert "sc-cc-btn" in viewer.PLAYBACK_SYNC_JS  # delegated click target
+    assert "sc-cc-on" in viewer.PLAYBACK_SYNC_JS  # body class gating visibility
+    assert "sc-cc-on" in viewer.VIEWER_CSS  # CSS hides captions unless the body opts in
+
+
 def test_caption_painter_guards_writes_against_observer_loop():
     # The chrome MutationObserver watches childList/subtree; the caption painter MUST only write
     # textContent on change, or it re-fires the observer in an infinite loop that hangs the tab.
@@ -1274,3 +1508,76 @@ def test_build_viewer_app_has_preconnect_head(monkeypatch):
     app = viewer.build_viewer_app()
     head_content = getattr(app, "head", None) or getattr(app, "_deprecated_head", None)
     assert '<link rel="preconnect" href="https://huggingface.co" crossorigin>' in head_content
+
+
+def test_effective_upload_context_v2_resolves_persona():
+    out = viewer._effective_upload_context("nature_doc", "ignored free text", "Spanish", is_v2=True)
+    assert out == PERSONA_STEERS["nature_doc"]["Spanish"]
+
+
+def test_effective_upload_context_v2_default_is_empty():
+    out = viewer._effective_upload_context(PERSONA_DEFAULT_KEY, "ignored", "English", is_v2=True)
+    assert out == ""
+
+
+def test_effective_upload_context_v1_passes_free_text_through():
+    out = viewer._effective_upload_context("nature_doc", "a calm morning", "English", is_v2=False)
+    assert out == "a calm morning"
+
+
+def test_effective_style_key_v2_uses_persona():
+    assert viewer._effective_style_key("nature_doc", "deadpan", is_v2=True) == "nature_doc"
+
+
+def test_effective_style_key_v1_keeps_style():
+    assert viewer._effective_style_key("nature_doc", "noir", is_v2=False) == "noir"
+
+
+def test_persona_display_splits_archetype_and_full():
+    arche, full = viewer.persona_display("nature_doc")
+    assert arche == "Nature Documentary"
+    assert full == "Nature Documentary · Attenborough-style"
+
+
+def test_persona_display_unknown_is_empty():
+    assert viewer.persona_display("nope") == ("", "")
+
+
+def test_lang_abbr():
+    assert viewer.lang_abbr("English") == "EN"
+    assert viewer.lang_abbr("Spanish") == "ES"
+    assert viewer.lang_abbr("French") == "FR"
+    assert viewer.lang_abbr("Klingon") == ""
+    assert viewer.lang_abbr(None) == ""
+
+
+def test_shelf_caption_appends_label_when_present():
+    scene = {"title": "Night alley", "persona": "nature_doc", "language": "English"}
+    assert (
+        viewer._shelf_caption(scene) == "Night alley\nEN\nNature Documentary · Attenborough-style"
+    )
+
+
+def test_shelf_caption_unchanged_when_absent():
+    # title line / em-dash (no language) / style fallback (no style_key -> "off air")
+    assert viewer._shelf_caption({"title": "Night alley"}) == "Night alley\n\u2014\noff air"
+
+
+def test_header_renders_lang_and_full_label():
+    out = viewer.render_header_html(
+        "Night alley", "Nature Documentary · Attenborough-style", live=False, language="English"
+    )
+    assert "EN · Nature Documentary · Attenborough-style" in out
+
+
+def test_header_no_label_when_absent():
+    out = viewer.render_header_html("Night alley", "", live=False, language=None)
+    assert "·" not in out.split("sc-header-channel")[0]  # no label span in the title area
+
+
+def test_cc_button_styled_into_pill():
+    css = viewer.VIEWER_CSS
+    # CC adopts the icon-button footprint and reserves gold for the active state.
+    assert ".sc-cc-btn.sc-icbtn" in css
+    assert "body.sc-cc-on .sc-cc-btn.sc-icbtn" not in css
+    assert ".sc-theater.sc-cc-on .sc-cc-btn.sc-icbtn" in css

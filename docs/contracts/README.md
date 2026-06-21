@@ -3,12 +3,13 @@
 These schemas are the **only coupling** between the three teams
 ([architecture](../architecture.md)). Each team optimizes
 freely inside its boundary; the contracts keep the system aligned.
-Current set: **NarratedScene 1.2.0**; the other three remain **1.1.0**. (NarratedScene 1.2.0 is an
-additive/minor bump, panel-reviewed GLM 5.2 + GPT-5.5 2026-06-19; the 1.1.0 baseline was
+Current set: **NarratedScene 1.3.0**; the other three remain **1.1.0**. (NarratedScene 1.3.0 is an
+additive/minor bump; 1.2.0 was panel-reviewed GLM 5.2 + GPT-5.5 2026-06-19; the 1.1.0 baseline was
 adversarially reviewed Codex + Gemini 2026-06-12.)
 
 ## Changelog
 
+- **NarratedScene 1.3.0** (2026-06-20, additive/minor) — adds optional `persona`, `language`; cumulative version-truth (v1.2.0 rule now allows `≥1.2.0`; new rule forces `1.3.0` when persona/language present).
 - **NarratedScene 1.2.0** (2026-06-19, additive/minor) — adds optional `timed_captions`,
   `duration` (authoritative playback / narration-audio length, seconds), and `keyframe_time`
   (poster-frame offset in the clip). `contract_version` is now an `enum` of known versions, and a

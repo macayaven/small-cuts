@@ -18,6 +18,10 @@ the canonical command list, and the architecture live in the **root `CLAUDE.md`*
 - `SMALL_CUTS_BACKEND` = `mock` (default) | `transformers` (`Qwen/Qwen3-VL-8B-Instruct`) | `llama_cpp`.
 - `SMALL_CUTS_TTS_BACKEND` = `mock` (default) | `kokoro`. `get_backend()` / `get_tts_backend()` cache
   one instance per key — do **not** construct backends per call (re-loads 16 GB on the Space).
+- `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` / `LANGFUSE_BASE_URL` (Space-side only,
+  optional): when set, the v2 upload persona steers are fetched from Langfuse
+  (`midcuts-persona/{key}/{lang}`, production label) with the in-code strings in
+  `narrate_v2.py` as fallback. Absent → in-code strings. NEVER set on Modal.
 
 ## Viewer modes + layout (`viewer.py`)
 - Decided at build time by env:

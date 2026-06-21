@@ -53,6 +53,7 @@ from .hf_relay import (
     BucketSceneClient as _BucketSceneClient,
 )
 from .modal_upload import ModalUploadClient, ModalUploadError
+from .narrate_v2 import PERSONA_DEFAULT_KEY, PERSONA_LABELS, persona_choices, resolve_persona_steer
 from .observability import capture_exception
 from .styles import DEFAULT_STYLE_KEY, STYLES
 from .title_card import derive_title
@@ -66,9 +67,10 @@ ENGINE_URL_ENV = "SMALL_CUTS_ENGINE_URL"
 DISABLE_ENGINE_AUTODETECT_ENV = "SMALL_CUTS_DISABLE_ENGINE_AUTODETECT"
 MODAL_API_URL_ENV = "SMALL_CUTS_MODAL_API_URL"
 MODAL_API_TOKEN_ENV = "SMALL_CUTS_MODAL_API_TOKEN"
+MODAL_API_VERSION_ENV = "SMALL_CUTS_MODAL_API_VERSION"
 UPLOAD_SANDBOX_ENV = "SMALL_CUTS_ENABLE_UPLOAD_SANDBOX"
 UPLOAD_MAX_SECONDS_ENV = "SMALL_CUTS_UPLOAD_MAX_SECONDS"
-UPLOAD_MAX_BYTES = 80 * 1024 * 1024
+UPLOAD_MAX_BYTES = 160 * 1024 * 1024  # 160 MB (relaxed 2× from 80 MB)
 UPLOAD_FORMAT_LABEL = "MP4, MOV, WebM, M4V"
 UPLOAD_ALLOWED_SUFFIXES = {".mp4", ".mov", ".webm", ".m4v"}
 # The narrator-as-chat feed is dropped from the default layout (single centered column);
@@ -184,6 +186,21 @@ footer { display: none !important; }
   color: #f3efe4; border-radius: 9px; padding: 11px 16px; font-family: 'Spectral', serif;
   font-size: 1.04rem; line-height: 1.38; text-shadow: 0 1px 2px rgba(0,0,0,.85); }
 .sc-subtitle .sc-sub-line[hidden] { display: none; }
+/* CC captions default OFF (voice-first thesis); shown only when the viewer opts in. The gate
+   lives on .sc-theater (NOT <body>) so Gradio's CSS prefixer (.gradio-container… .contain) can't
+   break it: <body> is an ancestor of .contain, so a body-rooted selector never matches after
+   prefixing. .sc-theater is inside .contain, persists across stage re-renders, and is an ancestor
+   of both #sc-subtitle and .sc-cc-btn. */
+.sc-theater:not(.sc-cc-on) .sc-subtitle { display: none; }
+/* CC matches the other pill controls: gold glyph on the transparent dark pill (OFF), gold fill
+   when ON. Was dark-text-on-a-cream-box, which read as a foreign element in the control row. */
+.sc-cc-btn.sc-icbtn { color: #D4AF37 !important; background-color: transparent !important;
+  font-size: .72rem !important; font-weight: 700; letter-spacing: .06em;
+  display: flex !important; align-items: center; justify-content: center;
+  -webkit-mask-image: none !important; mask-image: none !important; }
+.sc-cc-btn.sc-icbtn:hover { background-color: #fff5d5 !important; color: #1a1a1f !important; }
+.sc-theater.sc-cc-on .sc-cc-btn.sc-icbtn { background-color: #D4AF37 !important;
+  color: #1a1a1f !important; }
 
 .sc-rec { position: absolute; top: 12px; left: 12px; display: inline-flex; align-items: center;
   gap: 7px; background: rgba(16,16,20,.78); color: #D4AF37; padding: 4px 11px;
@@ -216,6 +233,13 @@ footer { display: none !important; }
 .sc-dropzone-label { font-family: 'IBM Plex Mono', monospace; font-size: .72rem;
   letter-spacing: .14em; color: #8a8894; text-transform: uppercase; }
 .sc-shelf { background: transparent !important; border: none !important; }
+/* Three structured lines per thumbnail: title / language / narrator style. The caption
+   string carries real newlines (see _shelf_caption); `white-space: pre-line` renders them
+   as breaks, and the 3-line clamp fits the fixed-height rail cards. */
+.sc-shelf .caption-label { white-space: pre-line !important; text-overflow: clip !important;
+  display: -webkit-box !important; -webkit-line-clamp: 3 !important;
+  -webkit-box-orient: vertical !important; overflow: hidden !important;
+  line-height: 1.2 !important; font-size: 11px !important; }
 .sc-shelf .thumbnail-item { position: relative; }
 .sc-shelf .thumbnail-item:has(img[alt^="\\002062"])::before,
 .sc-shelf .thumbnail-item:has(img[alt^="\\002063"])::before {
@@ -543,11 +567,11 @@ def upload_sandbox_enabled() -> bool:
 
 
 def upload_max_seconds() -> float:
-    raw = os.environ.get(UPLOAD_MAX_SECONDS_ENV, "60").strip()
+    raw = os.environ.get(UPLOAD_MAX_SECONDS_ENV, "120").strip()
     try:
         return max(1.0, float(raw))
     except ValueError:
-        return 60.0
+        return 120.0
 
 
 def upload_max_mb() -> int:
@@ -713,6 +737,14 @@ def _modal_upload_client() -> ModalUploadClient:
     return ModalUploadClient(base_url, token)
 
 
+def _modal_api_is_v2() -> bool:
+    """True when the upload front door targets the v2 ``/v2/narrate`` pipeline (mid-cuts).
+
+    Env-gated (default ``v1``) so the live Space's v1 ``/v1/cuts`` upload path stays unchanged.
+    """
+    return os.environ.get(MODAL_API_VERSION_ENV, "v1").strip().lower() == "v2"
+
+
 def _style_label(style_key: str) -> str:
     style = STYLES.get(style_key)
     if style is not None:
@@ -773,6 +805,8 @@ def format_stage(
             "live": False,
             "visibility": None,
             "source_icon": None,
+            "timed_captions": None,
+            "language": None,
         }
     base = engine_url.rstrip("/")
 
@@ -785,7 +819,10 @@ def format_stage(
     return {
         "scene_id": scene.get("scene_id"),
         "title": scene.get("title") or "Untitled Scene",
-        "style_label": _style_label(scene.get("style_key", "")),
+        "style_label": (
+            persona_display(scene.get("persona"))[1] or _style_label(scene.get("style_key", ""))
+        ),
+        "language": scene.get("language"),
         "caption": scene.get("narration", ""),
         "frame_src": scene.get("frame_src") or _absolute(media.get("frame_url")),
         "clip_src": scene.get("clip_src") or _absolute(media.get("clip_url")),
@@ -794,6 +831,7 @@ def format_stage(
         "live": is_fresh(scene.get("created_at"), now=now),
         "visibility": scene.get("visibility"),
         "source_icon": _source_icon(scene),
+        "timed_captions": scene.get("timed_captions"),
     }
 
 
@@ -858,11 +896,16 @@ def render_stage_html(
     clip_src: str | None = None,
     duration: float | None = None,
     source_icon: str | None = None,
+    timed_captions: list[dict[str, Any]] | None = None,
 ) -> str:
     """The 9:16 stage: the moment (video clip or still frame) + lower-third caption.
 
     `live` is retained for signature stability — the live/finished state now lives in the
     header ("Happening now" vs. the auto-title), not a REC chip on the stage.
+
+    `timed_captions` are the aligner's real word-timed cues (object-shaped {t_start,t_end,text}).
+    When present they are converted to the painter's tuple shape [start,end,text] and preferred
+    over the even-window `caption_cues` derivation (used as the fallback for seed/v1 scenes).
     """
     if clip_src:
         poster = f' poster="{html.escape(frame_src, quote=True)}"' if frame_src else ""
@@ -878,7 +921,11 @@ def render_stage_html(
         body = '<div class="sc-stage-empty">🎬</div>'
     if caption and caption.strip():
         chunks = [chunk for chunk in _subtitle_chunks(caption.strip()) if chunk.strip()]
-        cues = caption_cues(caption, duration)
+        if timed_captions:
+            # Real aligner cues → tuple shape [start, end, text] the JS painter (cue[0/1/2]) reads.
+            cues = [[c["t_start"], c["t_end"], c["text"]] for c in timed_captions]
+        else:
+            cues = caption_cues(caption, duration)
         first_caption = cues[0][2] if cues else (chunks[0] if chunks else caption.strip())
         dur_attr = f' data-duration="{float(duration):.1f}"' if duration else ""
         # Timed cues (when the scene's duration is known server-side) are preferred by the painter;
@@ -910,6 +957,7 @@ def render_header_html(
     style_label: str,
     live: bool,
     notice: str | None = None,
+    language: str | None = None,
 ) -> str:
     # One unnamed signature voice — the channel is Small Cuts, not a per-cut director.
     # style_label is retained in the call signature for future per-owner channels.
@@ -922,10 +970,15 @@ def render_header_html(
         )
     else:
         headline = '<span class="sc-live-dot"></span>Happening now' if live else html.escape(title)
+    abbr = lang_abbr(language)
+    if abbr and style_label and not live:
+        right = f"{abbr} · {html.escape(style_label)}"
+    else:
+        right = "Small Cuts"
     return (
         f'<div class="sc-header sc-{state}">'
         f'<span class="sc-header-title">{headline}</span>'
-        '<span class="sc-header-channel">Small Cuts</span>'
+        f'<span class="sc-header-channel">{right}</span>'
         "</div>"
     )
 
@@ -1021,10 +1074,40 @@ def _gallery_media_src(src: str) -> str:
     return src
 
 
+_LANG_ABBR = {"English": "EN", "Spanish": "ES", "French": "FR"}
+
+
+def lang_abbr(language: str | None) -> str:
+    """Two-letter abbreviation for a known language; "" otherwise."""
+    return _LANG_ABBR.get(language or "", "")
+
+
+def persona_display(persona: str | None) -> tuple[str, str]:
+    """(archetype, full label) for a persona key; ("", "") if unknown."""
+    label = PERSONA_LABELS.get(persona or "")
+    if not label:
+        return ("", "")
+    return (label.split(" · ", 1)[0], label)
+
+
 def _shelf_caption(scene: dict[str, Any]) -> str:
+    """Three lines, one piece of information each: title · language · narrator style.
+
+    The style label is resolved through the SAME path as ``format_stage`` (persona
+    label wins, then the style_key label) so the shelf and the stage header never
+    disagree. Each thumbnail therefore shows the same structure at the same level,
+    regardless of whether a cut was seeded (style_key only) or uploaded via v2
+    (persona + language). The invisible source-icon prefix stays glued to the title
+    line so the CSS source-badge still lights up.
+    """
     title = scene.get("title", "")
     source_icon = _source_icon(scene)
-    return f"{_SOURCE_SHELF_PREFIXES.get(source_icon, '')}{title}"
+    title_line = f"{_SOURCE_SHELF_PREFIXES.get(source_icon, '')}{title}"
+    lang_line = lang_abbr(scene.get("language")) or "\u2014"  # em dash when unknown
+    style_line = persona_display(scene.get("persona"))[1] or _style_label(
+        scene.get("style_key", "")
+    )
+    return f"{title_line}\n{lang_line}\n{style_line}"
 
 
 def _scene_with_media_urls(
@@ -1095,7 +1178,11 @@ def poll_engine(
     notice = "New cut available" if channel_live and not on_air else None
 
     header = render_header_html(
-        payload["title"], payload["style_label"], live=channel_live, notice=notice
+        payload["title"],
+        payload["style_label"],
+        live=channel_live,
+        notice=notice,
+        language=payload.get("language"),
     )
     stage = render_stage_html(
         payload["frame_src"],
@@ -1104,6 +1191,7 @@ def poll_engine(
         clip_src=payload["clip_src"],
         duration=payload["duration"],
         source_icon=payload["source_icon"],
+        timed_captions=payload.get("timed_captions"),
     )
     feed = render_feed_html([feed_entry(scene) for scene in scenes[-FEED_LIMIT:]])
 
@@ -1220,7 +1308,9 @@ def _go_live_handler(
     return (
         # An upload is a finished, processed cut — show its auto-title, not "Happening now"
         # (that headline is reserved for live engine-mode capture).
-        render_header_html(payload["title"], payload["style_label"], live=False),
+        render_header_html(
+            payload["title"], payload["style_label"], live=False, language=payload.get("language")
+        ),
         render_stage_html(
             payload["frame_src"],
             payload["caption"],
@@ -1228,6 +1318,7 @@ def _go_live_handler(
             clip_src=payload["clip_src"],
             duration=payload["duration"],
             source_icon=payload["source_icon"],
+            timed_captions=payload.get("timed_captions"),
         ),
         render_feed_html([feed_entry(s) for s in scenes[-FEED_LIMIT:]]),
         local_shelf_items(scenes),
@@ -1334,7 +1425,12 @@ def _engine_scene_control_outputs(
     else:
         audio_update = gr.skip()
     return (
-        render_header_html(payload["title"], payload["style_label"], payload["live"]),
+        render_header_html(
+            payload["title"],
+            payload["style_label"],
+            payload["live"],
+            language=payload.get("language"),
+        ),
         render_stage_html(
             payload["frame_src"],
             payload["caption"],
@@ -1342,6 +1438,7 @@ def _engine_scene_control_outputs(
             clip_src=payload["clip_src"],
             duration=payload["duration"],
             source_icon=payload["source_icon"],
+            timed_captions=payload.get("timed_captions"),
         ),
         audio_update,
         _pack_engine_ui_state(
@@ -1371,12 +1468,31 @@ def _modal_upload_warning_response(message: str, state: Any) -> tuple[Any, ...]:
     )
 
 
+def _effective_upload_context(
+    persona_key: str, scene_hint: str, language: str, *, is_v2: bool
+) -> str:
+    """The value sent as `context`/`scene_hint` to Modal.
+
+    v2: resolve the chosen persona to its curated manner steer (default → "").
+    v1: pass the free-text scene hint through unchanged (byte-identical legacy)."""
+    if is_v2:
+        return resolve_persona_steer(persona_key, language)
+    return scene_hint
+
+
+def _effective_style_key(persona_key: str, style_key: str, *, is_v2: bool) -> str:
+    """v2 carries the persona key in style_key (for display); v1 keeps its director style."""
+    return persona_key if is_v2 else style_key
+
+
 def _submit_modal_upload(
     video_path: str | None,
     style_key: str,
     scene_hint: str,
     state: Any,
     media_client: EngineClient | BucketSceneClient,
+    *,
+    language: str = "English",
 ) -> tuple[Any, ...]:
     if not video_path:
         return _modal_upload_warning_response("Upload a video clip first.", state)
@@ -1401,11 +1517,19 @@ def _submit_modal_upload(
         )
 
     try:
-        raw_scene = _modal_upload_client().submit_video(
-            video_path,
-            style_key=style_key,
-            scene_hint=scene_hint,
-        )
+        if _modal_api_is_v2():
+            raw_scene = _modal_upload_client().submit_video_v2(
+                video_path,
+                style_key=style_key,
+                language=language,
+                context=scene_hint,
+            )
+        else:
+            raw_scene = _modal_upload_client().submit_video(
+                video_path,
+                style_key=style_key,
+                scene_hint=scene_hint,
+            )
     except (ModalUploadError, httpx.HTTPError) as exc:
         capture_exception(exc)
         return _modal_upload_warning_response(f"Modal upload failed: {exc}", state)
@@ -1421,7 +1545,9 @@ def _submit_modal_upload(
     payload = format_stage(scene)
     scene_id = payload["scene_id"]
     return (
-        render_header_html(payload["title"], payload["style_label"], live=False),
+        render_header_html(
+            payload["title"], payload["style_label"], live=False, language=payload.get("language")
+        ),
         render_stage_html(
             payload["frame_src"],
             payload["caption"],
@@ -1429,6 +1555,7 @@ def _submit_modal_upload(
             clip_src=payload["clip_src"],
             duration=payload["duration"],
             source_icon=payload["source_icon"],
+            timed_captions=payload.get("timed_captions"),
         ),
         render_feed_html([feed_entry(s) for s in scenes[-FEED_LIMIT:]]),
         _audio_html(payload["audio_src"]) if payload["audio_src"] else gr.skip(),
@@ -1520,6 +1647,7 @@ def _seed_scenes() -> list[dict[str, Any]]:
                 "title": title,
                 "narration": narration,
                 "style_key": demo_seed.STYLE_KEY,
+                "language": "English",  # the seed narration is English -> "EN" on the shelf
                 "created_at": (base + timedelta(minutes=offset * 7)).isoformat(),
                 "clip_src": f"/gradio_api/file={demo_seed.clip_path(clip)}",
                 "audio_src": voice,
@@ -1700,6 +1828,30 @@ PLAYBACK_SYNC_JS = """
     window.__scUploadFormObs.observe(document.body, { childList: true, subtree: true });
   }
 
+  // a11y: the icon-only control buttons have no visible text. Stamp aria-labels so screen
+  // readers can announce them. Mirrors the scFixUploadFormFields pattern (delegated, survives
+  // Gradio's per-scene re-render). Play/Pause is swapped dynamically in scSetPlayIcon below.
+  const scLabelButtons = () => {
+    const labels = {
+      '.sc-ico-rewind': 'Previous clip',
+      '.sc-play-btn': 'Play',
+      '.sc-ico-forward': 'Next clip',
+      '.sc-cc-btn': 'Toggle captions',
+      '.sc-upload.sc-icbtn': 'Upload a clip',
+    };
+    for (const [cls, label] of Object.entries(labels)) {
+      const el = document.querySelector(cls);
+      if (el && el.getAttribute('aria-label') !== label) {
+        el.setAttribute('aria-label', label);
+      }
+    }
+  };
+  scLabelButtons();
+  if (!window.__scA11yObs && document.body) {
+    window.__scA11yObs = new MutationObserver(scLabelButtons);
+    window.__scA11yObs.observe(document.body, { childList: true, subtree: true });
+  }
+
   if (typeof window.__scUploadSubmitLocked !== 'boolean') {
     window.__scUploadSubmitLocked = false;
   }
@@ -1782,6 +1934,10 @@ PLAYBACK_SYNC_JS = """
     if (!playBtn) return;
     playBtn.classList.toggle('sc-ico-pause', playing);
     playBtn.classList.toggle('sc-ico-play', !playing);
+    const label = playing ? 'Pause' : 'Play';
+    if (playBtn.getAttribute('aria-label') !== label) {
+      playBtn.setAttribute('aria-label', label);
+    }
   };
   const scSubtitleData = (key) => {
     const sub = document.querySelector('#sc-subtitle');
@@ -1951,6 +2107,22 @@ PLAYBACK_SYNC_JS = """
     if (!(e.target.closest && e.target.closest('.sc-play-btn'))) return;
     if (Date.now() - (window.__scLastTouchPlayAt || 0) < 500) return;
     togglePlayback(e);
+  }, true);
+
+  // CC captions: a persisted, voice-first-OFF toggle. The button has no Gradio handler — flip a
+  // class on .sc-theater (inside .contain, survives per-scene re-render of #sc-subtitle) and
+  // remember the choice in localStorage. CSS hides .sc-subtitle unless .sc-theater has .sc-cc-on.
+  // (.sc-theater, not <body>: Gradio's CSS prefixer prepends .contain… to every rule, so a
+  // body-rooted selector never matches — <body> is an ancestor of .contain, not a descendant.)
+  const scReadCcPref = () => {
+    try { return window.localStorage.getItem('scCc') === '1'; } catch (e) { return false; }
+  };
+  const scCcTarget = () => document.querySelector('.sc-theater') || document.body;
+  if (scReadCcPref()) scCcTarget().classList.add('sc-cc-on');
+  document.addEventListener('click', (e) => {
+    if (!(e.target.closest && e.target.closest('.sc-cc-btn'))) return;
+    const on = scCcTarget().classList.toggle('sc-cc-on');
+    try { window.localStorage.setItem('scCc', on ? '1' : '0'); } catch (err) {}
   }, true);
 
   // R4 + R5: between "Make the cut" and the buffered reveal the user sees ONLY the
@@ -2129,7 +2301,9 @@ def build_viewer_app() -> gr.Blocks:
         boot_audio = _audio_html(None)
     else:
         boot = format_stage(seed[-1] if seed else None)
-        boot_header = render_header_html(boot["title"], boot["style_label"], live=False)
+        boot_header = render_header_html(
+            boot["title"], boot["style_label"], live=False, language=boot.get("language")
+        )
         boot_stage = render_stage_html(
             boot["frame_src"],
             boot["caption"],
@@ -2137,6 +2311,7 @@ def build_viewer_app() -> gr.Blocks:
             clip_src=boot["clip_src"],
             duration=boot["duration"],
             source_icon=boot["source_icon"],
+            timed_captions=boot.get("timed_captions"),
         )
         boot_audio = _audio_html(boot["audio_src"])
 
@@ -2208,6 +2383,9 @@ def build_viewer_app() -> gr.Blocks:
                         padding=False,
                     )
                     forward_btn = gr.Button("", elem_classes=["sc-icbtn", "sc-ico-forward"])
+                    # CC: soft caption toggle. No Python handler — PLAYBACK_SYNC_JS flips a
+                    # persisted body class (delegated DOM click), like the play gesture.
+                    gr.Button("CC", elem_classes=["sc-icbtn", "sc-cc-btn"])
                     if client is None:
                         # like (honest no-count toggle) + flag now live in the pill, aligned
                         # with the controls (Review-3 #2 — no longer orphaned below).
@@ -2262,12 +2440,36 @@ def build_viewer_app() -> gr.Blocks:
                             elem_classes="sc-upload-video",
                         )
                         # R2/R3: the optional scene-hint sits below the zone; cleared on success.
+                        # Hidden on v2 where the persona dropdown replaces free-text steering.
                         hint = gr.Textbox(
                             show_label=False,
                             placeholder="Whisper context to the narrator (optional)",
                             lines=1,
                             max_lines=2,
                             elem_classes="sc-upload-hint",
+                            visible=not _modal_api_is_v2(),
+                        )
+                        # v2 narrator persona: a closed set of curated manner steers
+                        # (replaces the free-text hint on the v2 path). Hidden on v1,
+                        # where the free-text hint is the scene-content cue instead.
+                        persona = gr.Dropdown(
+                            choices=persona_choices(),
+                            value=PERSONA_DEFAULT_KEY,
+                            label="Narrator",
+                            container=False,
+                            visible=_modal_api_is_v2(),
+                            elem_classes="sc-upload-persona",
+                        )
+                        # Voice language for the v2 /v2/narrate pipeline — only the languages Carlos
+                        # can validate by ear. Hidden (defaults English) on the v1 live Space so its
+                        # UI/behaviour is unchanged; the v1 path ignores the value.
+                        language = gr.Dropdown(
+                            choices=["English", "Spanish", "French"],
+                            value="English",
+                            label="Voice language",
+                            container=False,
+                            visible=_modal_api_is_v2(),
+                            elem_classes="sc-upload-language",
                         )
                         upload_status = gr.HTML(
                             render_upload_status_html(),
@@ -2379,6 +2581,8 @@ def build_viewer_app() -> gr.Blocks:
                     video_path,
                     style_key,
                     scene_hint,
+                    language,
+                    persona_key,
                     state,
                     upload_status_html,
                 ):
@@ -2408,13 +2612,17 @@ def build_viewer_app() -> gr.Blocks:
                     # branch (and the R3 reset) is decided here, in the click wrapper, so the
                     # data-flow function is untouched.
                     started_at = time.monotonic()
+                    effective_hint = _effective_upload_context(
+                        persona_key, scene_hint, language, is_v2=_modal_api_is_v2()
+                    )
                     try:
                         result = _submit_modal_upload(
                             video_path,
-                            style_key,
-                            scene_hint,
+                            _effective_style_key(persona_key, style_key, is_v2=_modal_api_is_v2()),
+                            effective_hint,
                             state,
                             engine,
+                            language=language,
                         )
                     finally:
                         if upload_budget is not None:
@@ -2435,7 +2643,10 @@ def build_viewer_app() -> gr.Blocks:
                             payload = format_stage(saved_scene)
                             result = (
                                 render_header_html(
-                                    payload["title"], payload["style_label"], live=False
+                                    payload["title"],
+                                    payload["style_label"],
+                                    live=False,
+                                    language=payload.get("language"),
                                 ),
                                 render_stage_html(
                                     payload["frame_src"],
@@ -2444,6 +2655,7 @@ def build_viewer_app() -> gr.Blocks:
                                     clip_src=payload["clip_src"],
                                     duration=payload["duration"],
                                     source_icon=payload["source_icon"],
+                                    timed_captions=payload.get("timed_captions"),
                                 ),
                                 render_feed_html(
                                     [feed_entry(scene) for scene in scenes[-FEED_LIMIT:]]
@@ -2505,6 +2717,8 @@ def build_viewer_app() -> gr.Blocks:
                         drop_video,
                         style,
                         hint,
+                        language,
+                        persona,
                         scenes_state,
                         upload_status,
                     ],
@@ -2534,7 +2748,7 @@ def build_viewer_app() -> gr.Blocks:
                     js=FINISH_OR_CANCEL_GENERATION_JS,
                 )
 
-            def _tick(state):
+            def _paint(state):
                 state = _engine_ui_state(state)
                 previous_scenes = state["scenes"]
                 (
@@ -2585,6 +2799,15 @@ def build_viewer_app() -> gr.Blocks:
                     visibility_update,
                 )
 
+            def _tick(state):
+                # Push-not-poll cache-bust: a relay-scene SSE event means a fresh cut just landed in
+                # the bucket; drop the BucketSceneClient manifest cache so this repaint re-reads it
+                # now (within MANIFEST_CACHE_TTL_S it would otherwise serve the stale cached list).
+                # Named `_tick` because the relay_scene custom event exposes it as the "_tick" api.
+                if isinstance(engine, BucketSceneClient):
+                    engine.invalidate_cache()
+                return _paint(state)
+
             poll_outputs = [
                 header,
                 stage,
@@ -2606,11 +2829,12 @@ def build_viewer_app() -> gr.Blocks:
                 # (seed=[]) and otherwise only repaint on a pushed relay-scene SSE event — so a
                 # fresh page load (a judge opening the Space, or a tab after a silent manifest
                 # promote that fired no hook) would show nothing until the next push. Run the SAME
-                # proven _tick once on load so the current bucket library always renders. This is a
-                # one-shot initial render, NOT a timer/poll loop (the no-Space-polling rule targets
-                # timers, not page-load reads).
+                # proven repaint once on load so the current bucket library always renders. This is
+                # a one-shot initial render, NOT a timer/poll loop. It uses _paint (no cache-bust)
+                # so concurrent page loads still share the manifest cache; only a push (_tick)
+                # forces a fresh re-read.
                 demo.load(
-                    _tick,
+                    _paint,
                     inputs=[scenes_state],
                     outputs=poll_outputs,
                     queue=False,
@@ -2677,12 +2901,12 @@ def build_viewer_app() -> gr.Blocks:
                 visibility,
             ]
             rewind_btn.click(
-                lambda state: _step_engine(-1, state),
+                lambda state: _step_engine(+1, state),
                 inputs=[scenes_state],
                 outputs=step_outputs_e,
             )
             forward_btn.click(
-                lambda state: _step_engine(1, state),
+                lambda state: _step_engine(-1, state),
                 inputs=[scenes_state],
                 outputs=step_outputs_e,
             )
@@ -2714,7 +2938,12 @@ def build_viewer_app() -> gr.Blocks:
                     payload["scene_id"], liked_ids, reported_ids
                 )
                 return (
-                    render_header_html(payload["title"], payload["style_label"], payload["live"]),
+                    render_header_html(
+                        payload["title"],
+                        payload["style_label"],
+                        payload["live"],
+                        language=payload.get("language"),
+                    ),
                     render_stage_html(
                         payload["frame_src"],
                         payload["caption"],
@@ -2722,6 +2951,7 @@ def build_viewer_app() -> gr.Blocks:
                         clip_src=payload["clip_src"],
                         duration=payload["duration"],
                         source_icon=payload["source_icon"],
+                        timed_captions=payload.get("timed_captions"),
                     ),
                     _audio_html(payload["audio_src"]),
                     payload["scene_id"],
@@ -2737,7 +2967,12 @@ def build_viewer_app() -> gr.Blocks:
                     payload["scene_id"], liked_ids, reported_ids
                 )
                 return (
-                    render_header_html(payload["title"], payload["style_label"], payload["live"]),
+                    render_header_html(
+                        payload["title"],
+                        payload["style_label"],
+                        payload["live"],
+                        language=payload.get("language"),
+                    ),
                     render_stage_html(
                         payload["frame_src"],
                         payload["caption"],
@@ -2745,6 +2980,7 @@ def build_viewer_app() -> gr.Blocks:
                         clip_src=payload["clip_src"],
                         duration=payload["duration"],
                         source_icon=payload["source_icon"],
+                        timed_captions=payload.get("timed_captions"),
                     ),
                     _audio_html(payload["audio_src"]),
                     None,
@@ -2763,7 +2999,12 @@ def build_viewer_app() -> gr.Blocks:
                     payload["scene_id"], liked_ids, reported_ids
                 )
                 return (
-                    render_header_html(payload["title"], payload["style_label"], payload["live"]),
+                    render_header_html(
+                        payload["title"],
+                        payload["style_label"],
+                        payload["live"],
+                        language=payload.get("language"),
+                    ),
                     render_stage_html(
                         payload["frame_src"],
                         payload["caption"],
@@ -2771,6 +3012,7 @@ def build_viewer_app() -> gr.Blocks:
                         clip_src=payload["clip_src"],
                         duration=payload["duration"],
                         source_icon=payload["source_icon"],
+                        timed_captions=payload.get("timed_captions"),
                     ),
                     _audio_html(payload["audio_src"]),
                     scene["scene_id"],
@@ -2823,7 +3065,12 @@ def build_viewer_app() -> gr.Blocks:
                     scenes = _merge_scene_lists(seed, upload_library.list_scenes(limit=SHELF_LIMIT))
                     payload = format_stage(scene)
                     outputs = (
-                        render_header_html(payload["title"], payload["style_label"], live=False),
+                        render_header_html(
+                            payload["title"],
+                            payload["style_label"],
+                            live=False,
+                            language=payload.get("language"),
+                        ),
                         render_stage_html(
                             payload["frame_src"],
                             payload["caption"],
@@ -2831,6 +3078,7 @@ def build_viewer_app() -> gr.Blocks:
                             clip_src=payload["clip_src"],
                             duration=payload["duration"],
                             source_icon=payload["source_icon"],
+                            timed_captions=payload.get("timed_captions"),
                         ),
                         render_feed_html([feed_entry(s) for s in scenes[-FEED_LIMIT:]]),
                         local_shelf_items(scenes),
@@ -2950,14 +3198,14 @@ def build_viewer_app() -> gr.Blocks:
             step_outputs = [header, stage, audio, pinned_state, like_btn, report_btn]
             rewind_btn.click(
                 lambda scenes, pinned, liked, reported: _step_local(
-                    -1, scenes, pinned, liked, reported
+                    +1, scenes, pinned, liked, reported
                 ),
                 inputs=[scenes_state, pinned_state, liked_state, reported_state],
                 outputs=step_outputs,
             )
             forward_btn.click(
                 lambda scenes, pinned, liked, reported: _step_local(
-                    1, scenes, pinned, liked, reported
+                    -1, scenes, pinned, liked, reported
                 ),
                 inputs=[scenes_state, pinned_state, liked_state, reported_state],
                 outputs=step_outputs,

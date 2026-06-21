@@ -36,15 +36,32 @@ def _decorator_kwargs(name: str, attr: str) -> dict[str, object]:
 
 
 def test_gpu_class_and_api_scale_to_zero():
-    for name, attr in (("Narrator", "cls"), ("api", "function")):
+    for name, attr in (("Narrator", "cls"), ("Aligner", "cls"), ("api", "function")):
         kwargs = _decorator_kwargs(name, attr)
         assert kwargs["min_containers"] == 0
         assert kwargs["buffer_containers"] == 0
         assert kwargs["scaledown_window"] <= 60
 
 
-def test_gpu_class_is_bounded():
+def test_gpu_classes_are_bounded():
+    # both GPU classes (H200 narrator + L4 aligner) must cap concurrent containers — cost safety.
     assert _decorator_kwargs("Narrator", "cls")["max_containers"] <= 2
+    assert _decorator_kwargs("Aligner", "cls")["max_containers"] <= 2
+
+
+def test_aligner_runs_in_a_separate_qwen_asr_image():
+    # The carrier-cut aligner hard-pins transformers==4.57.6, which conflicts with Omni's git-main,
+    # so it MUST stay in its own image — never merged into the omni image.
+    assert "aligner_image = (" in SOURCE
+    assert '"qwen-asr"' in SOURCE
+    assert 'ALIGNER_MODEL = "Qwen/Qwen3-ForcedAligner-0.6B"' in SOURCE
+
+
+def test_title_pass_is_text_only():
+    # regression #2: the model title comes from a SEPARATE text-only pass (return_audio=False) so
+    # the Talker never speaks JSON/markup; clean_model_title parses it, derive_title is fallback.
+    assert "return_audio=False" in SOURCE
+    assert "clean_model_title(" in SOURCE
 
 
 def test_bearer_is_timing_safe_and_fail_closed():

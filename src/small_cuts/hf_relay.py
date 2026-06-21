@@ -179,6 +179,15 @@ class BucketSceneClient:
                     f"could not read relay bucket {self.bucket_id}: {exc}"
                 ) from exc
 
+    def invalidate_cache(self) -> None:
+        """Drop the cached scene list so the next ``list_scenes`` re-reads the bucket.
+
+        The relay-scene push path calls this so a freshly published cut is visible immediately, even
+        within ``MANIFEST_CACHE_TTL_S`` of a prior read; non-push reads keep using the cache.
+        """
+        with self._manifest_lock:
+            self._manifest_cache = None
+
     def _manifest_scenes(self, raw: bytes) -> list[dict[str, Any]]:
         manifest = json.loads(raw.decode("utf-8"))
         scenes = manifest.get("scenes", [])
@@ -207,6 +216,13 @@ class BucketSceneClient:
         glob = getattr(self.fs, "glob", None)
         if glob is None:
             return []
+        # fsspec caches directory listings for the life of the fs object, so a newly published
+        # uploads/<id>/scene.json would never be globbed (the v2 manifest-less path) until the fs is
+        # recreated. Bust the listing cache before globbing. The manifest (cat) path is unaffected,
+        # so the live Space's manifest-based relay is unchanged.
+        invalidate_listings = getattr(self.fs, "invalidate_cache", None)
+        if invalidate_listings is not None:
+            invalidate_listings()
         try:
             scene_paths = glob(f"{self.root}/uploads/*/scene.json")
         except FileNotFoundError:

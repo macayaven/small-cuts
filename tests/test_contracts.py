@@ -33,7 +33,7 @@ GOLDEN = {
         "prev_moment_id": None,
     },
     "narrated-scene.schema.json": {
-        "contract_version": "1.2.0",
+        "contract_version": "1.3.0",
         "seq": 412,
         "captured_at": "2026-06-12T09:30:00Z",
         "scene_id": "9f1c7e4a-2fa1-11d2-883f-0016d3cca427",
@@ -61,6 +61,8 @@ GOLDEN = {
             {"t_start": 0.0, "t_end": 1.6, "text": "The bicycle is mustard yellow,"},
             {"t_start": 1.6, "t_end": 3.4, "text": "which is also the color of the railing."},
         ],
+        "persona": "nature_doc",
+        "language": "English",
     },
     "scene-audio.schema.json": {
         "contract_version": "1.1.0",
@@ -97,13 +99,25 @@ def test_narrated_scene_v1_2_field_requires_1_2_0_version():
         jsonschema.validate(downgraded, schema)
 
 
+def test_narrated_scene_v1_3_field_requires_1_3_0_version():
+    schema = json.loads((CONTRACTS / "narrated-scene.schema.json").read_text())
+    sample = {
+        **GOLDEN["narrated-scene.schema.json"],
+        "persona": "nature_doc",
+        "language": "English",
+    }
+    jsonschema.validate({**sample, "contract_version": "1.3.0"}, schema)  # ok
+    with pytest.raises(jsonschema.ValidationError):
+        jsonschema.validate({**sample, "contract_version": "1.2.0"}, schema)  # persona forces 1.3.0
+
+
 def test_narrated_scene_1_1_0_subset_still_validates():
     # a legacy producer emitting ONLY the 1.1.0 subset (no new fields) stays valid under 1.1.0.
     schema = json.loads((CONTRACTS / "narrated-scene.schema.json").read_text())
     legacy = {
         k: v
         for k, v in GOLDEN["narrated-scene.schema.json"].items()
-        if k not in {"duration", "keyframe_time", "timed_captions"}
+        if k not in {"duration", "keyframe_time", "timed_captions", "persona", "language"}
     }
     legacy["contract_version"] = "1.1.0"
     jsonschema.validate(legacy, schema)

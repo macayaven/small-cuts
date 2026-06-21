@@ -357,6 +357,7 @@ class Narrator:
                 "narrator_backend": "transformers",
                 "tts_model": OMNI_MODEL,
             },
+            # v2 sends the persona key in style_key, so persona aliases it (display provenance).
             persona=style_key,
             language=language,
         )

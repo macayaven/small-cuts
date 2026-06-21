@@ -57,7 +57,7 @@ def test_local_shelf_items_accepts_persisted_media_urls():
         ]
     )
 
-    assert items == [("/tmp/persisted-frame.jpg", "\u2063Persisted Cut")]
+    assert items == [("/tmp/persisted-frame.jpg", "\u2063Persisted Cut\n\u2014\noff air")]
 
 
 def test_library_items_show_latest_clips_first():
@@ -84,7 +84,10 @@ def test_library_items_show_latest_clips_first():
         ]
     )
 
-    assert [label for _, label in items] == ["New Cut", "Middle Cut", "Old Cut"]
+    # ordering check (latest-first); the caption is now a 3-line block, so compare
+    # the title line (splitlines()[0]) rather than the whole caption string.
+    titles = [label.splitlines()[0] for _, label in items]
+    assert titles == ["New Cut", "Middle Cut", "Old Cut"]
 
 
 def test_library_selection_index_maps_to_latest_first_scene():

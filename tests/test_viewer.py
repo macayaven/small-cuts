@@ -98,10 +98,10 @@ def test_upload_error_message_is_preserved_in_engine_state():
     assert state["upload_error_message"] == "Modal upload failed: unavailable"
 
 
-def test_upload_video_cap_defaults_to_sixty_seconds(monkeypatch):
+def test_upload_video_cap_defaults_to_one_hundred_twenty_seconds(monkeypatch):
     monkeypatch.delenv("SMALL_CUTS_UPLOAD_MAX_SECONDS", raising=False)
 
-    assert viewer.upload_max_seconds() == 60.0
+    assert viewer.upload_max_seconds() == 120.0
 
 
 def test_modal_scene_can_drive_uploaded_stage():
@@ -173,7 +173,7 @@ def test_submit_modal_upload_rejects_oversized_file(monkeypatch, tmp_path):
         fake_client(lambda _request: httpx.Response(200, json={"scenes": []})),
     )
 
-    assert warnings == ["Please upload a clip up to 80 MB."]
+    assert warnings == ["Please upload a clip up to 160 MB."]
     assert outputs[5]["scenes"] == []
 
 
@@ -261,7 +261,12 @@ def test_submit_modal_upload_pins_returned_scene(monkeypatch):
     assert "sc-ico-upload" in stage
     assert "real voice" in feed
     assert "voice.wav" in audio
-    assert shelf == [("/tmp/frame.jpg", f"{viewer.UPLOAD_SHELF_PREFIX}A Modal Scene")]
+    assert shelf == [
+        (
+            "/tmp/frame.jpg",
+            f"{viewer.UPLOAD_SHELF_PREFIX}A Modal Scene\n\u2014\nDeadpan Omniscient (the classic)",
+        )
+    ]
     assert state["upload_scene"]["scene_id"] == "modal-1"
     assert state["current_id"] == "modal-1"
     assert state["playing_id"] == "modal-1"
@@ -632,8 +637,8 @@ def test_upload_sandbox_uses_topbar_popover_not_stage_accordion(monkeypatch):
         if component["type"] == "html"
     )
     assert "Drop or browse your video" in helper
-    assert "Up to 60 seconds" in helper
-    assert "80 MB" in helper
+    assert "Up to 120 seconds" in helper
+    assert "160 MB" in helper
     assert "MP4, MOV, WebM, M4V" in helper
 
 
@@ -865,15 +870,15 @@ def test_shelf_items_marks_source_tiles():
 
     items = viewer.shelf_items([glasses_scene, upload_scene], FakeMediaClient())
 
-    # GOLDEN_SCENE carries persona=nature_doc + language=English → suffix appended
-    assert items[0] == (
-        "/media/frame.jpg",
-        f"{viewer.GLASSES_SHELF_PREFIX}A Glasses Scene · EN · Nature Documentary",
+    # GOLDEN_SCENE carries persona=nature_doc + language=English → 3-line caption
+    expected_g = (
+        f"{viewer.GLASSES_SHELF_PREFIX}A Glasses Scene\nEN\nNature Documentary · Attenborough-style"
     )
-    assert items[1] == (
-        "/media/upload.jpg",
-        f"{viewer.UPLOAD_SHELF_PREFIX}An Upload Scene · EN · Nature Documentary",
+    assert items[0] == ("/media/frame.jpg", expected_g)
+    expected_u = (
+        f"{viewer.UPLOAD_SHELF_PREFIX}An Upload Scene\nEN\nNature Documentary · Attenborough-style"
     )
+    assert items[1] == ("/media/upload.jpg", expected_u)
 
 
 def test_write_voice_evicts_old_generated_audio(tmp_path, monkeypatch):
@@ -900,8 +905,11 @@ def test_shelf_items_unwraps_gradio_file_routes_for_gallery(tmp_path):
         FakeMediaClient(),
     )
 
-    # GOLDEN_SCENE carries persona=nature_doc + language=English → suffix appended
-    assert item == (str(cached), f"{GOLDEN_SCENE['title']} · EN · Nature Documentary")
+    # GOLDEN_SCENE carries persona=nature_doc + language=English → 3-line caption
+    assert item == (
+        str(cached),
+        f"{GOLDEN_SCENE['title']}\nEN\nNature Documentary · Attenborough-style",
+    )
 
 
 def test_playback_js_uses_trusted_dom_click_for_audio():
@@ -980,11 +988,11 @@ def test_poll_engine_renders_the_whole_page():
     # audio is now the hidden narration <audio> element carrying the served voice URL
     assert "<audio" in audio and 'id="sc-voice"' in audio
     assert f"{ENGINE_URL}/media/9f1c7e4a/voice.wav" in audio
-    # GOLDEN_SCENE carries persona=nature_doc + language=English → suffix appended
+    # GOLDEN_SCENE carries persona=nature_doc + language=English → 3-line caption
     assert shelf == [
         (
             f"{ENGINE_URL}/media/9f1c7e4a/frame.jpg",
-            "The Bicycle Is Mustard Yellow · EN · Nature Documentary",
+            "The Bicycle Is Mustard Yellow\nEN\nNature Documentary · Attenborough-style",
         )
     ]
     assert scenes == [GOLDEN_SCENE]
@@ -1174,7 +1182,12 @@ def test_go_live_handler_stages_a_scene(monkeypatch):
     assert scene["frame_src"] in stage
     assert scene["title"] in header  # an upload is a finished cut -> title, not "Happening now"
     assert "Narrator" in feed
-    assert shelf == [(scene["card_thumb"], f"{viewer.UPLOAD_SHELF_PREFIX}{scene['title']}")]
+    assert shelf == [
+        (
+            scene["card_thumb"],
+            f"{viewer.UPLOAD_SHELF_PREFIX}{scene['title']}\n\u2014\nNoir Detective",
+        )
+    ]
     assert pinned is None
 
 
@@ -1540,11 +1553,14 @@ def test_lang_abbr():
 
 def test_shelf_caption_appends_label_when_present():
     scene = {"title": "Night alley", "persona": "nature_doc", "language": "English"}
-    assert viewer._shelf_caption(scene) == "Night alley · EN · Nature Documentary"
+    assert (
+        viewer._shelf_caption(scene) == "Night alley\nEN\nNature Documentary · Attenborough-style"
+    )
 
 
 def test_shelf_caption_unchanged_when_absent():
-    assert viewer._shelf_caption({"title": "Night alley"}) == "Night alley"
+    # title line / em-dash (no language) / style fallback (no style_key -> "off air")
+    assert viewer._shelf_caption({"title": "Night alley"}) == "Night alley\n\u2014\noff air"
 
 
 def test_header_renders_lang_and_full_label():
@@ -1563,4 +1579,5 @@ def test_cc_button_styled_into_pill():
     css = viewer.VIEWER_CSS
     # CC adopts the icon-button footprint and reserves gold for the active state.
     assert ".sc-cc-btn.sc-icbtn" in css
-    assert "body.sc-cc-on .sc-cc-btn.sc-icbtn" in css
+    assert "body.sc-cc-on .sc-cc-btn.sc-icbtn" not in css
+    assert ".sc-theater.sc-cc-on .sc-cc-btn.sc-icbtn" in css

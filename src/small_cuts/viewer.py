@@ -70,7 +70,7 @@ MODAL_API_TOKEN_ENV = "SMALL_CUTS_MODAL_API_TOKEN"
 MODAL_API_VERSION_ENV = "SMALL_CUTS_MODAL_API_VERSION"
 UPLOAD_SANDBOX_ENV = "SMALL_CUTS_ENABLE_UPLOAD_SANDBOX"
 UPLOAD_MAX_SECONDS_ENV = "SMALL_CUTS_UPLOAD_MAX_SECONDS"
-UPLOAD_MAX_BYTES = 80 * 1024 * 1024
+UPLOAD_MAX_BYTES = 160 * 1024 * 1024  # 160 MB (relaxed 2× from 80 MB)
 UPLOAD_FORMAT_LABEL = "MP4, MOV, WebM, M4V"
 UPLOAD_ALLOWED_SUFFIXES = {".mp4", ".mov", ".webm", ".m4v"}
 # The narrator-as-chat feed is dropped from the default layout (single centered column);
@@ -186,9 +186,12 @@ footer { display: none !important; }
   color: #f3efe4; border-radius: 9px; padding: 11px 16px; font-family: 'Spectral', serif;
   font-size: 1.04rem; line-height: 1.38; text-shadow: 0 1px 2px rgba(0,0,0,.85); }
 .sc-subtitle .sc-sub-line[hidden] { display: none; }
-/* CC captions default OFF (voice-first thesis); shown only when the viewer opts in. The gate lives
-   on <body> so the preference survives the per-scene re-render of #sc-subtitle. */
-body:not(.sc-cc-on) .sc-subtitle { display: none; }
+/* CC captions default OFF (voice-first thesis); shown only when the viewer opts in. The gate
+   lives on .sc-theater (NOT <body>) so Gradio's CSS prefixer (.gradio-container… .contain) can't
+   break it: <body> is an ancestor of .contain, so a body-rooted selector never matches after
+   prefixing. .sc-theater is inside .contain, persists across stage re-renders, and is an ancestor
+   of both #sc-subtitle and .sc-cc-btn. */
+.sc-theater:not(.sc-cc-on) .sc-subtitle { display: none; }
 /* CC matches the other pill controls: gold glyph on the transparent dark pill (OFF), gold fill
    when ON. Was dark-text-on-a-cream-box, which read as a foreign element in the control row. */
 .sc-cc-btn.sc-icbtn { color: #D4AF37 !important; background-color: transparent !important;
@@ -196,7 +199,7 @@ body:not(.sc-cc-on) .sc-subtitle { display: none; }
   display: flex !important; align-items: center; justify-content: center;
   -webkit-mask-image: none !important; mask-image: none !important; }
 .sc-cc-btn.sc-icbtn:hover { background-color: #fff5d5 !important; color: #1a1a1f !important; }
-body.sc-cc-on .sc-cc-btn.sc-icbtn { background-color: #D4AF37 !important;
+.sc-theater.sc-cc-on .sc-cc-btn.sc-icbtn { background-color: #D4AF37 !important;
   color: #1a1a1f !important; }
 
 .sc-rec { position: absolute; top: 12px; left: 12px; display: inline-flex; align-items: center;
@@ -230,10 +233,11 @@ body.sc-cc-on .sc-cc-btn.sc-icbtn { background-color: #D4AF37 !important;
 .sc-dropzone-label { font-family: 'IBM Plex Mono', monospace; font-size: .72rem;
   letter-spacing: .14em; color: #8a8894; text-transform: uppercase; }
 .sc-shelf { background: transparent !important; border: none !important; }
-/* Let the thumbnail caption wrap to two lines so the appended "· LANG · Style" stays visible
-   instead of being clipped by Gradio's default single-line ellipsis (.caption-label). */
-.sc-shelf .caption-label { white-space: normal !important; text-overflow: clip !important;
-  display: -webkit-box !important; -webkit-line-clamp: 2 !important;
+/* Three structured lines per thumbnail: title / language / narrator style. The caption
+   string carries real newlines (see _shelf_caption); `white-space: pre-line` renders them
+   as breaks, and the 3-line clamp fits the fixed-height rail cards. */
+.sc-shelf .caption-label { white-space: pre-line !important; text-overflow: clip !important;
+  display: -webkit-box !important; -webkit-line-clamp: 3 !important;
   -webkit-box-orient: vertical !important; overflow: hidden !important;
   line-height: 1.2 !important; font-size: 11px !important; }
 .sc-shelf .thumbnail-item { position: relative; }
@@ -563,11 +567,11 @@ def upload_sandbox_enabled() -> bool:
 
 
 def upload_max_seconds() -> float:
-    raw = os.environ.get(UPLOAD_MAX_SECONDS_ENV, "60").strip()
+    raw = os.environ.get(UPLOAD_MAX_SECONDS_ENV, "120").strip()
     try:
         return max(1.0, float(raw))
     except ValueError:
-        return 60.0
+        return 120.0
 
 
 def upload_max_mb() -> int:
@@ -1087,14 +1091,23 @@ def persona_display(persona: str | None) -> tuple[str, str]:
 
 
 def _shelf_caption(scene: dict[str, Any]) -> str:
+    """Three lines, one piece of information each: title · language · narrator style.
+
+    The style label is resolved through the SAME path as ``format_stage`` (persona
+    label wins, then the style_key label) so the shelf and the stage header never
+    disagree. Each thumbnail therefore shows the same structure at the same level,
+    regardless of whether a cut was seeded (style_key only) or uploaded via v2
+    (persona + language). The invisible source-icon prefix stays glued to the title
+    line so the CSS source-badge still lights up.
+    """
     title = scene.get("title", "")
     source_icon = _source_icon(scene)
-    caption = f"{_SOURCE_SHELF_PREFIXES.get(source_icon, '')}{title}"
-    abbr = lang_abbr(scene.get("language"))
-    archetype, _ = persona_display(scene.get("persona"))
-    if abbr and archetype:
-        caption = f"{caption} · {abbr} · {archetype}"
-    return caption
+    title_line = f"{_SOURCE_SHELF_PREFIXES.get(source_icon, '')}{title}"
+    lang_line = lang_abbr(scene.get("language")) or "\u2014"  # em dash when unknown
+    style_line = persona_display(scene.get("persona"))[1] or _style_label(
+        scene.get("style_key", "")
+    )
+    return f"{title_line}\n{lang_line}\n{style_line}"
 
 
 def _scene_with_media_urls(
@@ -1634,6 +1647,7 @@ def _seed_scenes() -> list[dict[str, Any]]:
                 "title": title,
                 "narration": narration,
                 "style_key": demo_seed.STYLE_KEY,
+                "language": "English",  # the seed narration is English -> "EN" on the shelf
                 "created_at": (base + timedelta(minutes=offset * 7)).isoformat(),
                 "clip_src": f"/gradio_api/file={demo_seed.clip_path(clip)}",
                 "audio_src": voice,
@@ -1814,6 +1828,30 @@ PLAYBACK_SYNC_JS = """
     window.__scUploadFormObs.observe(document.body, { childList: true, subtree: true });
   }
 
+  // a11y: the icon-only control buttons have no visible text. Stamp aria-labels so screen
+  // readers can announce them. Mirrors the scFixUploadFormFields pattern (delegated, survives
+  // Gradio's per-scene re-render). Play/Pause is swapped dynamically in scSetPlayIcon below.
+  const scLabelButtons = () => {
+    const labels = {
+      '.sc-ico-rewind': 'Previous clip',
+      '.sc-play-btn': 'Play',
+      '.sc-ico-forward': 'Next clip',
+      '.sc-cc-btn': 'Toggle captions',
+      '.sc-upload.sc-icbtn': 'Upload a clip',
+    };
+    for (const [cls, label] of Object.entries(labels)) {
+      const el = document.querySelector(cls);
+      if (el && el.getAttribute('aria-label') !== label) {
+        el.setAttribute('aria-label', label);
+      }
+    }
+  };
+  scLabelButtons();
+  if (!window.__scA11yObs && document.body) {
+    window.__scA11yObs = new MutationObserver(scLabelButtons);
+    window.__scA11yObs.observe(document.body, { childList: true, subtree: true });
+  }
+
   if (typeof window.__scUploadSubmitLocked !== 'boolean') {
     window.__scUploadSubmitLocked = false;
   }
@@ -1896,6 +1934,10 @@ PLAYBACK_SYNC_JS = """
     if (!playBtn) return;
     playBtn.classList.toggle('sc-ico-pause', playing);
     playBtn.classList.toggle('sc-ico-play', !playing);
+    const label = playing ? 'Pause' : 'Play';
+    if (playBtn.getAttribute('aria-label') !== label) {
+      playBtn.setAttribute('aria-label', label);
+    }
   };
   const scSubtitleData = (key) => {
     const sub = document.querySelector('#sc-subtitle');
@@ -2068,15 +2110,18 @@ PLAYBACK_SYNC_JS = """
   }, true);
 
   // CC captions: a persisted, voice-first-OFF toggle. The button has no Gradio handler — flip a
-  // body-level class (which survives the per-scene re-render of #sc-subtitle) and remember the
-  // choice in localStorage. CSS hides .sc-subtitle unless body has .sc-cc-on.
+  // class on .sc-theater (inside .contain, survives per-scene re-render of #sc-subtitle) and
+  // remember the choice in localStorage. CSS hides .sc-subtitle unless .sc-theater has .sc-cc-on.
+  // (.sc-theater, not <body>: Gradio's CSS prefixer prepends .contain… to every rule, so a
+  // body-rooted selector never matches — <body> is an ancestor of .contain, not a descendant.)
   const scReadCcPref = () => {
     try { return window.localStorage.getItem('scCc') === '1'; } catch (e) { return false; }
   };
-  if (scReadCcPref()) document.body.classList.add('sc-cc-on');
+  const scCcTarget = () => document.querySelector('.sc-theater') || document.body;
+  if (scReadCcPref()) scCcTarget().classList.add('sc-cc-on');
   document.addEventListener('click', (e) => {
     if (!(e.target.closest && e.target.closest('.sc-cc-btn'))) return;
-    const on = document.body.classList.toggle('sc-cc-on');
+    const on = scCcTarget().classList.toggle('sc-cc-on');
     try { window.localStorage.setItem('scCc', on ? '1' : '0'); } catch (err) {}
   }, true);
 
@@ -2856,12 +2901,12 @@ def build_viewer_app() -> gr.Blocks:
                 visibility,
             ]
             rewind_btn.click(
-                lambda state: _step_engine(-1, state),
+                lambda state: _step_engine(+1, state),
                 inputs=[scenes_state],
                 outputs=step_outputs_e,
             )
             forward_btn.click(
-                lambda state: _step_engine(1, state),
+                lambda state: _step_engine(-1, state),
                 inputs=[scenes_state],
                 outputs=step_outputs_e,
             )
@@ -3153,14 +3198,14 @@ def build_viewer_app() -> gr.Blocks:
             step_outputs = [header, stage, audio, pinned_state, like_btn, report_btn]
             rewind_btn.click(
                 lambda scenes, pinned, liked, reported: _step_local(
-                    -1, scenes, pinned, liked, reported
+                    +1, scenes, pinned, liked, reported
                 ),
                 inputs=[scenes_state, pinned_state, liked_state, reported_state],
                 outputs=step_outputs,
             )
             forward_btn.click(
                 lambda scenes, pinned, liked, reported: _step_local(
-                    1, scenes, pinned, liked, reported
+                    -1, scenes, pinned, liked, reported
                 ),
                 inputs=[scenes_state, pinned_state, liked_state, reported_state],
                 outputs=step_outputs,

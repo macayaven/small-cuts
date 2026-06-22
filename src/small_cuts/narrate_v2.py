@@ -1,7 +1,7 @@
 """Greenfield narration writer for the v2 ``/v2/narrate`` pipeline (Mid Cuts).
 
 This is the importable, GPU-free core that the Modal app depends on: build a contract-valid
-``NarratedScene`` and publish it to the private ``macayaven/mid-cuts`` bucket with atomic
+``NarratedScene`` and publish it to the private ``macayaven/small-cuts-data`` bucket with atomic
 ordering. Keeping it here (not in ``modal_app/``) makes it unit-testable — ``modal`` is not in
 the CI venv. The model-bearing Omni backend lives in the Modal app; this module only defines the
 swappable backend interface plus a GPU-free mock.

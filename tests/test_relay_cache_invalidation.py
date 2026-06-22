@@ -37,7 +37,11 @@ class _MutableManifestFs:
 
 def _client(fs: _MutableManifestFs, tmp_path: Path) -> hf_relay.BucketSceneClient:
     return hf_relay.BucketSceneClient(
-        "macayaven/mid-cuts", prefix="relay", fs=fs, cache_dir=tmp_path, direct_media_urls=False
+        "macayaven/small-cuts-data",
+        prefix="relay",
+        fs=fs,
+        cache_dir=tmp_path,
+        direct_media_urls=False,
     )
 
 

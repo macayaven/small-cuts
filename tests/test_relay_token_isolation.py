@@ -3,7 +3,7 @@
 CI-safe tests prove the read-token wiring, the fail-closed boot guard, and that a
 PRIVATE bucket is served entirely same-origin (no cross-origin resolve URLs, no bucket
 path leaked into client HTML). The gated LIVE tests (run once the real fine-grained
-tokens + the macayaven/mid-cuts bucket exist) prove the cutover invariant: the
+tokens + the macayaven/small-cuts-data bucket exist) prove the cutover invariant: the
 read-only token can read but cannot write.
 """
 
@@ -45,7 +45,9 @@ def test_fs_passes_read_token_to_hffilesystem(monkeypatch, tmp_path):
     created = _recording_hffilesystem(monkeypatch)
     monkeypatch.setenv(hf_relay.RELAY_READ_TOKEN_ENV, "read-only-xyz")
 
-    client = hf_relay.BucketSceneClient("macayaven/mid-cuts", prefix="relay", cache_dir=tmp_path)
+    client = hf_relay.BucketSceneClient(
+        "macayaven/small-cuts-data", prefix="relay", cache_dir=tmp_path
+    )
     _ = client.fs
 
     assert created["token"] == "read-only-xyz"
@@ -68,7 +70,7 @@ def test_boot_guard_refuses_direct_media_on_private_bucket(monkeypatch, tmp_path
 
     with pytest.raises(hf_relay.BucketRelayError, match="private"):
         hf_relay.BucketSceneClient(
-            "macayaven/mid-cuts",
+            "macayaven/small-cuts-data",
             prefix="relay",
             cache_dir=tmp_path,
             direct_media_urls=True,
@@ -103,7 +105,7 @@ def test_private_bucket_serves_clip_and_audio_same_origin(monkeypatch, tmp_path)
     monkeypatch.setenv(hf_relay.RELAY_BUCKET_PRIVATE_ENV, "1")
 
     client = hf_relay.BucketSceneClient(
-        "macayaven/mid-cuts",
+        "macayaven/small-cuts-data",
         prefix="relay",
         fs=_manifest_fs(scene),
         cache_dir=tmp_path,
@@ -120,13 +122,13 @@ def test_boot_guard_fires_on_private_bucket_via_env_default(monkeypatch, tmp_pat
     # Production builds BucketSceneClient with NO direct_media_urls kwarg (viewer.py:2117);
     # on a real Space the env default (_default_direct_media_urls) resolves to direct mode.
     # The guard must fire on the RESOLVED value, not only on an explicit kwarg.
-    monkeypatch.setenv("SPACE_ID", "macayaven/mid-cuts")
-    monkeypatch.setenv(hf_relay.RELAY_BUCKET_ENV, "macayaven/mid-cuts")
+    monkeypatch.setenv("SPACE_ID", "macayaven/small-cuts-data")
+    monkeypatch.setenv(hf_relay.RELAY_BUCKET_ENV, "macayaven/small-cuts-data")
     monkeypatch.delenv(hf_relay.RELAY_DIRECT_MEDIA_URLS_ENV, raising=False)
     monkeypatch.setenv(hf_relay.RELAY_BUCKET_PRIVATE_ENV, "1")
 
     with pytest.raises(hf_relay.BucketRelayError, match="private"):
-        hf_relay.BucketSceneClient("macayaven/mid-cuts", prefix="relay", cache_dir=tmp_path)
+        hf_relay.BucketSceneClient("macayaven/small-cuts-data", prefix="relay", cache_dir=tmp_path)
 
 
 def test_private_bucket_default_cache_path_emits_no_resolve_url(monkeypatch, tmp_path):
@@ -145,7 +147,7 @@ def test_private_bucket_default_cache_path_emits_no_resolve_url(monkeypatch, tmp
     monkeypatch.setenv(hf_relay.RELAY_BUCKET_PRIVATE_ENV, "1")
 
     client = hf_relay.BucketSceneClient(
-        "macayaven/mid-cuts", prefix="relay", fs=_manifest_fs(scene), direct_media_urls=False
+        "macayaven/small-cuts-data", prefix="relay", fs=_manifest_fs(scene), direct_media_urls=False
     )
 
     media = client.list_scenes()[0]["media"]
@@ -162,7 +164,7 @@ def test_boot_guard_error_does_not_leak_read_token(monkeypatch, tmp_path):
 
     with pytest.raises(hf_relay.BucketRelayError) as excinfo:
         hf_relay.BucketSceneClient(
-            "macayaven/mid-cuts", prefix="relay", cache_dir=tmp_path, direct_media_urls=True
+            "macayaven/small-cuts-data", prefix="relay", cache_dir=tmp_path, direct_media_urls=True
         )
 
     assert "super-secret-token" not in str(excinfo.value)
@@ -181,7 +183,7 @@ _live_only = pytest.mark.skipif(
 def test_live_read_token_can_read():
     from huggingface_hub import HfFileSystem
 
-    bucket = os.environ.get("SMALL_CUTS_RELAY_BUCKET", "macayaven/mid-cuts")
+    bucket = os.environ.get("SMALL_CUTS_RELAY_BUCKET", "macayaven/small-cuts-data")
     fs = HfFileSystem(token=os.environ["SMALL_CUTS_RELAY_READ_TOKEN"])
     # Positive control: a private bucket 401s anonymously, so a successful authenticated
     # listing proves the read token actually carries read scope (not a dud token).
@@ -193,7 +195,7 @@ def test_live_read_token_cannot_write():
     from huggingface_hub import HfFileSystem
     from huggingface_hub.errors import HfHubHTTPError
 
-    bucket = os.environ.get("SMALL_CUTS_RELAY_BUCKET", "macayaven/mid-cuts")
+    bucket = os.environ.get("SMALL_CUTS_RELAY_BUCKET", "macayaven/small-cuts-data")
     fs = HfFileSystem(token=os.environ["SMALL_CUTS_RELAY_READ_TOKEN"])
     # The Xet bucket-write path wraps a denial in a builtin ConnectionError (an OSError), NOT
     # HfHubHTTPError — so catch broadly, then assert it is specifically a 401/403 authorization

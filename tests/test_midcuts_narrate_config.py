@@ -2,8 +2,10 @@
 
 Guards the properties that must never silently regress: scale-to-zero + bounded GPU, fail-closed
 timing-safe Bearer (§7 #5), tight upload limits, no anonymous bucket write (§7 #1), a runtime
-contract-validation guard before publish (§6), and that it targets the NEW private bucket — never
-the live macayaven/small-cuts Space.
+contract-validation guard before publish (§6), and that it targets the cutover data bucket
+macayaven/small-cuts-data (the v2 app now ships as a more-recent-commit update to the
+macayaven/small-cuts Space, writing to a distinctly-named bucket) — never small-cuts-scenes-dev
+(which backs the hackathon org Space + its Modal jobs), nor the old app's secret.
 """
 
 from __future__ import annotations
@@ -90,10 +92,14 @@ def test_validates_scene_against_contract_before_publish():
     assert "format_checker=jsonschema.Draft202012Validator.FORMAT_CHECKER" in SOURCE
 
 
-def test_targets_new_private_bucket_never_live_space():
-    # Guard the CODE targets, not docstring mentions (the docstring names the live Space to say it
-    # is NOT touched).
-    assert 'BUCKET_ID = "macayaven/mid-cuts"' in SOURCE
-    assert 'from_name("mid-cuts")' in SOURCE  # uses the new v2 secret
-    assert 'from_name("small-cuts-postcut")' not in SOURCE  # not the old app's secret
-    assert "buckets/macayaven/small-cuts" not in SOURCE  # never a path to the live bucket
+def test_targets_the_cutover_bucket_not_dev_or_old_app():
+    # macayaven/small-cuts-data is the INTENDED write target. The v2 app ships as a
+    # more-recent-commit update to the macayaven/small-cuts Space (formerly deprecated),
+    # writing to a distinctly-named data bucket so it never collides with that Space's
+    # namespace. Guard the CODE target, not docstring mentions (which name build-small-hackathon).
+    assert 'BUCKET_ID = "macayaven/small-cuts-data"' in SOURCE
+    assert 'from_name("mid-cuts")' in SOURCE  # the scoped v2 write-token secret (name unchanged)
+    assert 'from_name("small-cuts-postcut")' not in SOURCE  # never the old v1 app's secret
+    # FROZEN: small-cuts-scenes-dev backs the hackathon org Space (build-small-hackathon/small-cuts)
+    # and its Modal jobs — writing here would corrupt the submission's integrity.
+    assert "small-cuts-scenes-dev" not in SOURCE

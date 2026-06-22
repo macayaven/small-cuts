@@ -1,11 +1,12 @@
 """Mid Cuts (Small Cuts v2) — Modal ``/v2/narrate`` endpoint.
 
 Greenfield. Whole-clip narration: Qwen3-Omni (video in → narration TEXT + deadpan SPEECH in
-``--language``) → a contract-valid NarratedScene + media → the private ``macayaven/mid-cuts``
+``--language``) → a contract-valid NarratedScene + media → the private ``macayaven/small-cuts-data``
 bucket with a WRITE-scoped token. The scene-building / publish / backend-interface logic lives in
 the importable ``small_cuts.narrate_v2`` (unit-tested); this file is the thin Modal wrapper.
 
-NEVER touches the live ``macayaven/small-cuts`` Space or the old ``small-cuts-postcut`` app.
+NEVER touches the ``small-cuts-postcut`` app (v1), which the hackathon submission
+``build-small-hackathon/small-cuts`` shares — keep it untouched.
 
 Run (after Carlos's go — spends Modal GPU credits):
     modal run modal_app/midcuts_narrate.py::smoke      # CPU: image imports + writer wiring, no GPU
@@ -29,7 +30,7 @@ import modal
 from fastapi import File, Form, Header, HTTPException, UploadFile
 from fastapi.responses import JSONResponse
 
-BUCKET_ID = "macayaven/mid-cuts"
+BUCKET_ID = "macayaven/small-cuts-data"
 RELAY_PREFIX = "relay"
 OMNI_MODEL = "Qwen/Qwen3-Omni-30B-A3B-Instruct"
 ALIGNER_MODEL = "Qwen/Qwen3-ForcedAligner-0.6B"
@@ -587,7 +588,7 @@ def smoke_main() -> None:
 
 @app.local_entrypoint()
 def e2e(clip: str = "rayuela", language: str = "English", context: str = "") -> None:
-    """GPU H200: narrate a real seed clip end-to-end and write the scene to the mid-cuts bucket.
+    """GPU H200: narrate a real seed clip end-to-end and write the scene to small-cuts-data.
 
     Pass ``--context`` to judge the free-text manner steer by ear (e.g. ``--context "wistful"``).
     """

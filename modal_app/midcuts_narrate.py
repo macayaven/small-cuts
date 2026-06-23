@@ -30,10 +30,12 @@ import modal
 from fastapi import File, Form, Header, HTTPException, UploadFile
 from fastapi.responses import JSONResponse
 
-# ``small_cuts`` is pip-installed on the dev box and copied to /root/src inside the Modal image;
-# put it on the path so the shared cross-boundary config imports at module top in both contexts.
-if "/root/src" not in sys.path:
-    sys.path.insert(0, "/root/src")
+# ``small_cuts`` provides the shared cross-boundary config (small_cuts.config). It lives at
+# /root/src inside the Modal image and at <repo>/src on the dev box; the ``modal`` CLI deploys from
+# its own env (no small_cuts installed), so add both paths before importing it at module top.
+for _src in ("/root/src", str(Path(__file__).resolve().parent.parent / "src")):
+    if _src not in sys.path:
+        sys.path.insert(0, _src)
 
 from small_cuts import config  # noqa: E402  (must follow the sys.path bootstrap above)
 

@@ -98,9 +98,8 @@ def test_upload_error_message_is_preserved_in_engine_state():
     assert state["upload_error_message"] == "Modal upload failed: unavailable"
 
 
-def test_upload_video_cap_defaults_to_one_hundred_twenty_seconds(monkeypatch):
-    monkeypatch.delenv("SMALL_CUTS_UPLOAD_MAX_SECONDS", raising=False)
-
+def test_upload_video_cap_is_one_hundred_twenty_seconds():
+    # Fixed shared cap (small_cuts.config.MAX_UPLOAD_SECONDS); no per-Space env override anymore.
     assert viewer.upload_max_seconds() == 120.0
 
 

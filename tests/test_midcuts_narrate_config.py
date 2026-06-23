@@ -16,7 +16,13 @@ from pathlib import Path
 MODULE_PATH = Path(__file__).parent.parent / "modal_app" / "midcuts_narrate.py"
 SOURCE = MODULE_PATH.read_text()
 MODULE = ast.parse(SOURCE)
-AUTOSCALER_KEYS = {"buffer_containers", "max_containers", "min_containers", "scaledown_window"}
+DECORATOR_KEYS = {
+    "buffer_containers",
+    "max_containers",
+    "min_containers",
+    "scaledown_window",
+    "timeout",
+}
 
 
 def _decorator_kwargs(name: str, attr: str) -> dict[str, object]:
@@ -32,7 +38,7 @@ def _decorator_kwargs(name: str, attr: str) -> dict[str, object]:
                 return {
                     kw.arg: ast.literal_eval(kw.value)
                     for kw in decorator.keywords
-                    if kw.arg in AUTOSCALER_KEYS
+                    if kw.arg in DECORATOR_KEYS
                 }
     raise AssertionError(f"@app.{attr} decorator not found for {name}")
 
@@ -43,6 +49,14 @@ def test_gpu_class_and_api_scale_to_zero():
         assert kwargs["min_containers"] == 0
         assert kwargs["buffer_containers"] == 0
         assert kwargs["scaledown_window"] <= 60
+
+
+def test_api_accept_window_fits_a_full_upload():
+    # The sync /v2/narrate endpoint must RECEIVE the whole upload (up to MAX_UPLOAD_BYTES, 160 MB)
+    # before it spawns the GPU job. Modal's hard HTTP cap is 150s; the accept timeout must sit at
+    # that ceiling so a large upload on an ordinary connection is not cut off. (60s only fit 30 MB —
+    # the mismatch that motivated this guard.)
+    assert _decorator_kwargs("api", "function")["timeout"] >= 150
 
 
 def test_gpu_classes_are_bounded():

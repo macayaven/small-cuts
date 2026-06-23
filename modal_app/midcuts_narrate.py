@@ -467,7 +467,10 @@ class Aligner:
 
 @app.function(
     image=image,
-    timeout=60,
+    # Sync accept window: the full upload (up to MAX_UPLOAD_BYTES) must arrive here before the job
+    # is spawned. Pin to Modal's hard 150s HTTP cap so a 160 MB upload on an ordinary connection is
+    # not cut off (60s only fit the old 30 MB cap). GPU narration runs async via Narrator.process.
+    timeout=150,
     min_containers=0,
     buffer_containers=0,
     scaledown_window=60,

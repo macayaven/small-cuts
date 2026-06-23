@@ -138,8 +138,8 @@ def test_format_stage_marks_source_icons():
 
 
 def test_submit_modal_upload_rejects_over_duration(monkeypatch):
-    monkeypatch.setenv("SMALL_CUTS_UPLOAD_MAX_SECONDS", "60")
-    monkeypatch.setattr(viewer, "_video_duration_s", lambda _path: 61.0)
+    # The cap is the fixed shared value (120 s); there is no per-Space env override anymore.
+    monkeypatch.setattr(viewer, "_video_duration_s", lambda _path: 121.0)
     warnings = []
 
     monkeypatch.setattr(viewer.gr, "Warning", lambda message: warnings.append(message))
@@ -152,7 +152,7 @@ def test_submit_modal_upload_rejects_over_duration(monkeypatch):
         fake_client(lambda _request: httpx.Response(200, json={"scenes": []})),
     )
 
-    assert warnings == ["Please upload a clip up to 60 seconds."]
+    assert warnings == ["Please upload a clip up to 120 seconds."]
     assert outputs[5]["scenes"] == []
 
 

@@ -73,14 +73,21 @@ def test_bearer_is_timing_safe_and_fail_closed():
     assert 'os.environ.get(BEARER_ENV, "")' in SOURCE  # .get, not os.environ[...] -> no 500
 
 
-def test_upload_limits_are_tight():
-    assert "MAX_UPLOAD_BYTES = 30 * 1024 * 1024" in SOURCE
-    assert "MAX_UPLOAD_SECONDS = 30.0" in SOURCE
+def test_upload_limits_come_from_shared_config():
+    # Single source of truth: the Modal app must NOT hardcode its own cap — that drift is exactly
+    # what let the UI accept 160 MB while Modal rejected at 30 MB. Both come from small_cuts.config
+    # (whose values are asserted in test_config.py).
+    assert "from small_cuts import config" in SOURCE
+    assert "MAX_UPLOAD_BYTES = config.MAX_UPLOAD_BYTES" in SOURCE
+    assert "MAX_UPLOAD_SECONDS = config.MAX_UPLOAD_SECONDS" in SOURCE
 
 
 def test_write_path_refuses_anonymous_and_uses_scoped_token():
     # §7 #1: the write must use the scoped write token, and refuse rather than write anonymously.
-    assert "SMALL_CUTS_RELAY_WRITE_TOKEN" in SOURCE
+    # The env KEY now lives in small_cuts.config (value pinned in test_config.py); the Modal app
+    # wires it through and reads it.
+    assert "WRITE_TOKEN_ENV = config.RELAY_WRITE_TOKEN_ENV" in SOURCE
+    assert "os.environ.get(WRITE_TOKEN_ENV)" in SOURCE
     assert "refusing anonymous write" in SOURCE
     assert "HfApi(token=write_token)" in SOURCE
 

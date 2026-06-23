@@ -18,7 +18,9 @@ from typing import Annotated, Any
 from fastapi import Body, FastAPI, Header, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
-RELAY_HOOK_TOKEN_ENV = "SMALL_CUTS_RELAY_HOOK_TOKEN"
+from . import config
+
+RELAY_HOOK_TOKEN_ENV = config.RELAY_HOOK_TOKEN_ENV
 RELAY_HOOK_PATH = "/small-cuts/hooks/relay-scene"
 RELAY_EVENTS_PATH = "/small-cuts/events"
 SSE_HEARTBEAT_S = 15.0

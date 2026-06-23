@@ -30,21 +30,29 @@ import modal
 from fastapi import File, Form, Header, HTTPException, UploadFile
 from fastapi.responses import JSONResponse
 
+# ``small_cuts`` is pip-installed on the dev box and copied to /root/src inside the Modal image;
+# put it on the path so the shared cross-boundary config imports at module top in both contexts.
+if "/root/src" not in sys.path:
+    sys.path.insert(0, "/root/src")
+
+from small_cuts import config  # noqa: E402  (must follow the sys.path bootstrap above)
+
 BUCKET_ID = "macayaven/small-cuts-data"
-RELAY_PREFIX = "relay"
+RELAY_PREFIX = config.DEFAULT_RELAY_PREFIX
 OMNI_MODEL = "Qwen/Qwen3-Omni-30B-A3B-Instruct"
 ALIGNER_MODEL = "Qwen/Qwen3-ForcedAligner-0.6B"
 OMNI_GPU = "H200"
 ALIGNER_GPU = "L4"  # 0.6B aligner: a cheap modern bf16 GPU is plenty.
 SPEAKER = "Aiden"
-MAX_UPLOAD_BYTES = 30 * 1024 * 1024
-MAX_UPLOAD_SECONDS = 30.0
-BEARER_ENV = "SMALL_CUTS_MODAL_API_TOKEN"
-WRITE_TOKEN_ENV = "SMALL_CUTS_RELAY_WRITE_TOKEN"
+# Upload caps come from the shared config so the Space front-door and Modal can never disagree.
+MAX_UPLOAD_BYTES = config.MAX_UPLOAD_BYTES
+MAX_UPLOAD_SECONDS = config.MAX_UPLOAD_SECONDS
+BEARER_ENV = config.MODAL_API_TOKEN_ENV
+WRITE_TOKEN_ENV = config.RELAY_WRITE_TOKEN_ENV
 # Push-not-poll: the Space's relay hook URL + the Bearer it shares with this producer. Both live in
 # the `mid-cuts` Modal secret; when absent the publish still succeeds and the poll endpoint is used.
-HOOK_URL_ENV = "SMALL_CUTS_RELAY_HOOK_URL"
-HOOK_TOKEN_ENV = "SMALL_CUTS_RELAY_HOOK_TOKEN"
+HOOK_URL_ENV = config.RELAY_HOOK_URL_ENV
+HOOK_TOKEN_ENV = config.RELAY_HOOK_TOKEN_ENV
 
 # Narration prompts/carriers + the title cleaner live in the importable, unit-tested
 # small_cuts.narrate_v2 (imported inside the GPU methods, where /root/src is on sys.path).

@@ -21,14 +21,15 @@ from urllib.parse import quote, urlparse
 
 import httpx
 
+from . import config
 from .persistence import bucket_mount_path
 
-RELAY_BUCKET_ENV = "SMALL_CUTS_RELAY_BUCKET"
+RELAY_BUCKET_ENV = config.RELAY_BUCKET_ENV
 RELAY_PREFIX_ENV = "SMALL_CUTS_RELAY_PREFIX"
 RELAY_DIRECT_MEDIA_URLS_ENV = "SMALL_CUTS_RELAY_DIRECT_MEDIA_URLS"
 RELAY_READ_TOKEN_ENV = "SMALL_CUTS_RELAY_READ_TOKEN"
 RELAY_BUCKET_PRIVATE_ENV = "SMALL_CUTS_RELAY_BUCKET_PRIVATE"
-DEFAULT_RELAY_PREFIX = "relay"
+DEFAULT_RELAY_PREFIX = config.DEFAULT_RELAY_PREFIX
 RELAY_MANIFEST = "manifest.json"
 RELAY_CACHE_DIR = Path(tempfile.gettempdir()) / "small-cuts-hf-relay"
 GRADIO_FILE_ROUTE = "/gradio_api/file="

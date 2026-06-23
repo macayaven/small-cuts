@@ -38,7 +38,7 @@ import httpx
 import soundfile as sf
 from PIL import Image
 
-from . import demo_seed
+from . import config, demo_seed
 from ._icons import ICON_CSS
 from .frames import pick_key_frame, sample_frames
 from .hf_relay import (
@@ -66,11 +66,10 @@ from .upload_library import LocalUploadLibrary
 ENGINE_URL_ENV = "SMALL_CUTS_ENGINE_URL"
 DISABLE_ENGINE_AUTODETECT_ENV = "SMALL_CUTS_DISABLE_ENGINE_AUTODETECT"
 MODAL_API_URL_ENV = "SMALL_CUTS_MODAL_API_URL"
-MODAL_API_TOKEN_ENV = "SMALL_CUTS_MODAL_API_TOKEN"
+MODAL_API_TOKEN_ENV = config.MODAL_API_TOKEN_ENV
 MODAL_API_VERSION_ENV = "SMALL_CUTS_MODAL_API_VERSION"
 UPLOAD_SANDBOX_ENV = "SMALL_CUTS_ENABLE_UPLOAD_SANDBOX"
-UPLOAD_MAX_SECONDS_ENV = "SMALL_CUTS_UPLOAD_MAX_SECONDS"
-UPLOAD_MAX_BYTES = 160 * 1024 * 1024  # 160 MB (relaxed 2× from 80 MB)
+UPLOAD_MAX_BYTES = config.MAX_UPLOAD_BYTES  # shared with Modal; see small_cuts.config
 UPLOAD_FORMAT_LABEL = "MP4, MOV, WebM, M4V"
 UPLOAD_ALLOWED_SUFFIXES = {".mp4", ".mov", ".webm", ".m4v"}
 # The narrator-as-chat feed is dropped from the default layout (single centered column);
@@ -567,11 +566,7 @@ def upload_sandbox_enabled() -> bool:
 
 
 def upload_max_seconds() -> float:
-    raw = os.environ.get(UPLOAD_MAX_SECONDS_ENV, "120").strip()
-    try:
-        return max(1.0, float(raw))
-    except ValueError:
-        return 120.0
+    return config.MAX_UPLOAD_SECONDS
 
 
 def upload_max_mb() -> int:

@@ -234,10 +234,12 @@ footer { display: none !important; }
 .sc-shelf { background: transparent !important; border: none !important; }
 /* Three structured lines per thumbnail: title / language / narrator style. The caption
    string carries real newlines (see _shelf_caption); `white-space: pre-line` renders them
-   as breaks, and the 3-line clamp fits the fixed-height rail cards. */
+   as breaks. The narrator-style line can wrap to a 4th line, so the caption sizes to its
+   content (no fixed line-clamp that would crop it): the bottom-anchored overlay grows up
+   the image and stays within the 146px card. padding-bottom lifts the last line off the
+   card's clip edge so descenders are not shaved. */
 .sc-shelf .caption-label { white-space: pre-line !important; text-overflow: clip !important;
-  display: -webkit-box !important; -webkit-line-clamp: 3 !important;
-  -webkit-box-orient: vertical !important; overflow: hidden !important;
+  display: block !important; overflow: visible !important; padding-bottom: 5px !important;
   line-height: 1.2 !important; font-size: 11px !important; }
 .sc-shelf .thumbnail-item { position: relative; }
 .sc-shelf .thumbnail-item:has(img[alt^="\\002062"])::before,
